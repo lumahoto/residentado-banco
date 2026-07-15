@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = '0.6.13';
+  const APP_VERSION = '0.6.14';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
@@ -309,6 +309,22 @@
   function parseLocalDate(iso) {
     const [y,m,d] = String(iso).split('-').map(Number);
     return new Date(y, m-1, d, 12, 0, 0, 0);
+  }
+
+  function questionSourceLabel(q = {}) {
+    const parts = [];
+    if (q.year != null && String(q.year).trim()) parts.push(String(q.year).trim());
+    const test = String(q.test || '').trim().toUpperCase();
+    if (test) parts.push(`Prueba ${test}`);
+    const number = q.question_number != null && String(q.question_number).trim()
+      ? String(q.question_number).trim()
+      : '';
+    if (number) parts.push(`Pregunta ${number}`);
+    return parts.join(' · ') || String(q.id || 'Fuente no disponible');
+  }
+
+  function questionSourceTag(q) {
+    return `<span class="tag source-tag">📄 ${esc(questionSourceLabel(q))}</span>`;
   }
 
   function daysBetween(a, b) { return (parseLocalDate(b) - parseLocalDate(a)) / 86400000; }
@@ -1479,7 +1495,7 @@
       <section class="panel"><h2>Práctica rápida</h2><p class="muted">La primera opción usa memoria, errores, lentitud y rentabilidad para decidir por ti.</p>
       <div class="practice-grid">${cards.map(c=>`<button class="practice-card" data-practice="${c.id}"><strong>${c.title}</strong><span>${c.detail}</span></button>`).join('')}</div>
       <div class="sprint-row"><button class="btn sprint" data-sprint="10">⚡ Sprint 10</button><button class="btn sprint" data-sprint="15">⚡ Sprint 15</button><button class="btn sprint" data-sprint="30">⚡ Sprint 30</button></div>
-      <div class="footer-actions"><button id="custom-practice" class="btn">⚙ Personalizar práctica</button><button id="weakness-report-btn" class="btn">📊 Informe dinámico de debilidades</button><button id="practice-exam" class="btn">📝 Crear simulacro</button></div></section>
+      <div class="footer-actions"><button id="custom-practice" class="btn">⚙ Personalizar práctica</button><button id="weakness-report-btn" class="btn">📊 Informe dinámico de debilidades</button><button id="practice-history" class="btn">🕘 Historial y ritmo</button><button id="practice-exam" class="btn">📝 Crear simulacro</button></div></section>
     </main>`;
     attachTopbar();
     cards.forEach(c => {
@@ -1496,6 +1512,7 @@
     });
     document.getElementById('custom-practice').onclick = () => renderSessionBuilder('study');
     document.getElementById('weakness-report-btn').onclick = renderWeaknessReport;
+    document.getElementById('practice-history').onclick = () => renderHistory();
     document.getElementById('practice-exam').onclick = renderExamHub;
   }
 
@@ -1927,6 +1944,7 @@
         <button id="exam-btn" class="btn">📝 SIMULACRO</button>
         <button id="roadmap-btn" class="btn">📖 QUÉ VIENE DESPUÉS</button>
         <button id="stats-btn" class="btn">📊 MI ESTADO</button>
+        <button id="history-btn" class="btn">🕘 HISTORIAL Y RITMO</button>
       </section>
 
       <section class="panel next-roadmap"><div><span class="roadmap-kicker">PRÓXIMAMENTE</span><strong>${esc(road.preRead || 'Clasificando próximos temas')}</strong><small>Prelectura ligera sugerida antes de que entre en el banqueo.</small></div><button id="roadmap-mini" class="btn small">Ver hoja de ruta</button></section>
@@ -1949,6 +1967,7 @@
     document.getElementById('roadmap-btn').onclick = renderRoadmap;
     document.getElementById('roadmap-mini').onclick = renderRoadmap;
     document.getElementById('stats-btn').onclick = renderStats;
+    document.getElementById('history-btn').onclick = () => renderHistory();
     document.querySelectorAll('[data-resume-session]').forEach(btn => {
       btn.onclick = () => {
         const row = activeSessions.find(s => s.id === btn.dataset.resumeSession);
@@ -2271,7 +2290,7 @@
       ${topbar(currentStudy.config.title, false)}
       <section class="panel question-card">
         <div class="progress"><div style="width:${(currentStudy.index/currentStudy.questions.length)*100}%"></div></div>
-        <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${targetTag}${timerHtml}</div>
+        <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${targetTag}${timerHtml}</div>
         <div class="q-body"><p class="q-text">${esc(q.question)}</p>
           ${locked ? `<div class="banner compact"><strong>⏱ Pregunta cerrada.</strong> ${responseState.timedOut ? 'El tiempo terminó sin respuesta; contará como un único intento fallido por tiempo.' : 'El tiempo terminó después de que respondiste; se conserva esa respuesta y ya no puede modificarse.'}</div>` : ''}
           <div class="uncertainty-hint">Marca <strong>?</strong> en cualquier alternativa que no domines del todo. No cambia tu respuesta; sí hace que el concepto vuelva antes al repaso.</div>
@@ -2711,7 +2730,7 @@
       <section class="exam-layout">
         <div class="panel question-card">
           <div class="progress"><div style="width:${(currentExam.state.currentIndex/currentExam.questions.length)*100}%"></div></div>
-          <div class="q-head"><span class="tag">${currentExam.state.currentIndex+1}/${currentExam.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
+          <div class="q-head"><span class="tag">${currentExam.state.currentIndex+1}/${currentExam.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.area)}</span><div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
           <div class="q-body"><p class="q-text">${esc(q.question)}</p>
             <div class="uncertainty-hint">Puedes marcar <strong>?</strong> en una o varias alternativas sin cambiar tu respuesta definitiva.</div>
             <div class="options">${displayOptionList(
@@ -2910,6 +2929,7 @@
     clearTimer();
     scrollPageTop();
     const q = reviewContext.questions[reviewContext.index];
+    const historyReview = reviewContext?.type === 'history';
     const responseValue = reviewContext.responses[q.id];
     const selected = responseValue?.selected ?? responseValue ?? null;
     const didNotKnow = Boolean(responseValue?.didNotKnow);
@@ -2920,10 +2940,10 @@
       .filter(([,state]) => state === 'tentative')
       .map(([letter]) => letter);
     const reviewOptions = displayOptionList(q, reviewContext.optionOrders || {}, reviewContext.shuffleOptions !== false);
-    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${reviewOptions.map(o => {
+    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${reviewOptions.map(o => {
       const sourceLetter = o.sourceLetter || o.letter;
       return `<div class="option ${sourceLetter===q.official_answer?'correct':sourceLetter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`;
-    }).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${reviewContext.index===0?'disabled':''}>← Anterior</button><button id="next-review" class="btn primary">${reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →'}</button></div></main>`;
+    }).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${historyReview?'style="visibility:hidden"':(reviewContext.index===0?'disabled':'')}>← Anterior</button><button id="next-review" class="btn primary">${historyReview?'Volver al historial':(reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →')}</button></div></main>`;
     attachTopbar();
     const sessionAttempt = reviewContext?.attemptsByQuestion?.[q.id] || null;
     const latestAttempt = sessionAttempt || (reviewContext?.type === 'study'
@@ -2957,9 +2977,14 @@
     if (reviewFeedbackNode && !reviewFeedbackNode.innerHTML.trim()) {
       renderReviewFeedbackFallback(q, selected, correct, timedOut, uncertainOptions, reviewFeedbackMeta);
     }
-    document.getElementById('prev-review').onclick = () => { reviewContext.index--; renderReviewQuestion(); };
+    if (!historyReview) {
+      document.getElementById('prev-review').onclick = () => { reviewContext.index--; renderReviewQuestion(); };
+    }
     document.getElementById('next-review').onclick = () => {
-      if (reviewContext.index + 1 >= reviewContext.questions.length) renderDashboard();
+      if (historyReview) {
+        const returnDate = reviewContext.returnDate || isoDateLocal();
+        renderHistory(returnDate);
+      } else if (reviewContext.index + 1 >= reviewContext.questions.length) renderDashboard();
       else { reviewContext.index++; renderReviewQuestion(); }
     };
   }
@@ -3335,6 +3360,222 @@
     return saved;
   }
 
+  const HISTORY_BLOCK_GAP_MS = 20 * 60 * 1000;
+
+  function studyModeLabel(mode = '') {
+    const labels = {
+      smart_review:'Repaso inteligente',
+      historical_exam:'Simulacro histórico',
+      exam:'Simulacro personalizado',
+      custom_study_end:'Práctica · corrección al final',
+      custom_study_immediate:'Práctica · corrección inmediata',
+      practice_priority:'Práctica prioritaria',
+      practice_speed:'Velocidad',
+      practice_high:'Alta rentabilidad',
+      practice_errors:'Errores',
+      practice_uncertain:'Dudas',
+      practice_sprint:'Sprint',
+    };
+    if (labels[mode]) return labels[mode];
+    if (String(mode).startsWith('practice_')) return `Práctica · ${String(mode).replace('practice_','').replaceAll('_',' ')}`;
+    return String(mode || 'Práctica').replaceAll('_',' ');
+  }
+
+  function formatDurationCompact(ms = 0) {
+    const seconds = Math.max(0, Math.round(Number(ms || 0) / 1000));
+    if (seconds < 60) return `${seconds} s`;
+    const minutes = Math.floor(seconds / 60);
+    const rest = seconds % 60;
+    if (minutes < 60) return rest ? `${minutes} min ${rest} s` : `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    const minRest = minutes % 60;
+    return minRest ? `${hours} h ${minRest} min` : `${hours} h`;
+  }
+
+  function formatClock(value) {
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleTimeString('es-PE', { hour:'2-digit', minute:'2-digit' });
+  }
+
+  function formatHistoryDate(dateIso) {
+    const d = parseLocalDate(dateIso);
+    const text = d.toLocaleDateString('es-PE', { weekday:'long', day:'2-digit', month:'long', year:'numeric' });
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function shiftLocalDate(dateIso, amount) {
+    const d = parseLocalDate(dateIso);
+    d.setDate(d.getDate() + Number(amount || 0));
+    return isoDateLocal(d);
+  }
+
+  function halfDayKey(attempt) {
+    const d = new Date(attempt.answered_at);
+    return d.getHours() < 13 ? 'morning' : 'afternoon';
+  }
+
+  function summarizeAttemptList(list = []) {
+    const sorted = [...list].sort((a,b) => new Date(a.answered_at) - new Date(b.answered_at));
+    const validTimes = sorted.map(a => Number(a.response_time_ms || 0)).filter(v => v > 0);
+    let blocks = sorted.length ? 1 : 0;
+    let longestGapMs = 0;
+    for (let i = 1; i < sorted.length; i++) {
+      const gap = Math.max(0, new Date(sorted[i].answered_at) - new Date(sorted[i-1].answered_at));
+      longestGapMs = Math.max(longestGapMs, gap);
+      if (gap > HISTORY_BLOCK_GAP_MS) blocks += 1;
+    }
+    return {
+      total: sorted.length,
+      correct: sorted.filter(a => a.is_correct).length,
+      uncertain: sorted.filter(a => a.was_uncertain).length,
+      timedOut: sorted.filter(a => a.timed_out).length,
+      avgMs: validTimes.length ? validTimes.reduce((sum,v) => sum+v, 0) / validTimes.length : 0,
+      responseMs: validTimes.reduce((sum,v) => sum+v, 0),
+      firstAt: sorted[0]?.answered_at || null,
+      lastAt: sorted[sorted.length-1]?.answered_at || null,
+      blocks,
+      longestGapMs,
+    };
+  }
+
+  function halfDayReportMarkup(title, subtitle, list) {
+    const s = summarizeAttemptList(list);
+    if (!s.total) return `<article class="history-half-card panel"><div class="history-half-title"><div><h3>${esc(title)}</h3><small>${esc(subtitle)}</small></div><span class="tag">Sin actividad</span></div><p class="muted">Todavía no hay intentos registrados en este periodo.</p></article>`;
+    const longPause = s.longestGapMs > HISTORY_BLOCK_GAP_MS;
+    return `<article class="history-half-card panel">
+      <div class="history-half-title"><div><h3>${esc(title)}</h3><small>${esc(subtitle)}</small></div><span class="tag ${longPause?'warn':'ok'}">${s.blocks} bloque${s.blocks===1?'':'s'}</span></div>
+      <div class="history-metrics">
+        <div><strong>${s.total}</strong><small>preguntas</small></div>
+        <div><strong>${pct(s.correct,s.total)}</strong><small>acierto</small></div>
+        <div><strong>${s.avgMs?`${(s.avgMs/1000).toFixed(1)} s`:'—'}</strong><small>tiempo medio</small></div>
+        <div><strong>${s.uncertain}</strong><small>con duda</small></div>
+        <div><strong>${s.timedOut}</strong><small>por tiempo</small></div>
+      </div>
+      <div class="history-period-meta">
+        <span>Actividad: <strong>${formatClock(s.firstAt)}–${formatClock(s.lastAt)}</strong></span>
+        <span>Tiempo respondiendo: <strong>${formatDurationCompact(s.responseMs)}</strong></span>
+        <span class="${longPause?'history-gap-warn':''}">Pausa mayor entre respuestas: <strong>${s.longestGapMs?formatDurationCompact(s.longestGapMs):'—'}</strong></span>
+      </div>
+    </article>`;
+  }
+
+  function attemptStatusMarkup(a) {
+    if (a.timed_out) return '<span class="tag bad">⏱ Tiempo</span>';
+    if (String(a.uncertainty_note || '').includes('NO_SE_EXPLICITO')) return '<span class="tag bad">🤷 No sabía</span>';
+    if (a.is_correct && a.was_uncertain) return '<span class="tag warn">✅ + ?</span>';
+    if (a.is_correct) return '<span class="tag ok">✅ Correcta</span>';
+    if (a.was_uncertain) return '<span class="tag bad">❌ + ?</span>';
+    return '<span class="tag bad">❌ Incorrecta</span>';
+  }
+
+  function renderAttemptHistoryRow(a, q) {
+    const source = q ? questionSourceLabel(q) : a.question_id;
+    const target = Number(a.target_seconds || profile?.target_response_seconds || 25);
+    const time = Number(a.response_time_ms || 0);
+    return `<article class="history-attempt-row">
+      <div class="history-attempt-time"><strong>${formatClock(a.answered_at)}</strong><small>${time?`${(time/1000).toFixed(time<10000?1:0)} s / ${target} s`:'sin tiempo'}</small></div>
+      <div class="history-attempt-main">
+        <div class="history-attempt-tags">${attemptStatusMarkup(a)}<span class="tag">${esc(studyModeLabel(a.study_mode))}</span></div>
+        <strong>${esc(source)}</strong>
+        <p>${esc(q?.topic || 'Pregunta no disponible')} · ${esc(q?.area || '')}</p>
+        <small>Marcaste: ${esc(a.selected_answer || '—')} · Clave oficial: ${esc(q?.official_answer || '—')}</small>
+      </div>
+      <button class="btn small" data-history-attempt="${esc(a.id)}">Revisar</button>
+    </article>`;
+  }
+
+  function openHistoryAttempt(attemptId, returnDate) {
+    const attempt = attempts.find(a => String(a.id) === String(attemptId));
+    if (!attempt) return renderMessage('Historial', 'No se encontró ese intento.');
+    const q = questions.find(x => x.id === attempt.question_id);
+    if (!q) return renderMessage('Historial', 'La pregunta vinculada a ese intento no está disponible en el corpus cargado.');
+    const didNotKnow = String(attempt.uncertainty_note || '').includes('NO_SE_EXPLICITO');
+    const scratch = {};
+    const uncertainOptions = Array.isArray(attempt.uncertain_options) ? attempt.uncertain_options : [];
+    if (uncertainOptions.length) {
+      scratch[q.id] = Object.fromEntries(uncertainOptions.map(letter => [letter, 'tentative']));
+    }
+    reviewContext = {
+      type:'history',
+      questions:[q],
+      index:0,
+      responses:{ [q.id]: { selected:attempt.selected_answer || null, timedOut:Boolean(attempt.timed_out), didNotKnow } },
+      scratch,
+      optionOrders:{},
+      shuffleOptions:false,
+      attemptsByQuestion:{ [q.id]:attempt },
+      returnDate:returnDate || isoDateLocal(attempt.answered_at),
+    };
+    renderReviewQuestion();
+  }
+
+  function renderHistory(selectedDate = isoDateLocal()) {
+    clearTimer();
+    const dateIso = /^\d{4}-\d{2}-\d{2}$/.test(String(selectedDate)) ? String(selectedDate) : isoDateLocal();
+    const qById = new Map(questions.map(q => [q.id, q]));
+    const dayAttempts = attempts
+      .filter(a => isoDateLocal(a.answered_at) === dateIso)
+      .sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at));
+    const morning = dayAttempts.filter(a => halfDayKey(a) === 'morning');
+    const afternoon = dayAttempts.filter(a => halfDayKey(a) === 'afternoon');
+    const daySummary = summarizeAttemptList(dayAttempts);
+    const today = isoDateLocal();
+    const recentDates = Array.from({length:14}, (_,i) => shiftLocalDate(today, -i));
+
+    app.innerHTML = `<main class="shell">${topbar('Historial y ritmo', true)}
+      <section class="panel history-date-panel">
+        <div><h2>${esc(formatHistoryDate(dateIso))}</h2><p class="muted">Seguimiento basado en los intentos guardados. Las pausas muestran intervalos entre respuestas; no distinguen una distracción de un descanso planificado.</p></div>
+        <div class="history-date-controls">
+          <button id="history-prev-day" class="btn small ghost" type="button">← Día anterior</button>
+          <input id="history-date" class="input history-date-input" type="date" value="${esc(dateIso)}" max="${esc(today)}">
+          <button id="history-next-day" class="btn small ghost" type="button" ${dateIso>=today?'disabled':''}>Día siguiente →</button>
+        </div>
+      </section>
+
+      <section class="kpis history-kpis">
+        <div class="kpi"><div class="value">${daySummary.total}</div><div class="label">Preguntas</div></div>
+        <div class="kpi"><div class="value">${pct(daySummary.correct,daySummary.total)}</div><div class="label">Acierto</div></div>
+        <div class="kpi"><div class="value">${daySummary.avgMs?`${(daySummary.avgMs/1000).toFixed(1)} s`:'—'}</div><div class="label">Tiempo medio</div></div>
+        <div class="kpi"><div class="value">${daySummary.uncertain}</div><div class="label">Con duda</div></div>
+        <div class="kpi"><div class="value">${daySummary.timedOut}</div><div class="label">Tiempo agotado</div></div>
+      </section>
+
+      <section class="history-half-grid">
+        ${halfDayReportMarkup('Informe de la mañana', '00:00–12:59', morning)}
+        ${halfDayReportMarkup('Informe de la tarde/noche', '13:00–23:59', afternoon)}
+      </section>
+
+      <section class="panel history-list-panel">
+        <div class="section-head"><div><h2>Intentos del día</h2><p class="muted">Abre cualquiera para volver a ver la pregunta, tu respuesta y la explicación completa.</p></div></div>
+        <div class="history-attempt-list">${dayAttempts.length
+          ? dayAttempts.map(a => renderAttemptHistoryRow(a, qById.get(a.question_id))).join('')
+          : '<div class="empty">No hay intentos registrados en esta fecha.</div>'}</div>
+      </section>
+
+      <section class="panel history-days-panel">
+        <h2>Últimos 14 días</h2>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Fecha</th><th class="num">Mañana</th><th class="num">Tarde</th><th class="num">Total</th><th class="num">Acierto</th><th></th></tr></thead>
+          <tbody>${recentDates.map(date => {
+            const list = attempts.filter(a => isoDateLocal(a.answered_at) === date);
+            const summary = summarizeAttemptList(list);
+            const am = list.filter(a => halfDayKey(a)==='morning').length;
+            const pm = list.length-am;
+            return `<tr><td>${esc(parseLocalDate(date).toLocaleDateString('es-PE',{day:'2-digit',month:'2-digit'}))}</td><td class="num">${am}</td><td class="num">${pm}</td><td class="num">${summary.total}</td><td class="num">${pct(summary.correct,summary.total)}</td><td><button class="btn small ghost" data-history-date="${esc(date)}">Ver</button></td></tr>`;
+          }).join('')}</tbody>
+        </table></div>
+      </section>
+    </main>`;
+
+    attachTopbar();
+    document.getElementById('history-prev-day').onclick = () => renderHistory(shiftLocalDate(dateIso,-1));
+    document.getElementById('history-next-day').onclick = () => renderHistory(shiftLocalDate(dateIso,1));
+    document.getElementById('history-date').onchange = ev => renderHistory(ev.target.value);
+    document.querySelectorAll('[data-history-date]').forEach(btn => btn.onclick = () => renderHistory(btn.dataset.historyDate));
+    document.querySelectorAll('[data-history-attempt]').forEach(btn => btn.onclick = () => openHistoryAttempt(btn.dataset.historyAttempt,dateIso));
+  }
+
   function renderStats() {
     clearTimer();
     const byArea = new Map();
@@ -3357,7 +3598,7 @@
           <h2>Informe dinámico de debilidades</h2>
           <p class="muted">Convierte errores, dudas ?, lentitud y repasos vencidos en una lista de temas priorizados que puedes copiar y pegar directamente en el chat.</p>
         </div>
-        <button id="stats-weakness-report" class="btn primary">Ver informe</button>
+        <div class="stats-link-actions"><button id="stats-weakness-report" class="btn primary">Ver informe</button><button id="stats-history" class="btn">🕘 Historial y ritmo</button></div>
       </section>
 
       <section class="kpis">
@@ -3388,6 +3629,7 @@
 
     attachTopbar();
     document.getElementById('stats-weakness-report').onclick = renderWeaknessReport;
+    document.getElementById('stats-history').onclick = () => renderHistory();
   }
 
   init();
