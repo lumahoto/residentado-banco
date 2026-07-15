@@ -143,17 +143,38 @@
     return 0.90;
   }
 
-  function effectiveTargetSeconds(q) {
-    const base = Number(profile?.target_response_seconds || 25);
-    const len = String(q?.question || '').length;
-    const readingFactor = clamp(Math.sqrt(Math.max(80, len) / 260), 0.85, 1.35);
-    return base * readingFactor;
+  function questionReadingLoad(q) {
+    return String(q?.question || '').length
+      + optionList(q).reduce((sum, o) => sum + String(o?.text || '').length, 0);
   }
 
-  function speedBucket(q, responseMs, correct, timedOut = false) {
+  function effectiveTargetSeconds(q, baseOverride = null) {
+    const base = Number(baseOverride || profile?.target_response_seconds || 25);
+    const load = questionReadingLoad(q);
+    const fullText = `${q?.question || ''} ${optionList(q).map(o => o.text || '').join(' ')}`;
+    const numericTokens = fullText.match(/\b\d+(?:[.,]\d+)?\b/g) || [];
+    const complexCue = /(calcula|calcule|cálculo|ecuación|fórmula|riesgo relativo|odds ratio|depuración|clearance|score|puntaje|dosis|mg\/?kg|ml\/?kg|mEq|clasificación|estadio|grado|criterios de ranson|glasgow)/i.test(fullText);
+
+    // Objetivo adaptable: las preguntas directas deben resolverse más rápido y
+    // las largas reciben margen adicional. Con una base de 25 s, los escalones
+    // habituales son 15 / 20 / 25 / 30 / 35 s.
+    let factor = load <= 170 ? 0.60
+      : load <= 260 ? 0.80
+      : load <= 380 ? 1.00
+      : load <= 520 ? 1.20
+      : 1.40;
+
+    // Guardia de complejidad: una pregunta corta que exige cálculo, puntuación,
+    // dosis o clasificación no recibe un objetivo agresivo de 15–20 s.
+    if (factor < 1 && (complexCue || numericTokens.length >= 4)) factor = 1.00;
+
+    return Math.round(clamp(base * factor, 8, 60));
+  }
+
+  function speedBucket(q, responseMs, correct, timedOut = false, targetOverride = null) {
     if (timedOut) return 'timed_out';
     const sec = Number(responseMs || 0) / 1000;
-    const target = Number(profile?.target_response_seconds || 25);
+    const target = Number(targetOverride || effectiveTargetSeconds(q));
     if (!correct && sec <= target) return 'wrong_fast';
     if (!correct) return 'incorrect';
     if (sec <= target) return 'fluent';
@@ -161,10 +182,10 @@
     return 'very_slow_correct';
   }
 
-  function memoryRating(q, responseMs, correct, timedOut = false) {
+  function memoryRating(q, responseMs, correct, timedOut = false, targetOverride = null) {
     if (!correct || timedOut) return 1;
     const sec = Number(responseMs || 0) / 1000;
-    const target = Number(profile?.target_response_seconds || 25);
+    const target = Number(targetOverride || effectiveTargetSeconds(q));
     if (sec <= target) return 4;
     if (sec <= target * 1.6) return 3;
     return 2;
@@ -265,8 +286,8 @@
       for (const a of list) {
         const normalized = {
           ...a,
-          memory_rating: a.memory_rating || memoryRating(q, a.response_time_ms, a.is_correct, a.timed_out),
-          speed_bucket: a.speed_bucket || speedBucket(q, a.response_time_ms, a.is_correct, a.timed_out),
+          memory_rating: a.memory_rating || memoryRating(q, a.response_time_ms, a.is_correct, a.timed_out, a.target_seconds),
+          speed_bucket: a.speed_bucket || speedBucket(q, a.response_time_ms, a.is_correct, a.timed_out, a.target_seconds),
         };
         state = evolveMemory(state, normalized, q);
       }
@@ -624,7 +645,8 @@
     const correct = qa.filter(a => a.is_correct).length;
     const wrong = qa.length - correct;
     const avgMs = positive.length ? positive.reduce((s,v)=>s+v,0)/positive.length : null;
-    const fluent = qa.filter(a => a.is_correct && Number(a.response_time_ms || 0) <= Number(profile?.target_response_seconds || 25)*1000).length;
+    const targetMs = effectiveTargetSeconds(q) * 1000;
+    const fluent = qa.filter(a => a.is_correct && Number(a.response_time_ms || 0) <= Number(a.target_seconds || targetMs / 1000) * 1000).length;
     return { seen:qa.length, correct, wrong, avgMs, fluent };
   }
 
@@ -651,7 +673,8 @@
       ? Math.max(0, retention - recall) * 8 + Math.max(0, (now - new Date(state.due_at)) / 86400000) * 0.35
       : 2.2;
     const weakness = s.seen ? (s.wrong / s.seen) * 3.2 : 1.4;
-    const speed = s.avgMs ? Math.max(0, (s.avgMs / 1000 - Number(profile?.target_response_seconds || 25)) / 15) : 0.8;
+    const targetSeconds = effectiveTargetSeconds(q);
+    const speed = s.avgMs ? Math.max(0, (s.avgMs / 1000 - targetSeconds) / 15) : 0.8;
     const rent = rentabilityWeight(q) * 2.6;
     const unseen = s.seen ? 0 : 1.2;
     const wrongFast = qAttempts.some(a => a.speed_bucket === 'wrong_fast') ? 1.2 : 0;
@@ -698,7 +721,7 @@
     if (kind === 'speed') {
       return nonObserved.filter(q => {
         const s = extendedQuestionStats(q);
-        return s.seen && (s.avgMs || 0) > Number(profile?.target_response_seconds || 25)*1000;
+        return s.seen && (s.avgMs || 0) > effectiveTargetSeconds(q) * 1000;
       }).sort((a,b) => (extendedQuestionStats(b).avgMs||0) - (extendedQuestionStats(a).avgMs||0));
     }
     if (kind === 'high') {
@@ -1636,7 +1659,7 @@
 
             <fieldset><legend>Cantidad</legend>
               <label>Número de preguntas<input id="question-count" class="input" type="number" min="1" max="2000" value="${isExam ? 80 : 15}" required></label>
-              <label><input id="randomize" type="checkbox" checked> Orden aleatorio</label>
+              <label class="inline-check"><input id="randomize" type="checkbox" checked> <span>Orden aleatorio</span></label>
             </fieldset>
 
             <fieldset><legend>Áreas</legend><div class="check-list" id="areas-list">${areas.map(a => `<label><input type="checkbox" name="area" value="${esc(a)}" checked> ${esc(a)}</label>`).join('')}</div></fieldset>
@@ -1803,19 +1826,25 @@
     currentStudy.scratch ||= {};
     const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
     const opts = optionList(q);
+    const baseTargetSeconds = Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25);
+    const adaptiveTargetSeconds = effectiveTargetSeconds(q, baseTargetSeconds);
     const timerHtml = currentStudy.config.timeMode === 'per_question'
-      ? `<div id="timer" class="timer">${formatTime(currentStudy.config.secondsPerQuestion)}</div>`
+      ? `<div id="timer" class="timer">${formatTime(adaptiveTargetSeconds)}</div>`
       : currentStudy.config.timeMode === 'total'
         ? `<div id="timer" class="timer">${formatTime(currentStudy.totalRemaining)}</div>` : '';
+    const targetTag = currentStudy.config.timeMode === 'none'
+      ? `<span class="tag target-tag">🎯 ${adaptiveTargetSeconds} s objetivo</span>`
+      : '';
 
     app.innerHTML = `<main class="shell">
       ${topbar(currentStudy.config.title, false)}
       <section class="panel question-card">
         <div class="progress"><div style="width:${(currentStudy.index/currentStudy.questions.length)*100}%"></div></div>
-        <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${timerHtml}</div>
+        <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${targetTag}${timerHtml}</div>
         <div class="q-body"><p class="q-text">${esc(q.question)}</p>
           <div class="uncertainty-hint">Marca <strong>?</strong> en cualquier alternativa que no domines del todo. No cambia tu respuesta; sí hace que el concepto vuelva antes al repaso.</div>
           <div class="options">${opts.map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.letter))).join('')}</div>
+          ${currentStudy.config.timeMode === 'none' ? `<div class="dont-know-row"><button id="dont-know-study" class="btn ghost dont-know-btn" type="button">🤷 No sé · mostrar respuesta</button><span class="muted">Cuenta como respuesta incorrecta explícita; no como pregunta en blanco.</span></div>` : ''}
         </div>
         <div id="feedback"></div>
       </section>
@@ -1824,6 +1853,8 @@
     attachTopbar();
 
     document.querySelectorAll('.option').forEach(btn => btn.onclick = () => handleStudyAnswer(btn.dataset.letter));
+    const dontKnowBtn = document.getElementById('dont-know-study');
+    if (dontKnowBtn) dontKnowBtn.onclick = handleStudyDontKnow;
     document.querySelectorAll('[data-uncertain-letter]').forEach(btn => {
       btn.onclick = (ev) => {
         ev.stopPropagation();
@@ -1849,7 +1880,9 @@
 
   function startStudyTimer() {
     if (currentStudy.config.timeMode === 'per_question') {
-      let remaining = currentStudy.config.secondsPerQuestion;
+      const q = studyCurrentQuestion();
+      const baseTargetSeconds = Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25);
+      let remaining = effectiveTargetSeconds(q, baseTargetSeconds);
       updateTimer(remaining);
       timerId = setInterval(() => {
         remaining--;
@@ -1901,7 +1934,10 @@
       const savedAttempt = await recordSingleAttempt(
         q, letter, isCorrect, currentStudy.durations[q.id] || 0,
         currentStudy.config.studyMode || 'custom_study', false,
-        { uncertainOptions }
+        {
+          uncertainOptions,
+          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
+        }
       );
       disableOptionsAndPaint(q, letter);
       document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
@@ -1911,10 +1947,53 @@
       }, false, false, uncertainOptions, {
         attemptId: savedAttempt?.id || null,
         responseTimeMs: currentStudy.durations[q.id] || 0,
+        targetSeconds: Number(savedAttempt?.target_seconds || effectiveTargetSeconds(q, currentStudy.config.secondsPerQuestion)),
         wasUncertainAtAnswer: Boolean(savedAttempt?.was_uncertain),
       });
     } else {
       document.querySelectorAll('.option').forEach(btn => btn.classList.toggle('selected', btn.dataset.letter === letter));
+    }
+  }
+
+  async function handleStudyDontKnow() {
+    const q = studyCurrentQuestion();
+    if (!q || !currentStudy || currentStudy.config.timeMode !== 'none') return;
+
+    saveStudyDuration();
+    currentStudy.responses[q.id] = { selected: null, didNotKnow: true };
+
+    if (currentStudy.config.feedback === 'immediate') {
+      clearTimer();
+      const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
+      const savedAttempt = await recordSingleAttempt(
+        q, null, false, currentStudy.durations[q.id] || 0,
+        currentStudy.config.studyMode || 'custom_study', false,
+        {
+          uncertainOptions,
+          dontKnow: true,
+          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
+        }
+      );
+      disableOptionsAndPaint(q, null);
+      document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
+      const dontKnowBtn = document.getElementById('dont-know-study');
+      if (dontKnowBtn) dontKnowBtn.disabled = true;
+      renderFeedback(
+        q, null, false,
+        () => { currentStudy.index++; renderStudyQuestion(); },
+        false, false, uncertainOptions,
+        {
+          attemptId: savedAttempt?.id || null,
+          responseTimeMs: currentStudy.durations[q.id] || 0,
+          targetSeconds: Number(savedAttempt?.target_seconds || effectiveTargetSeconds(q, currentStudy.config.secondsPerQuestion)),
+          wasUncertainAtAnswer: Boolean(savedAttempt?.was_uncertain),
+          didNotKnow: true,
+        }
+      );
+    } else {
+      currentStudy.index++;
+      if (currentStudy.index >= currentStudy.questions.length) finishStudy();
+      else renderStudyQuestion();
     }
   }
 
@@ -1927,7 +2006,10 @@
       recordSingleAttempt(
         q, null, false, currentStudy.durations[q.id] || 0,
         currentStudy.config.studyMode || 'custom_study', true,
-        { uncertainOptions }
+        {
+          uncertainOptions,
+          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
+        }
       ).then((savedAttempt) => {
         disableOptionsAndPaint(q, null);
         document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
@@ -1938,6 +2020,7 @@
           {
             attemptId: savedAttempt?.id || null,
             responseTimeMs: currentStudy.durations[q.id] || 0,
+            targetSeconds: Number(savedAttempt?.target_seconds || effectiveTargetSeconds(q, currentStudy.config.secondsPerQuestion)),
             wasUncertainAtAnswer: Boolean(savedAttempt?.was_uncertain),
           }
         );
@@ -1958,23 +2041,29 @@
       // En sesiones con corrección al final, las preguntas en blanco forman parte
       // del resultado de la sesión, pero no se guardan como intentos de aprendizaje.
       const payload = currentStudy.questions
-        .filter(q => currentStudy.responses[q.id]?.selected != null)
+        .filter(q => currentStudy.responses[q.id]?.selected != null || currentStudy.responses[q.id]?.didNotKnow)
         .map(q => {
           const selected = currentStudy.responses[q.id].selected;
+          const didNotKnow = Boolean(currentStudy.responses[q.id]?.didNotKnow);
           const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
           return makeAttempt(
-            q, selected, selected === q.official_answer,
+            q, selected, !didNotKnow && selected === q.official_answer,
             currentStudy.durations[q.id] || 0,
             currentStudy.config.studyMode || 'custom_study_end', false,
-            { uncertainOptions }
+            {
+              uncertainOptions,
+              dontKnow: didNotKnow,
+              baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
+            }
           );
         });
       await recordAttemptsBatch(payload);
     }
 
     const result = currentStudy.questions.map(q => {
-      const selected = currentStudy.responses[q.id]?.selected ?? null;
-      return { q, selected, correct: selected === q.official_answer };
+      const response = currentStudy.responses[q.id] || {};
+      const selected = response.selected ?? null;
+      return { q, selected, didNotKnow:Boolean(response.didNotKnow), correct: !response.didNotKnow && selected === q.official_answer };
     });
     const correct = result.filter(r => r.correct).length;
     const uncertainCount = currentStudy.questions.filter(q => uncertaintyOptionsFor(currentStudy.scratch, q.id).length > 0).length;
@@ -2308,21 +2397,25 @@
     clearTimer();
     scrollPageTop();
     const q = reviewContext.questions[reviewContext.index];
-    const selected = reviewContext.responses[q.id]?.selected ?? reviewContext.responses[q.id] ?? null;
-    const correct = selected === q.official_answer;
+    const responseValue = reviewContext.responses[q.id];
+    const selected = responseValue?.selected ?? responseValue ?? null;
+    const didNotKnow = Boolean(responseValue?.didNotKnow);
+    const correct = !didNotKnow && selected === q.official_answer;
     const uncertainOptions = Object.entries(reviewContext.scratch?.[q.id] || {})
       .filter(([,state]) => state === 'tentative')
       .map(([letter]) => letter);
-    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${optionList(q).map(o => `<div class="option ${o.letter===q.official_answer?'correct':o.letter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${reviewContext.index===0?'disabled':''}>← Anterior</button><button id="next-review" class="btn primary">${reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →'}</button></div></main>`;
+    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${optionList(q).map(o => `<div class="option ${o.letter===q.official_answer?'correct':o.letter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${reviewContext.index===0?'disabled':''}>← Anterior</button><button id="next-review" class="btn primary">${reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →'}</button></div></main>`;
     attachTopbar();
     const latestAttempt = attemptsForQuestion(q.id)
       .slice()
       .sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0] || null;
-    renderFeedback(q, selected, correct, null, selected == null, true, uncertainOptions, {
+    renderFeedback(q, selected, correct, null, selected == null && !didNotKnow, true, uncertainOptions, {
       attemptId: latestAttempt?.id || null,
       responseTimeMs: Number(latestAttempt?.response_time_ms || 0),
+      targetSeconds: Number(latestAttempt?.target_seconds || effectiveTargetSeconds(q)),
       wasUncertainAtAnswer: Boolean(latestAttempt?.was_uncertain),
-      allowPostMark: true,
+      allowPostMark: !didNotKnow,
+      didNotKnow,
     });
     document.getElementById('prev-review').onclick = () => { reviewContext.index--; renderReviewQuestion(); };
     document.getElementById('next-review').onclick = () => {
@@ -2393,7 +2486,7 @@
   function renderFeedback(q, selected, isCorrect, onNext, timedOut = false, reviewOnly = false, uncertainOptions = [], feedbackMeta = {}) {
     const target = document.getElementById('feedback');
     if (!target) return;
-    const targetSeconds = Number(profile?.target_response_seconds || 25);
+    const targetSeconds = Number(feedbackMeta.targetSeconds || effectiveTargetSeconds(q));
     const responseTimeMs = Number(feedbackMeta.responseTimeMs || 0);
     const responseSeconds = responseTimeMs > 0 ? responseTimeMs / 1000 : null;
     const timeState = responseSeconds == null
@@ -2414,7 +2507,7 @@
     }).join('');
 
     target.innerHTML = `<div class="feedback">
-      <h3>${timedOut ? '⏱ Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
+      <h3>${feedbackMeta.didNotKnow ? '🤷 No sabía' : timedOut ? '⏱ Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
       ${selected ? `<p>Tu respuesta: <strong>${esc(selected)}. ${esc(q[`option_${selected.toLowerCase()}`])}</strong></p>` : ''}
       <p class="answer-line">Clave oficial: ${esc(q.official_answer)}. ${esc(q.official_answer_text)}</p>
       ${responseSeconds != null ? `<div class="feedback-time ${timeState}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
@@ -2469,15 +2562,16 @@
   }
 
   function makeAttempt(q, selected, isCorrect, responseTimeMs, studyMode, timedOut, meta = {}) {
-    const target = Number(profile?.target_response_seconds || 25);
-    const normalizedTarget = effectiveTargetSeconds(q);
+    const baseTarget = Number(meta.baseTargetSeconds || profile?.target_response_seconds || 25);
+    const normalizedTarget = effectiveTargetSeconds(q, baseTarget);
     const state = memoryByQuestion.get(q.id);
     const answeredAt = new Date().toISOString();
     const uncertainOptions = [...new Set((meta.uncertainOptions || []).filter(x => ['A','B','C','D','E'].includes(x)))];
     const wasUncertain = uncertainOptions.length > 0;
-    const baseMemoryRating = memoryRating(q, responseTimeMs, isCorrect, timedOut);
+    const didNotKnow = Boolean(meta.dontKnow);
+    const baseMemoryRating = memoryRating(q, responseTimeMs, isCorrect, timedOut, normalizedTarget);
     const adjustedMemoryRating = wasUncertain && isCorrect ? Math.min(baseMemoryRating, 2) : baseMemoryRating;
-    const baseSpeedBucket = speedBucket(q, responseTimeMs, isCorrect, timedOut);
+    const baseSpeedBucket = didNotKnow ? 'dont_know' : speedBucket(q, responseTimeMs, isCorrect, timedOut, normalizedTarget);
     return {
       question_id: q.id,
       selected_answer: selected,
@@ -2489,9 +2583,13 @@
       speed_bucket: wasUncertain ? (isCorrect ? 'uncertain_correct' : 'uncertain_incorrect') : baseSpeedBucket,
       was_uncertain: wasUncertain,
       uncertain_options: uncertainOptions,
-      uncertainty_note: wasUncertain ? `Alternativas marcadas con ?: ${uncertainOptions.join(', ')}` : null,
+      uncertainty_note: didNotKnow
+        ? 'NO_SE_EXPLICITO'
+        : wasUncertain
+          ? `Alternativas marcadas con ?: ${uncertainOptions.join(', ')}`
+          : null,
       normalized_speed: Number(((Number(responseTimeMs||0)/1000) / Math.max(1, normalizedTarget)).toFixed(4)),
-      target_seconds: target,
+      target_seconds: normalizedTarget,
       was_due: Boolean(state && new Date(state.due_at) <= new Date(answeredAt)),
       answered_at: answeredAt,
     };
@@ -2523,8 +2621,8 @@
     for (const a of list) {
       const normalized = {
         ...a,
-        memory_rating: a.memory_rating || memoryRating(q, a.response_time_ms, a.is_correct, a.timed_out),
-        speed_bucket: a.speed_bucket || speedBucket(q, a.response_time_ms, a.is_correct, a.timed_out),
+        memory_rating: a.memory_rating || memoryRating(q, a.response_time_ms, a.is_correct, a.timed_out, a.target_seconds),
+        speed_bucket: a.speed_bucket || speedBucket(q, a.response_time_ms, a.is_correct, a.timed_out, a.target_seconds),
       };
       state = evolveMemory(state, normalized, q);
     }

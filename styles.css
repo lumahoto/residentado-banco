@@ -1030,3 +1030,36 @@ details.explain-block summary { cursor: pointer; }
     width: 100%;
   }
 }
+
+
+/* ===== v0.6.6: práctica más honesta, objetivos adaptativos y ajuste visual ===== */
+.builder label.inline-check {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  margin: 12px 0 2px;
+  color: var(--text);
+}
+.builder label.inline-check input {
+  margin: 0;
+  flex: 0 0 auto;
+}
+.builder label.inline-check span {
+  line-height: 1.2;
+}
+.target-tag {
+  white-space: nowrap;
+}
+.dont-know-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--border);
+}
+.dont-know-btn {
+  border-style: dashed;
+}
