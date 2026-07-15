@@ -808,3 +808,118 @@ details.explain-block summary { cursor: pointer; }
   .paper-flag { margin-left: 0; }
   .paper-question-head { flex-wrap: wrap; }
 }
+
+
+/* ===== v0.6.3 · Incertidumbre universal (?) ===== */
+.uncertainty-hint {
+  margin: 0 0 12px;
+  padding: 9px 11px;
+  border: 1px dashed color-mix(in srgb, var(--warn) 42%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn-bg) 50%, transparent);
+  color: var(--muted);
+  font-size: .86rem;
+  line-height: 1.4;
+}
+.option-with-uncertainty {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 8px;
+  align-items: stretch;
+}
+.option-with-uncertainty .option {
+  width: 100%;
+}
+.uncertainty-toggle {
+  width: 42px;
+  min-height: 42px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 1.05rem;
+  font-weight: 950;
+  cursor: pointer;
+}
+.uncertainty-toggle:hover:not(:disabled) {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.uncertainty-toggle.active {
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 22%, transparent);
+}
+.uncertainty-toggle:disabled {
+  cursor: default;
+  opacity: .72;
+}
+@media (max-width: 520px) {
+  .option-with-uncertainty {
+    grid-template-columns: minmax(0, 1fr) 38px;
+    gap: 6px;
+  }
+  .uncertainty-toggle {
+    width: 38px;
+    min-height: 38px;
+  }
+}
+
+
+/* ===== v0.6.4 · Informe dinámico de debilidades ===== */
+.weakness-report-hero,
+.stats-report-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+.weakness-report-hero h1 { margin: 4px 0 8px; }
+.weakness-table td { vertical-align: middle; }
+.weakness-table td:first-child { min-width: 110px; }
+.weakness-table td:nth-child(2) { min-width: 210px; }
+.weakness-table td small,
+.weakness-score {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+}
+.coverage-gap-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0,1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.coverage-gap-card {
+  border: 1px solid var(--border);
+  background: var(--panel-2);
+  border-radius: 13px;
+  padding: 12px;
+  display: grid;
+  gap: 6px;
+}
+.coverage-gap-card span,
+.coverage-gap-card small { color: var(--muted); }
+.coverage-gap-card .progress {
+  height: 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 55%, transparent);
+  overflow: hidden;
+}
+.coverage-gap-card .progress > div {
+  height: 100%;
+  background: var(--brand);
+  border-radius: inherit;
+}
+@media (max-width: 900px) {
+  .weakness-report-hero,
+  .stats-report-link {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .coverage-gap-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 560px) {
+  .coverage-gap-grid { grid-template-columns: 1fr; }
+}

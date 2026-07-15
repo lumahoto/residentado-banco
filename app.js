@@ -182,8 +182,11 @@
     let lapses = Number(prev?.lapses || 0);
 
     if (rating === 1) {
-      stability = oldS > 0 ? Math.max(0.25, oldS * 0.35) : 0.25;
-      difficulty = clamp(oldD + 0.8, 1, 10);
+      const wrongAndUncertain = Boolean(attempt.was_uncertain) && !attempt.is_correct;
+      stability = oldS > 0
+        ? Math.max(0.18, oldS * (wrongAndUncertain ? 0.25 : 0.35))
+        : (wrongAndUncertain ? 0.18 : 0.25);
+      difficulty = clamp(oldD + (wrongAndUncertain ? 1.1 : 0.8), 1, 10);
       consecutive = 0;
       lapses += 1;
     } else {
@@ -201,7 +204,10 @@
 
     const retention = targetRetention(isoDateLocal(now));
     let intervalDays = stability * (Math.log(retention) / Math.log(0.9));
-    if (rating === 1) intervalDays = Math.min(intervalDays, 0.25);
+    if (rating === 1) {
+      const wrongAndUncertain = Boolean(attempt.was_uncertain) && !attempt.is_correct;
+      intervalDays = Math.min(intervalDays, wrongAndUncertain ? 0.12 : 0.25);
+    }
     intervalDays = clamp(intervalDays, 0.08, 180);
     const due = new Date(now.getTime() + intervalDays * 86400000);
 
@@ -490,9 +496,12 @@
     const rent = rentabilityWeight(q) * 2.6;
     const unseen = s.seen ? 0 : 1.2;
     const wrongFast = qAttempts.some(a => a.speed_bucket === 'wrong_fast') ? 1.2 : 0;
-    const uncertainty = latestAttempt?.was_uncertain ? 1.4 : 0;
+    const uncertainty = latestAttempt?.was_uncertain
+      ? (latestAttempt.is_correct ? 1.4 : 2.6)
+      : 0;
+    const wrongUncertainBoost = latestAttempt?.was_uncertain && !latestAttempt?.is_correct ? 1.4 : 0;
     const observedPenalty = observed(q) ? -2.5 : 0;
-    return duePressure + weakness + speed + rent + unseen + wrongFast + uncertainty + observedPenalty;
+    return duePressure + weakness + speed + rent + unseen + wrongFast + uncertainty + wrongUncertainBoost + observedPenalty;
   }
 
   function smartPool(kind = 'priority') {
@@ -530,6 +539,290 @@
       return (high.length ? high : nonObserved).sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
     }
     return nonObserved.sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+  }
+
+
+  function weaknessReportData() {
+    const now = new Date();
+    const groups = new Map();
+    const validQuestions = questions.filter(q => !observed(q));
+
+    for (const q of validQuestions) {
+      const area = q.area || 'Sin área';
+      const specialty = q.specialty || 'Sin especialidad';
+      const topic = q.topic || q.subtopic || 'Sin clasificar';
+      const key = `${area}|||${specialty}|||${topic}`;
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key, area, specialty, topic,
+          totalQuestions:0, seenQuestions:0, attempts:0,
+          latestWrong:0, latestUncertain:0, latestWrongUncertain:0,
+          latestSlow:0, dueQuestions:0, allAttempts:[], questionIds:[],
+        });
+      }
+
+      const g = groups.get(key);
+      g.totalQuestions += 1;
+      g.questionIds.push(q.id);
+
+      const qa = attemptsForQuestion(q.id)
+        .slice()
+        .sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at));
+
+      if (!qa.length) continue;
+
+      g.seenQuestions += 1;
+      g.attempts += qa.length;
+      g.allAttempts.push(...qa);
+
+      const latest = qa[0];
+      if (!latest.is_correct) g.latestWrong += 1;
+      if (latest.was_uncertain) g.latestUncertain += 1;
+      if (latest.was_uncertain && !latest.is_correct) g.latestWrongUncertain += 1;
+
+      const targetMs = effectiveTargetSeconds(q) * 1000;
+      if (Number(latest.response_time_ms || 0) > targetMs) g.latestSlow += 1;
+
+      const state = memoryByQuestion.get(q.id);
+      if (state?.due_at && new Date(state.due_at) <= now) g.dueQuestions += 1;
+    }
+
+    return [...groups.values()].map(g => {
+      const seen = Math.max(1, g.seenQuestions);
+      const latestWrongRate = g.latestWrong / seen;
+      const latestUncertaintyRate = g.latestUncertain / seen;
+      const latestWrongUncertainRate = g.latestWrongUncertain / seen;
+      const latestSlowRate = g.latestSlow / seen;
+      const dueRate = g.dueQuestions / seen;
+
+      const recent = g.allAttempts
+        .slice()
+        .sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))
+        .slice(0, 10);
+
+      const recentErrorRate = recent.length
+        ? recent.filter(a => !a.is_correct).length / recent.length
+        : 0;
+
+      const score = g.seenQuestions
+        ? Math.round(100 * clamp(
+            0.35 * latestWrongRate +
+            0.20 * latestUncertaintyRate +
+            0.15 * latestWrongUncertainRate +
+            0.10 * latestSlowRate +
+            0.10 * recentErrorRate +
+            0.10 * dueRate,
+            0, 1
+          ))
+        : 0;
+
+      const evidence =
+        (g.seenQuestions >= 10 || g.attempts >= 20) ? 'Alta' :
+        (g.seenQuestions >= 5 || g.attempts >= 8) ? 'Media' : 'Baja';
+
+      const level =
+        score >= 60 ? 'Crítica' :
+        score >= 45 ? 'Alta' :
+        score >= 30 ? 'Moderada' :
+        score >= 15 ? 'Vigilancia' : 'Controlada';
+
+      return {
+        ...g,
+        score,
+        evidence,
+        level,
+        latestAccuracy: 1 - latestWrongRate,
+        latestUncertaintyRate,
+        latestWrongUncertainRate,
+        latestSlowRate,
+        dueRate,
+        recentErrorRate,
+        coverage: g.totalQuestions ? g.seenQuestions / g.totalQuestions : 0,
+      };
+    }).sort((a,b) =>
+      b.score - a.score ||
+      b.latestWrongUncertainRate - a.latestWrongUncertainRate ||
+      b.attempts - a.attempts
+    );
+  }
+
+  function weaknessLevelClass(level) {
+    if (level === 'Crítica' || level === 'Alta') return 'bad';
+    if (level === 'Moderada') return 'warn';
+    return 'ok';
+  }
+
+  function weaknessReportText(report) {
+    const generated = new Date().toLocaleString();
+    const top = report.filter(x => x.seenQuestions > 0).slice(0, 20);
+    const lowCoverage = report
+      .filter(x => x.totalQuestions >= 3 && x.coverage < 0.35)
+      .sort((a,b) => a.coverage - b.coverage || b.totalQuestions - a.totalQuestions)
+      .slice(0, 10);
+
+    const lines = [
+      'INFORME DINÁMICO DE DEBILIDADES — RESIDENTADO',
+      `Generado: ${generated}`,
+      `Banco cargado: ${questions.length} preguntas`,
+      `Intentos acumulados: ${attempts.length}`,
+      '',
+      'Nota: la prioridad es un indicador adaptativo heurístico, no una predicción de puntaje.',
+      'Se recalcula con respuestas más recientes, dudas (?), error+duda, lentitud, errores recientes y repasos vencidos.',
+      '',
+      'TOP DEBILIDADES ACTUALES',
+    ];
+
+    if (!top.length) lines.push('Aún no hay suficientes respuestas para identificar debilidades.');
+
+    top.forEach((x, i) => {
+      lines.push(
+        `${i+1}. ${x.topic} — ${x.level} (${x.score}/100, evidencia ${x.evidence})`,
+        `   Área: ${x.area} | Especialidad: ${x.specialty}`,
+        `   Dominio actual: ${Math.round(x.latestAccuracy*100)}% | Duda ?: ${Math.round(x.latestUncertaintyRate*100)}% | Error+?: ${Math.round(x.latestWrongUncertainRate*100)}% | Lentas: ${Math.round(x.latestSlowRate*100)}%`,
+        `   Cobertura: ${x.seenQuestions}/${x.totalQuestions} | Intentos: ${x.attempts} | Repasos vencidos: ${x.dueQuestions}`,
+      );
+    });
+
+    lines.push('', 'TEMAS POCO EXPLORADOS (NO NECESARIAMENTE DÉBILES)');
+    if (!lowCoverage.length) lines.push('Sin brechas de cobertura destacables con el banco actual.');
+    lowCoverage.forEach((x, i) => {
+      lines.push(`${i+1}. ${x.topic} — cobertura ${x.seenQuestions}/${x.totalQuestions} (${Math.round(x.coverage*100)}%)`);
+    });
+
+    lines.push(
+      '',
+      'SOLICITUD PARA REPASO',
+      'Usa este informe para priorizar un repaso dirigido al Residentado Médico Perú.',
+      'Primero trabaja los temas con prioridad Crítica/Alta y evidencia Media/Alta.',
+      'En cada tema, enfócate en los conceptos que expliquen errores y alternativas marcadas con ?.',
+      'Distingue claramente lo que debo memorizar, las trampas de examen y los algoritmos/puntos de corte relevantes.'
+    );
+
+    return lines.join('\n');
+  }
+
+  async function copyWeaknessReport(report) {
+    const text = weaknessReportText(report);
+    try {
+      await navigator.clipboard.writeText(text);
+      alert('Informe copiado. Ya puedes pegarlo directamente en el chat.');
+    } catch {
+      const box = document.createElement('textarea');
+      box.value = text;
+      box.style.position = 'fixed';
+      box.style.left = '-9999px';
+      document.body.appendChild(box);
+      box.select();
+      document.execCommand('copy');
+      box.remove();
+      alert('Informe copiado. Ya puedes pegarlo directamente en el chat.');
+    }
+  }
+
+  function launchWeakTopicPractice(item, count = 10) {
+    const pool = questions
+      .filter(q => !observed(q) && item.questionIds.includes(q.id))
+      .sort((a,b) => questionPriority(b) - questionPriority(a));
+
+    const selected = pool.slice(0, Math.min(count, pool.length));
+    if (!selected.length) return renderMessage('Tema débil', 'No hay preguntas disponibles para este tema.');
+
+    launchStudy(selected, {
+      mode:'study',
+      count:selected.length,
+      randomize:false,
+      feedback:'immediate',
+      timeMode:'none',
+      secondsPerQuestion:Number(profile?.target_response_seconds || 25),
+      totalSeconds:0,
+      title:`Refuerzo · ${item.topic}`,
+      studyMode:'weakness_report',
+    });
+  }
+
+  function renderWeaknessReport() {
+    clearTimer();
+    const report = weaknessReportData();
+    const withData = report.filter(x => x.seenQuestions > 0);
+    const top = withData.slice(0, 20);
+    const lowCoverage = report
+      .filter(x => x.totalQuestions >= 3 && x.coverage < 0.35)
+      .sort((a,b) => a.coverage - b.coverage || b.totalQuestions - a.totalQuestions)
+      .slice(0, 12);
+
+    const critical = withData.filter(x => x.level === 'Crítica').length;
+    const high = withData.filter(x => x.level === 'Alta').length;
+    const uncertainTopics = withData.filter(x => x.latestUncertaintyRate > 0).length;
+
+    app.innerHTML = `<main class="shell">${topbar('Informe dinámico de debilidades', true)}
+      <section class="panel weakness-report-hero">
+        <div>
+          <span class="roadmap-kicker">SE RECALCULA CON CADA RESPUESTA</span>
+          <h1>Tu mapa actual de debilidades</h1>
+          <p class="muted">Usa el estado más reciente de cada pregunta: errores, dudas <strong>?</strong>, error+duda, lentitud, errores recientes y repasos vencidos. Una pregunta incorrecta con <strong>?</strong> recibe prioridad adicional.</p>
+        </div>
+        <div class="actions">
+          <button id="copy-weakness-report" class="btn primary">📋 Copiar informe para ChatGPT</button>
+          <button id="practice-top-weakness" class="btn">🔥 Practicar lo más débil</button>
+        </div>
+      </section>
+
+      <section class="kpis">
+        <div class="kpi"><div class="value">${critical}</div><div class="label">Temas críticos</div></div>
+        <div class="kpi"><div class="value">${high}</div><div class="label">Prioridad alta</div></div>
+        <div class="kpi"><div class="value">${uncertainTopics}</div><div class="label">Temas con duda ?</div></div>
+        <div class="kpi"><div class="value">${withData.length}</div><div class="label">Temas con evidencia</div></div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head"><div><h2>Prioridades actuales</h2><p class="muted">El índice 0–100 es interno y adaptativo; no equivale a tu porcentaje de aciertos ni predice tu nota.</p></div></div>
+        ${top.length ? `<div class="table-wrap"><table class="weakness-table">
+          <thead><tr>
+            <th>Prioridad</th><th>Tema</th><th>Área</th>
+            <th class="num">Dominio actual</th><th class="num">Duda ?</th>
+            <th class="num">Error + ?</th><th class="num">Lentas</th>
+            <th class="num">Cobertura</th><th>Evidencia</th><th></th>
+          </tr></thead>
+          <tbody>${top.map((x,i) => `<tr>
+            <td><span class="status ${weaknessLevelClass(x.level)}">${x.level}</span><small class="weakness-score">${x.score}/100</small></td>
+            <td><strong>${esc(x.topic)}</strong><small>${esc(x.specialty)}</small></td>
+            <td>${esc(x.area)}</td>
+            <td class="num">${Math.round(x.latestAccuracy*100)}%</td>
+            <td class="num">${Math.round(x.latestUncertaintyRate*100)}%</td>
+            <td class="num">${Math.round(x.latestWrongUncertainRate*100)}%</td>
+            <td class="num">${Math.round(x.latestSlowRate*100)}%</td>
+            <td class="num">${x.seenQuestions}/${x.totalQuestions}</td>
+            <td>${x.evidence}</td>
+            <td><button class="btn small" data-weak-practice="${i}">Practicar</button></td>
+          </tr>`).join('')}</tbody>
+        </table></div>` : `<div class="empty"><p>Aún no hay suficientes respuestas para detectar temas débiles.</p><p class="muted">Sigue practicando y este informe aparecerá automáticamente.</p></div>`}
+      </section>
+
+      <section class="panel" style="margin-top:14px">
+        <h2>Brechas de cobertura</h2>
+        <p class="muted">Estos temas todavía tienen pocas preguntas vistas. No se clasifican automáticamente como “débiles”.</p>
+        ${lowCoverage.length ? `<div class="coverage-gap-grid">${lowCoverage.map(x => `<div class="coverage-gap-card">
+          <strong>${esc(x.topic)}</strong><span>${esc(x.area)}</span>
+          <div class="progress"><div style="width:${Math.round(x.coverage*100)}%"></div></div>
+          <small>${x.seenQuestions}/${x.totalQuestions} preguntas vistas</small>
+        </div>`).join('')}</div>` : `<p class="muted">No hay brechas destacables con el banco actual.</p>`}
+      </section>
+    </main>`;
+
+    attachTopbar();
+    document.getElementById('copy-weakness-report').onclick = () => copyWeaknessReport(report);
+    document.getElementById('practice-top-weakness').onclick = () => {
+      const first = top[0];
+      if (first) launchWeakTopicPractice(first, 15);
+      else renderMessage('Informe de debilidades', 'Aún no hay suficientes datos.');
+    };
+    document.querySelectorAll('[data-weak-practice]').forEach(btn => {
+      btn.onclick = () => {
+        const item = top[Number(btn.dataset.weakPractice)];
+        if (item) launchWeakTopicPractice(item, 10);
+      };
+    });
   }
 
   function dailyActual(dateIso) { return attempts.filter(a => isoDateLocal(a.answered_at) === dateIso).length; }
@@ -655,7 +948,7 @@
       <section class="panel"><h2>Práctica rápida</h2><p class="muted">La primera opción usa memoria, errores, lentitud y rentabilidad para decidir por ti.</p>
       <div class="practice-grid">${cards.map(c=>`<button class="practice-card" data-practice="${c.id}"><strong>${c.title}</strong><span>${c.detail}</span></button>`).join('')}</div>
       <div class="sprint-row"><button class="btn sprint" data-sprint="10">⚡ Sprint 10</button><button class="btn sprint" data-sprint="15">⚡ Sprint 15</button><button class="btn sprint" data-sprint="30">⚡ Sprint 30</button></div>
-      <div class="footer-actions"><button id="custom-practice" class="btn">⚙ Personalizar práctica</button><button id="practice-exam" class="btn">📝 Crear simulacro</button></div></section>
+      <div class="footer-actions"><button id="custom-practice" class="btn">⚙ Personalizar práctica</button><button id="weakness-report-btn" class="btn">📊 Informe dinámico de debilidades</button><button id="practice-exam" class="btn">📝 Crear simulacro</button></div></section>
     </main>`;
     attachTopbar();
     cards.forEach(c => {
@@ -671,6 +964,7 @@
       launchStudy(selected, { mode:'study', count:selected.length, randomize:false, feedback:'immediate', timeMode:'per_question', secondsPerQuestion:target, totalSeconds:0, title:`Sprint ${count}`, studyMode:'practice_sprint' });
     });
     document.getElementById('custom-practice').onclick = () => renderSessionBuilder('study');
+    document.getElementById('weakness-report-btn').onclick = renderWeaknessReport;
     document.getElementById('practice-exam').onclick = renderExamHub;
   }
 
@@ -1308,6 +1602,7 @@
       questions: selected,
       index: 0,
       responses: {},
+      scratch: {},
       durations: {},
       totalRemaining: config.timeMode === 'total' ? config.totalSeconds : null,
     };
@@ -1336,6 +1631,8 @@
     if (!q) return finishStudy();
     questionStartedAt = performance.now();
     const selected = currentStudy.responses[q.id]?.selected || null;
+    currentStudy.scratch ||= {};
+    const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
     const opts = optionList(q);
     const timerHtml = currentStudy.config.timeMode === 'per_question'
       ? `<div id="timer" class="timer">${formatTime(currentStudy.config.secondsPerQuestion)}</div>`
@@ -1347,7 +1644,10 @@
       <section class="panel question-card">
         <div class="progress"><div style="width:${(currentStudy.index/currentStudy.questions.length)*100}%"></div></div>
         <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${timerHtml}</div>
-        <div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${opts.map(o => optionButton(o, selected)).join('')}</div></div>
+        <div class="q-body"><p class="q-text">${esc(q.question)}</p>
+          <div class="uncertainty-hint">Marca <strong>?</strong> en cualquier alternativa que no domines del todo. No cambia tu respuesta; sí hace que el concepto vuelva antes al repaso.</div>
+          <div class="options">${opts.map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.letter))).join('')}</div>
+        </div>
         <div id="feedback"></div>
       </section>
       ${currentStudy.config.feedback === 'end' ? `<div class="footer-actions"><button id="prev-study" class="btn ghost" ${currentStudy.index===0?'disabled':''}>← Anterior</button><button id="cancel-study" class="btn danger ghost-danger">Cancelar sesión</button><button id="next-study" class="btn primary">${currentStudy.index+1===currentStudy.questions.length?'Terminar':'Siguiente →'}</button></div>` : `<div class="footer-actions"><button id="cancel-study" class="btn danger ghost-danger">Cancelar sesión</button></div>`}
@@ -1355,6 +1655,17 @@
     attachTopbar();
 
     document.querySelectorAll('.option').forEach(btn => btn.onclick = () => handleStudyAnswer(btn.dataset.letter));
+    document.querySelectorAll('[data-uncertain-letter]').forEach(btn => {
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        const letter = btn.dataset.uncertainLetter;
+        currentStudy.scratch = toggleTentativeOption(currentStudy.scratch || {}, q.id, letter);
+        const active = isOptionUncertain(currentStudy.scratch, q.id, letter);
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        btn.title = active ? 'Quitar marca de duda' : 'Marcar esta alternativa con ?';
+      };
+    });
     document.getElementById('cancel-study').onclick = cancelCurrentStudy;
     if (currentStudy.config.feedback === 'end') {
       document.getElementById('prev-study').onclick = () => { saveStudyDuration(); currentStudy.index--; renderStudyQuestion(); };
@@ -1417,12 +1728,18 @@
     if (currentStudy.config.feedback === 'immediate') {
       clearTimer();
       const isCorrect = letter === q.official_answer;
-      await recordSingleAttempt(q, letter, isCorrect, currentStudy.durations[q.id] || 0, currentStudy.config.studyMode || 'custom_study', false);
+      const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
+      await recordSingleAttempt(
+        q, letter, isCorrect, currentStudy.durations[q.id] || 0,
+        currentStudy.config.studyMode || 'custom_study', false,
+        { uncertainOptions }
+      );
       disableOptionsAndPaint(q, letter);
+      document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
       renderFeedback(q, letter, isCorrect, () => {
         currentStudy.index++;
         renderStudyQuestion();
-      });
+      }, false, false, uncertainOptions);
     } else {
       document.querySelectorAll('.option').forEach(btn => btn.classList.toggle('selected', btn.dataset.letter === letter));
     }
@@ -1433,9 +1750,15 @@
     saveStudyDuration();
     currentStudy.responses[q.id] = { selected: null };
     if (currentStudy.config.feedback === 'immediate') {
-      recordSingleAttempt(q, null, false, currentStudy.durations[q.id] || 0, currentStudy.config.studyMode || 'custom_study', true).then(() => {
+      const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
+      recordSingleAttempt(
+        q, null, false, currentStudy.durations[q.id] || 0,
+        currentStudy.config.studyMode || 'custom_study', true,
+        { uncertainOptions }
+      ).then(() => {
         disableOptionsAndPaint(q, null);
-        renderFeedback(q, null, false, () => { currentStudy.index++; renderStudyQuestion(); }, true);
+        document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
+        renderFeedback(q, null, false, () => { currentStudy.index++; renderStudyQuestion(); }, true, false, uncertainOptions);
       });
     } else {
       currentStudy.index++;
@@ -1456,7 +1779,13 @@
         .filter(q => currentStudy.responses[q.id]?.selected != null)
         .map(q => {
           const selected = currentStudy.responses[q.id].selected;
-          return makeAttempt(q, selected, selected === q.official_answer, currentStudy.durations[q.id] || 0, currentStudy.config.studyMode || 'custom_study_end', false);
+          const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
+          return makeAttempt(
+            q, selected, selected === q.official_answer,
+            currentStudy.durations[q.id] || 0,
+            currentStudy.config.studyMode || 'custom_study_end', false,
+            { uncertainOptions }
+          );
         });
       await recordAttemptsBatch(payload);
     }
@@ -1466,9 +1795,16 @@
       return { q, selected, correct: selected === q.official_answer };
     });
     const correct = result.filter(r => r.correct).length;
-    reviewContext = { type: 'study', questions: currentStudy.questions, responses: currentStudy.responses, index: 0 };
+    const uncertainCount = currentStudy.questions.filter(q => uncertaintyOptionsFor(currentStudy.scratch, q.id).length > 0).length;
+    reviewContext = {
+      type: 'study',
+      questions: currentStudy.questions,
+      responses: currentStudy.responses,
+      scratch: currentStudy.scratch || {},
+      index: 0
+    };
 
-    app.innerHTML = `<main class="shell">${topbar('Sesión terminada', true)}<section class="panel empty"><h2>${timeExpired ? 'Tiempo terminado' : 'Sesión completada'}</h2><p class="score-big">${correct}/${result.length}</p><p>${pct(correct, result.length)} de aciertos</p><div class="actions"><button id="review-btn" class="btn">Revisar respuestas</button><button class="btn primary" data-home>Volver al inicio</button></div></section></main>`;
+    app.innerHTML = `<main class="shell">${topbar('Sesión terminada', true)}<section class="panel empty"><h2>${timeExpired ? 'Tiempo terminado' : 'Sesión completada'}</h2><p class="score-big">${correct}/${result.length}</p><p>${pct(correct, result.length)} de aciertos · ${uncertainCount} preguntas con duda registrada</p><div class="actions"><button id="review-btn" class="btn">Revisar respuestas</button><button class="btn primary" data-home>Volver al inicio</button></div></section></main>`;
     attachTopbar();
     document.getElementById('review-btn').onclick = () => renderReviewQuestion();
   }
@@ -1595,6 +1931,8 @@
     const q = currentExam.questions[currentExam.state.currentIndex];
     const selected = currentExam.state.responses[q.id] ?? null;
     const marked = Boolean(currentExam.state.marked[q.id]);
+    currentExam.state.scratch ||= {};
+    const uncertainOptions = uncertaintyOptionsFor(currentExam.state.scratch, q.id);
     examQuestionEnteredAt = performance.now();
 
     app.innerHTML = `<main class="shell exam-shell">
@@ -1603,7 +1941,10 @@
         <div class="panel question-card">
           <div class="progress"><div style="width:${(currentExam.state.currentIndex/currentExam.questions.length)*100}%"></div></div>
           <div class="q-head"><span class="tag">${currentExam.state.currentIndex+1}/${currentExam.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
-          <div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${optionList(q).map(o => optionButton(o, selected)).join('')}</div></div>
+          <div class="q-body"><p class="q-text">${esc(q.question)}</p>
+            <div class="uncertainty-hint">Puedes marcar <strong>?</strong> en una o varias alternativas sin cambiar tu respuesta definitiva.</div>
+            <div class="options">${optionList(q).map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.letter))).join('')}</div>
+          </div>
         </div>
         <aside class="panel exam-nav"><div class="exam-nav-head"><strong>Navegación</strong><button id="mark-btn" class="btn small ${marked?'warn-btn':''}">${marked?'⚑ Marcada':'⚐ Marcar'}</button></div><div class="question-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="legend"><span>● respondida</span><span>⚑ revisar</span></div></aside>
       </section>
@@ -1622,6 +1963,18 @@
       document.querySelectorAll('.option').forEach(b => b.classList.toggle('selected', b.dataset.letter === btn.dataset.letter));
       await persistExamState();
       refreshExamGridOnly();
+    });
+    document.querySelectorAll('[data-uncertain-letter]').forEach(btn => {
+      btn.onclick = async (ev) => {
+        ev.stopPropagation();
+        const letter = btn.dataset.uncertainLetter;
+        currentExam.state.scratch = toggleTentativeOption(currentExam.state.scratch || {}, q.id, letter);
+        const active = isOptionUncertain(currentExam.state.scratch, q.id, letter);
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        btn.title = active ? 'Quitar marca de duda' : 'Marcar esta alternativa con ?';
+        await persistExamState();
+      };
     });
     document.querySelectorAll('[data-qindex]').forEach(btn => btn.onclick = async () => {
       accumulateExamTime();
@@ -1786,6 +2139,35 @@
     };
   }
 
+
+  function uncertaintyOptionsFor(scratch, qId) {
+    return Object.entries(scratch?.[qId] || {})
+      .filter(([,state]) => state === 'tentative')
+      .map(([letter]) => letter);
+  }
+
+  function isOptionUncertain(scratch, qId, letter) {
+    return scratch?.[qId]?.[letter] === 'tentative';
+  }
+
+  function toggleTentativeOption(scratch, qId, letter) {
+    scratch ||= {};
+    scratch[qId] ||= {};
+    if (scratch[qId][letter] === 'tentative') delete scratch[qId][letter];
+    else scratch[qId][letter] = 'tentative';
+    if (!Object.keys(scratch[qId]).length) delete scratch[qId];
+    return scratch;
+  }
+
+  function optionWithUncertaintyButton(o, selected, uncertain = false) {
+    return `<div class="option-with-uncertainty">
+      ${optionButton(o, selected)}
+      <button class="uncertainty-toggle ${uncertain?'active':''}" data-uncertain-letter="${o.letter}"
+        type="button" aria-pressed="${uncertain?'true':'false'}"
+        title="${uncertain?'Quitar marca de duda':'Marcar esta alternativa con ?'}">?</button>
+    </div>`;
+  }
+
   function optionList(q) {
     return ['A','B','C','D','E'].filter(l => q[`option_${l.toLowerCase()}`]).map(l => ({ letter:l, text:q[`option_${l.toLowerCase()}`] }));
   }
@@ -1892,8 +2274,8 @@
     await upsertMemoryRows(nextRows);
   }
 
-  async function recordSingleAttempt(q, selected, isCorrect, ms, mode, timedOut) {
-    const attempt = makeAttempt(q, selected, isCorrect, ms, mode, timedOut);
+  async function recordSingleAttempt(q, selected, isCorrect, ms, mode, timedOut, meta = {}) {
+    const attempt = makeAttempt(q, selected, isCorrect, ms, mode, timedOut, meta);
     let saved;
     if (cloudConfigured) {
       const { data, error } = await supa.from('attempts').insert({ ...attempt, user_id:user.id }).select().single();
@@ -1930,10 +2312,50 @@
       const q = questions.find(x => x.id === a.question_id); if (!q) continue;
       const g = byArea.get(q.area); g.attempts++; if (a.is_correct) g.correct++;
     }
-    const hard = questions.map(q => ({ q, s:questionStats(q.id) })).filter(x => x.s.seen).sort((a,b) => (b.s.wrong/b.s.seen)-(a.s.wrong/a.s.seen)).slice(0,10);
+    const hard = questions
+      .map(q => ({ q, s:questionStats(q.id) }))
+      .filter(x => x.s.seen)
+      .sort((a,b) => (b.s.wrong/b.s.seen)-(a.s.wrong/a.s.seen))
+      .slice(0,10);
     const s = overallStats();
-    app.innerHTML = `<main class="shell">${topbar('Estadísticas', true)}<section class="kpis"><div class="kpi"><div class="value">${attempts.length}</div><div class="label">Intentos</div></div><div class="kpi"><div class="value">${pct(s.correct,attempts.length)}</div><div class="label">Precisión oficial</div></div><div class="kpi"><div class="value">${pct(s.auditedCorrect,s.audited.length)}</div><div class="label">Dominio auditado</div></div><div class="kpi"><div class="value">${s.avg?`${(s.avg/1000).toFixed(1)} s`:'—'}</div><div class="label">Tiempo medio</div></div></section><section class="stats-grid"><div class="panel"><h2>Por área</h2><div class="table-wrap"><table><thead><tr><th>Área</th><th class="num">Preg.</th><th class="num">Intentos</th><th class="num">Acierto</th></tr></thead><tbody>${[...byArea.entries()].sort().map(([area,g])=>`<tr><td>${esc(area)}</td><td class="num">${g.questions}</td><td class="num">${g.attempts}</td><td class="num">${pct(g.correct,g.attempts)}</td></tr>`).join('')}</tbody></table></div></div><div class="panel"><h2>Más difíciles</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>Tema</th><th class="num">Fallos</th><th class="num">Vistas</th></tr></thead><tbody>${hard.map(({q,s})=>`<tr><td>${esc(q.id)}</td><td>${esc(q.topic)}</td><td class="num">${s.wrong}</td><td class="num">${s.seen}</td></tr>`).join('')}</tbody></table></div></div></section></main>`;
+
+    app.innerHTML = `<main class="shell">${topbar('Estadísticas', true)}
+      <section class="panel stats-report-link">
+        <div>
+          <h2>Informe dinámico de debilidades</h2>
+          <p class="muted">Convierte errores, dudas ?, lentitud y repasos vencidos en una lista de temas priorizados que puedes copiar y pegar directamente en el chat.</p>
+        </div>
+        <button id="stats-weakness-report" class="btn primary">Ver informe</button>
+      </section>
+
+      <section class="kpis">
+        <div class="kpi"><div class="value">${attempts.length}</div><div class="label">Intentos</div></div>
+        <div class="kpi"><div class="value">${pct(s.correct,attempts.length)}</div><div class="label">Precisión oficial</div></div>
+        <div class="kpi"><div class="value">${pct(s.auditedCorrect,s.audited.length)}</div><div class="label">Dominio auditado</div></div>
+        <div class="kpi"><div class="value">${s.avg?`${(s.avg/1000).toFixed(1)} s`:'—'}</div><div class="label">Tiempo medio</div></div>
+      </section>
+
+      <section class="stats-grid">
+        <div class="panel">
+          <h2>Por área</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Área</th><th class="num">Preg.</th><th class="num">Intentos</th><th class="num">Acierto</th></tr></thead>
+            <tbody>${[...byArea.entries()].sort().map(([area,g])=>`<tr><td>${esc(area)}</td><td class="num">${g.questions}</td><td class="num">${g.attempts}</td><td class="num">${pct(g.correct,g.attempts)}</td></tr>`).join('')}</tbody>
+          </table></div>
+        </div>
+
+        <div class="panel">
+          <h2>Más difíciles</h2>
+          <div class="table-wrap"><table>
+            <thead><tr><th>ID</th><th>Tema</th><th class="num">Fallos</th><th class="num">Vistas</th></tr></thead>
+            <tbody>${hard.map(({q,s})=>`<tr><td>${esc(q.id)}</td><td>${esc(q.topic)}</td><td class="num">${s.wrong}</td><td class="num">${s.seen}</td></tr>`).join('')}</tbody>
+          </table></div>
+        </div>
+      </section>
+    </main>`;
+
     attachTopbar();
+    document.getElementById('stats-weakness-report').onclick = renderWeaknessReport;
   }
 
   init();
