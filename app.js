@@ -1,6 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
+  const APP_VERSION = '0.6.10';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
@@ -43,6 +44,96 @@
     }
     return a;
   };
+
+  const localeSort = (a, b) => String(a || '').localeCompare(String(b || ''), 'es', { sensitivity:'base' });
+
+  function topicPathParts(q) {
+    const area = String(q?.area || 'Sin área').trim() || 'Sin área';
+    const specialty = String(q?.specialty || 'General').trim() || 'General';
+    const topic = String(q?.topic || q?.subtopic || 'Sin tema').trim() || 'Sin tema';
+    return { area, specialty, topic };
+  }
+
+  function topicPathKey(q) {
+    const { area, specialty, topic } = topicPathParts(q);
+    return encodeURIComponent([area, specialty, topic].join('\u001f'));
+  }
+
+  function normalizeTopicSearch(value = '') {
+    return String(value)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
+  function buildTopicHierarchy() {
+    const areas = new Map();
+
+    for (const q of questions) {
+      const { area, specialty, topic } = topicPathParts(q);
+      if (!areas.has(area)) areas.set(area, { name:area, count:0, specialties:new Map() });
+      const areaNode = areas.get(area);
+      areaNode.count += 1;
+
+      if (!areaNode.specialties.has(specialty)) {
+        areaNode.specialties.set(specialty, { name:specialty, count:0, topics:new Map() });
+      }
+      const specialtyNode = areaNode.specialties.get(specialty);
+      specialtyNode.count += 1;
+
+      const key = topicPathKey(q);
+      if (!specialtyNode.topics.has(key)) specialtyNode.topics.set(key, { key, name:topic, count:0 });
+      specialtyNode.topics.get(key).count += 1;
+    }
+
+    return [...areas.values()]
+      .sort((a,b) => localeSort(a.name, b.name))
+      .map(area => ({
+        ...area,
+        specialties:[...area.specialties.values()]
+          .sort((a,b) => localeSort(a.name, b.name))
+          .map(specialty => ({
+            ...specialty,
+            topics:[...specialty.topics.values()].sort((a,b) => localeSort(a.name, b.name)),
+          })),
+      }));
+  }
+
+  function topicHierarchyHtml(hierarchy) {
+    return hierarchy.map((area, areaIndex) => {
+      const areaId = `topic-area-${areaIndex}`;
+      const areaTopicCount = area.specialties.reduce((sum, sp) => sum + sp.topics.length, 0);
+      const specialtiesHtml = area.specialties.map((specialty, specialtyIndex) => {
+        const specialtyId = `${areaId}-specialty-${specialtyIndex}`;
+        const topicsHtml = specialty.topics.map(topic => {
+          const searchText = normalizeTopicSearch(`${area.name} ${specialty.name} ${topic.name}`);
+          return `<label class="topic-leaf" data-topic-search="${esc(searchText)}">
+            <input type="checkbox" name="topicPath" value="${esc(topic.key)}" data-topic-area-id="${areaId}" data-topic-specialty-id="${specialtyId}" checked>
+            <span class="topic-leaf-copy"><strong>${esc(topic.name)}</strong><small>${topic.count} pregunta${topic.count === 1 ? '' : 's'}</small></span>
+          </label>`;
+        }).join('');
+
+        return `<details class="topic-specialty-group" data-topic-specialty-wrap="${specialtyId}" open>
+          <summary><span>${esc(specialty.name)}</span><small>${specialty.topics.length} tema${specialty.topics.length === 1 ? '' : 's'} · ${specialty.count} pregunta${specialty.count === 1 ? '' : 's'}</small></summary>
+          <div class="topic-group-actions">
+            <button type="button" class="topic-scope-btn" data-topic-select-specialty="${specialtyId}">Todos</button>
+            <button type="button" class="topic-scope-btn" data-topic-clear-specialty="${specialtyId}">Ninguno</button>
+          </div>
+          <div class="topic-leaf-list">${topicsHtml}</div>
+        </details>`;
+      }).join('');
+
+      return `<details class="topic-area-group" data-topic-area-wrap="${areaId}" open>
+        <summary><span>${esc(area.name)}</span><small>${areaTopicCount} tema${areaTopicCount === 1 ? '' : 's'} · ${area.count} pregunta${area.count === 1 ? '' : 's'}</small></summary>
+        <div class="topic-group-actions">
+          <button type="button" class="topic-scope-btn" data-topic-select-area="${areaId}">Todos</button>
+          <button type="button" class="topic-scope-btn" data-topic-clear-area="${areaId}">Ninguno</button>
+        </div>
+        <div class="topic-specialty-list">${specialtiesHtml}</div>
+      </details>`;
+    }).join('');
+  }
 
   const OPTION_REFERENCE_PATTERNS = [
     /\b(?:todas?|ninguna?)\s+(?:de\s+)?(?:las\s+)?(?:anteriores|opciones|alternativas)\b/i,
@@ -383,6 +474,7 @@
         <div class="panel login-card">
           <div class="logo-mark">R</div>
           <h1>Residentado</h1>
+          <div class="app-version app-version-login">v${APP_VERSION}</div>
           <p class="muted">Banco personal de preguntas. Tu progreso se guarda en tu cuenta.</p>
           <form id="login-form">
             <div class="form-row"><label for="email">Correo</label><input class="input" id="email" type="email" autocomplete="email" required></div>
@@ -493,7 +585,7 @@
 
   function topbar(title = 'Residentado', showHome = false) {
     return `<div class="topbar">
-      <div class="logo-mark">R</div><h1>${esc(title)}</h1><div class="spacer"></div>
+      <div class="logo-mark">R</div><div class="topbar-title-wrap"><h1>${esc(title)}</h1><small class="app-version">v${APP_VERSION}</small></div><div class="spacer"></div>
       ${showHome ? `<button class="btn small ghost" data-home>Inicio</button>` : ''}
       ${cloudConfigured ? `<div class="topbar-menu-wrap">
         <button id="account-menu-btn" class="btn small ghost icon-menu-btn" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="account-menu">⋮</button>
@@ -565,48 +657,90 @@
   function rebuildCorpusRentability() {
     const valid = questions.filter(q => !observed(q));
     const corpusYears = new Set(valid.map(q => Number(q.year)).filter(Number.isFinite));
-    const groups = new Map();
+    const yearsCount = Math.max(1, corpusYears.size);
 
-    for (const q of valid) {
-      const key = corpusTopicKey(q);
-      if (!key) continue;
-      if (!groups.has(key)) groups.set(key, { count:0, years:new Set(), questionIds:[] });
-      const g = groups.get(key);
-      g.count += 1;
-      if (Number.isFinite(Number(q.year))) g.years.add(Number(q.year));
-      g.questionIds.push(q.id);
+    // v0.6.10: la taxonomía editorial usa temas muy granulares y, por tanto,
+    // muchos temas exactos aparecen una sola vez. La rentabilidad combina
+    // recurrencia de tema + especialidad + área, en lugar de exigir que el
+    // nombre exacto del tema se repita varias veces.
+    const levels = [
+      { name: 'topic', field: q => q.topic || q.subtopic || '', frequencyWeight: 0.62, breadthWeight: 0.38 },
+      { name: 'specialty', field: q => q.specialty || '', frequencyWeight: 0.65, breadthWeight: 0.35 },
+      { name: 'area', field: q => q.area || '', frequencyWeight: 0.70, breadthWeight: 0.30 },
+    ];
+
+    const statsByLevel = new Map();
+    for (const level of levels) {
+      const groups = new Map();
+      for (const q of valid) {
+        const key = normalizeCorpusLabel(level.field(q));
+        if (!key) continue;
+        if (!groups.has(key)) groups.set(key, { count: 0, years: new Set() });
+        const g = groups.get(key);
+        g.count += 1;
+        if (Number.isFinite(Number(q.year))) g.years.add(Number(q.year));
+      }
+      const maxCount = Math.max(1, ...[...groups.values()].map(g => g.count));
+      statsByLevel.set(level.name, { groups, maxCount });
     }
 
-    const maxCount = Math.max(1, ...[...groups.values()].map(g => g.count));
-    const yearsCount = Math.max(1, corpusYears.size);
-    const scoredGroups = [...groups.entries()].map(([key,g]) => {
-      const frequency = Math.sqrt(g.count / maxCount);
-      const breadth = g.years.size / yearsCount;
-      const score = clamp(0.62 * frequency + 0.38 * breadth, 0, 1);
-      const eligible = g.count >= 3 && (yearsCount < 2 || g.years.size >= 2);
-      return { key, ...g, score, eligible };
+    const scoredQuestions = valid.map(q => {
+      const components = {};
+      for (const level of levels) {
+        const key = normalizeCorpusLabel(level.field(q));
+        const { groups, maxCount } = statsByLevel.get(level.name);
+        const g = key ? groups.get(key) : null;
+        if (!g) {
+          components[level.name] = 0;
+          continue;
+        }
+        const frequency = Math.sqrt(g.count / maxCount);
+        const breadth = g.years.size / yearsCount;
+        components[level.name] = clamp(
+          level.frequencyWeight * frequency + level.breadthWeight * breadth,
+          0,
+          1
+        );
+      }
+
+      const score = clamp(
+        0.50 * components.topic +
+        0.35 * components.specialty +
+        0.15 * components.area,
+        0,
+        1
+      );
+
+      return { q, score, components };
     });
 
-    const threshold = percentile(scoredGroups.filter(g => g.eligible).map(g => g.score), 0.70);
-    const effectiveThreshold = threshold == null ? 1.1 : Math.max(0.56, threshold);
-    corpusRentabilityByQuestion = new Map();
+    // Selecciona aproximadamente el 30% superior del corpus cargado.
+    // Es una estimación histórica provisional hasta la auditoría final de las 2.180 preguntas.
+    const threshold = percentile(scoredQuestions.map(x => x.score), 0.70);
+    const effectiveThreshold = threshold == null ? 1.1 : Math.max(0.42, threshold);
 
-    for (const g of scoredGroups) {
-      const high = g.eligible && g.score >= effectiveThreshold;
-      for (const qid of g.questionIds) {
-        corpusRentabilityByQuestion.set(qid, {
-          score: high ? Math.max(0.82, g.score) : clamp(0.35 + g.score * 0.45, 0.35, 0.79),
-          high,
-          groupCount: g.count,
-          yearBreadth: g.years.size,
-          source: 'corpus_runtime',
-        });
-      }
+    corpusRentabilityByQuestion = new Map();
+    for (const item of scoredQuestions) {
+      const explicit = explicitRentabilityTier(item.q);
+      const explicitHigh =
+        explicit.includes('MUY_ALTA') ||
+        explicit.includes('MUY ALTA') ||
+        explicit.startsWith('ALTA');
+
+      const high = explicitHigh || item.score >= effectiveThreshold;
+      corpusRentabilityByQuestion.set(item.q.id, {
+        score: explicitHigh ? 1 : item.score,
+        high,
+        topicScore: item.components.topic,
+        specialtyScore: item.components.specialty,
+        areaScore: item.components.area,
+        source: explicitHigh ? 'explicit' : 'corpus_runtime_v2',
+      });
     }
 
     corpusRentabilityMeta = {
       highCount: [...corpusRentabilityByQuestion.values()].filter(x => x.high).length,
-      groupCount: scoredGroups.length,
+      groupCount: statsByLevel.get('topic')?.groups?.size || 0,
       yearsCount: corpusYears.size,
       threshold: Number.isFinite(effectiveThreshold) ? Number(effectiveThreshold.toFixed(3)) : null,
     };
@@ -1796,8 +1930,8 @@
 
   function renderSessionBuilder(mode) {
     clearTimer();
-    const areas = [...new Set(questions.map(q => q.area).filter(Boolean))].sort();
-    const topics = [...new Set(questions.map(q => q.topic).filter(Boolean))].sort();
+    const areas = [...new Set(questions.map(q => q.area).filter(Boolean))].sort(localeSort);
+    const topicHierarchy = buildTopicHierarchy();
     const years = [...new Set(questions.map(q => Number(q.year)))].sort((a,b) => a-b);
     const highCount = questions.filter(isHighRentability).length;
     const isExam = mode === 'exam';
@@ -1818,7 +1952,7 @@
             <fieldset><legend>Contenido</legend>
               <label>Estado previo<select id="pool-type" class="input"><option value="all">Todas</option><option value="unseen">Nunca vistas</option><option value="errors">Solo errores</option><option value="correct">Ya acertadas</option></select></label>
               <label>Rentabilidad<select id="rentability" class="input"><option value="all">Todas</option><option value="high" ${highCount ? '' : 'disabled'}>Alta rentabilidad${highCount ? ` · ${highCount} preguntas` : ' — requiere al menos corpus suficiente y temas clasificados'}</option></select></label>
-              <small class="muted">La rentabilidad se recalcula automáticamente con el corpus cargado (${corpusRentabilityMeta.yearsCount} años). No depende de cuántas preguntas hayas respondido.</small>
+              <small class="muted">La rentabilidad se estima automáticamente por frecuencia y recurrencia histórica de tema, especialidad y área en el corpus cargado (${corpusRentabilityMeta.yearsCount} años). No depende de cuántas preguntas hayas respondido.</small>
             </fieldset>
 
             <fieldset><legend>Cantidad</legend>
@@ -1831,8 +1965,13 @@
             <fieldset><legend>Años</legend><div class="check-list compact">${years.map(y => `<label><input type="checkbox" name="year" value="${y}" checked> ${y}</label>`).join('')}</div></fieldset>
 
             <fieldset class="wide"><legend>Temas específicos</legend>
-              <div class="topic-tools"><button type="button" id="topics-all" class="btn small">Todos</button><button type="button" id="topics-none" class="btn small ghost">Ninguno</button></div>
-              <div class="check-list topics">${topics.map(t => `<label><input type="checkbox" name="topic" value="${esc(t)}" checked> ${esc(t)}</label>`).join('')}</div>
+              <div class="topic-browser-toolbar">
+                <input id="topic-search" class="input topic-search" type="search" placeholder="Buscar tema o especialidad: exantemas, cardiología, sepsis…" autocomplete="off">
+                <div class="topic-tools"><button type="button" id="topics-all" class="btn small">Todos</button><button type="button" id="topics-none" class="btn small ghost">Ninguno</button></div>
+              </div>
+              <div class="topic-browser-help">Navega por Área → Especialidad → Tema o usa el buscador. Puedes dejar solo el tema que quieras practicar.</div>
+              <div id="topic-search-status" class="topic-search-status muted"></div>
+              <div class="topic-browser" id="topic-browser">${topicHierarchyHtml(topicHierarchy)}</div>
             </fieldset>
 
             ${isExam ? `
@@ -1855,9 +1994,55 @@
     </main>`;
 
     attachTopbar();
-    const allTopics = () => document.querySelectorAll('input[name="topic"]');
+    const allTopics = () => document.querySelectorAll('input[name="topicPath"]');
     document.getElementById('topics-all').onclick = () => allTopics().forEach(c => c.checked = true);
     document.getElementById('topics-none').onclick = () => allTopics().forEach(c => c.checked = false);
+
+    const setTopicScope = (selector, checked) => document.querySelectorAll(selector).forEach(c => c.checked = checked);
+    document.querySelectorAll('[data-topic-select-area]').forEach(btn => {
+      btn.onclick = () => setTopicScope(`input[data-topic-area-id="${btn.dataset.topicSelectArea}"]`, true);
+    });
+    document.querySelectorAll('[data-topic-clear-area]').forEach(btn => {
+      btn.onclick = () => setTopicScope(`input[data-topic-area-id="${btn.dataset.topicClearArea}"]`, false);
+    });
+    document.querySelectorAll('[data-topic-select-specialty]').forEach(btn => {
+      btn.onclick = () => setTopicScope(`input[data-topic-specialty-id="${btn.dataset.topicSelectSpecialty}"]`, true);
+    });
+    document.querySelectorAll('[data-topic-clear-specialty]').forEach(btn => {
+      btn.onclick = () => setTopicScope(`input[data-topic-specialty-id="${btn.dataset.topicClearSpecialty}"]`, false);
+    });
+
+    const topicSearch = document.getElementById('topic-search');
+    const topicSearchStatus = document.getElementById('topic-search-status');
+    const applyTopicSearch = () => {
+      const query = normalizeTopicSearch(topicSearch.value);
+      const leaves = [...document.querySelectorAll('.topic-leaf')];
+      let visibleCount = 0;
+
+      leaves.forEach(leaf => {
+        const visible = !query || String(leaf.dataset.topicSearch || '').includes(query);
+        leaf.hidden = !visible;
+        if (visible) visibleCount += 1;
+      });
+
+      document.querySelectorAll('.topic-specialty-group').forEach(group => {
+        const hasVisible = [...group.querySelectorAll('.topic-leaf')].some(leaf => !leaf.hidden);
+        group.hidden = !hasVisible;
+        if (query && hasVisible) group.open = true;
+      });
+
+      document.querySelectorAll('.topic-area-group').forEach(group => {
+        const hasVisible = [...group.querySelectorAll('.topic-leaf')].some(leaf => !leaf.hidden);
+        group.hidden = !hasVisible;
+        if (query && hasVisible) group.open = true;
+      });
+
+      topicSearchStatus.textContent = query
+        ? `${visibleCount} tema${visibleCount === 1 ? '' : 's'} coincide${visibleCount === 1 ? '' : 'n'} con la búsqueda.`
+        : `${leaves.length} temas disponibles en el corpus cargado.`;
+    };
+    topicSearch.addEventListener('input', applyTopicSearch);
+    applyTopicSearch();
 
     document.querySelectorAll('.preset').forEach(btn => btn.onclick = () => {
       const p = Number(btn.dataset.preset);
@@ -1911,7 +2096,7 @@
       rentability: document.getElementById('rentability').value,
       areas: checked('area'),
       years: checked('year').map(Number),
-      topics: checked('topic'),
+      topicPaths: checked('topicPath'),
       feedback: document.getElementById('feedback-mode').value,
     };
     if (mode === 'exam') {
@@ -1935,7 +2120,7 @@
     return questions.filter(q => {
       if (config.areas.length && !config.areas.includes(q.area)) return false;
       if (config.years.length && !config.years.includes(Number(q.year))) return false;
-      if (config.topics.length && !config.topics.includes(q.topic)) return false;
+      if (config.topicPaths.length && !config.topicPaths.includes(topicPathKey(q))) return false;
       if (config.rentability === 'high' && !isHighRentability(q)) return false;
       if (config.poolType === 'unseen' && seenIds.has(q.id)) return false;
       if (config.poolType === 'errors' && !wrongIds.has(q.id)) return false;
