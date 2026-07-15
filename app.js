@@ -332,15 +332,62 @@
     });
   }
 
+  async function fetchAllQuestions() {
+    const pageSize = 500;
+    const all = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supa.from('questions')
+        .select('*')
+        .eq('active', true)
+        .order('year', { ascending: false })
+        .order('test')
+        .order('question_number')
+        .range(from, from + pageSize - 1);
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return { data: all, error: null };
+  }
+
+  async function fetchAllAttempts() {
+    const pageSize = 1000;
+    const all = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supa.from('attempts')
+        .select('*')
+        .order('answered_at', { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return { data: all, error: null };
+  }
+
+  async function fetchAllMemoryStates() {
+    const pageSize = 1000;
+    const all = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supa.from('question_memory_state')
+        .select('*')
+        .range(from, from + pageSize - 1);
+      if (error) return { data: null, error };
+      all.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return { data: all, error: null };
+  }
+
   async function loadCloudData() {
     clearTimer();
     app.innerHTML = `<div class="splash"><div class="logo-mark">R</div><p>Sincronizando…</p></div>`;
 
     const [qRes, aRes, pRes, mRes] = await Promise.all([
-      supa.from('questions').select('*').eq('active', true).order('year', { ascending: false }).order('test').order('question_number'),
-      supa.from('attempts').select('*').order('answered_at', { ascending: true }),
+      fetchAllQuestions(),
+      fetchAllAttempts(),
       supa.from('user_learning_profile').select('*').eq('user_id', user.id).maybeSingle(),
-      supa.from('question_memory_state').select('*'),
+      fetchAllMemoryStates(),
     ]);
 
     if (qRes.error) { renderLogin(`Error al cargar preguntas: ${qRes.error.message}`); return; }
@@ -608,7 +655,276 @@
       launchStudy(selected, { mode:'study', count:selected.length, randomize:false, feedback:'immediate', timeMode:'per_question', secondsPerQuestion:target, totalSeconds:0, title:`Sprint ${count}`, studyMode:'practice_sprint' });
     });
     document.getElementById('custom-practice').onclick = () => renderSessionBuilder('study');
-    document.getElementById('practice-exam').onclick = () => renderSessionBuilder('exam');
+    document.getElementById('practice-exam').onclick = renderExamHub;
+  }
+
+
+  function expectedHistoricalCount(year) {
+    return Number(year) === 2020 ? 90 : 100;
+  }
+
+  function historicalExamCatalog() {
+    const grouped = new Map();
+    for (const q of questions) {
+      const year = Number(q.year);
+      const test = String(q.test || '').toUpperCase();
+      if (!year || !['A','B'].includes(test)) continue;
+      const key = `${year}-${test}`;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(q);
+    }
+
+    for (const list of grouped.values()) {
+      list.sort((a,b) => Number(a.question_number) - Number(b.question_number));
+    }
+
+    const years = [...new Set([...grouped.keys()].map(k => Number(k.split('-')[0])))]
+      .sort((a,b) => b-a);
+
+    const catalog = [];
+    for (const year of years) {
+      const expected = expectedHistoricalCount(year);
+      const a = grouped.get(`${year}-A`) || [];
+      const b = grouped.get(`${year}-B`) || [];
+      if (a.length >= expected) {
+        catalog.push({ year, kind:'single', test:'A', count:expected, questions:a.slice(0,expected), title:`${year} · Prueba A` });
+      }
+      if (b.length >= expected) {
+        catalog.push({ year, kind:'single', test:'B', count:expected, questions:b.slice(0,expected), title:`${year} · Prueba B` });
+      }
+      if (a.length >= expected && b.length >= expected) {
+        catalog.push({
+          year, kind:'combined', test:'A+B', count:expected*2,
+          questions:[...a.slice(0,expected), ...b.slice(0,expected)],
+          title:`${year} · Maratón A+B`,
+        });
+      }
+    }
+    return catalog;
+  }
+
+  function renderExamHub() {
+    clearTimer();
+    const catalog = historicalExamCatalog();
+    const groupedByYear = new Map();
+    for (const item of catalog) {
+      if (!groupedByYear.has(item.year)) groupedByYear.set(item.year, []);
+      groupedByYear.get(item.year).push(item);
+    }
+
+    const historicalHtml = groupedByYear.size
+      ? [...groupedByYear.entries()].map(([year, items]) => `
+          <div class="historical-year-group">
+            <h3>${year}</h3>
+            <div class="historical-cards">
+              ${items.map(item => `
+                <button class="historical-card ${item.kind==='combined'?'combined':''}"
+                  data-historical-year="${item.year}"
+                  data-historical-test="${item.test}">
+                  <strong>${esc(item.title)}</strong>
+                  <span>${item.count} preguntas · orden original · hoja de respuestas separada</span>
+                  <small>${item.kind==='combined' ? 'A seguida de B · entrenamiento de resistencia' : 'Reproducción de esa prueba histórica'}</small>
+                </button>`).join('')}
+            </div>
+          </div>`).join('')
+      : `<div class="empty"><p>Aún no hay un examen histórico completo cargado.</p><p class="muted">Cuando una prueba tenga todas sus preguntas en la base, aparecerá aquí automáticamente.</p></div>`;
+
+    app.innerHTML = `<main class="shell">${topbar('Simulacros', true)}
+      <section class="panel">
+        <div class="builder-head">
+          <div><h2>🗂 Simulacro histórico realista</h2><p class="muted">Cuadernillo completo en orden original y hoja de respuestas independiente. No verás claves ni explicaciones hasta entregar.</p></div>
+        </div>
+        ${historicalHtml}
+      </section>
+      <section class="panel" style="margin-top:14px">
+        <h2>🧪 Simulacro personalizado</h2>
+        <p class="muted">La app construye una prueba aleatoria según número de preguntas, filtros, tiempo y descanso.</p>
+        <button id="custom-exam-builder" class="btn primary">Crear simulacro personalizado</button>
+      </section>
+    </main>`;
+
+    attachTopbar();
+    document.querySelectorAll('[data-historical-year]').forEach(btn => {
+      btn.onclick = () => {
+        const year = Number(btn.dataset.historicalYear);
+        const test = btn.dataset.historicalTest;
+        const item = catalog.find(x => x.year === year && x.test === test);
+        if (item) launchHistoricalExam(item);
+      };
+    });
+    document.getElementById('custom-exam-builder').onclick = () => renderSessionBuilder('exam');
+  }
+
+  function launchHistoricalExam(item) {
+    const secondsPerQuestion = 54; // Preset de entrenamiento: 3 h para 200 preguntas.
+    const totalSeconds = item.count * secondsPerQuestion;
+    const firstBlockCount = item.kind === 'combined'
+      ? item.questions.filter(q => String(q.test).toUpperCase() === 'A').length
+      : 0;
+
+    launchExam(item.questions, {
+      mode:'exam',
+      title:`Histórico realista · ${item.title}`,
+      count:item.count,
+      randomize:false,
+      feedback:'end',
+      timeMode:'total',
+      totalSeconds,
+      secondsPerQuestion:0,
+      breakAfter:firstBlockCount,
+      pauseDuringBreak:true,
+      studyMode:'historical_exam',
+      examLayout:'paper',
+      historicalYear:item.year,
+      historicalTest:item.test,
+      historicalKind:item.kind,
+    });
+  }
+
+  function historicalDisplayNumber(q, index) {
+    const combined = currentExam?.config?.historicalKind === 'combined';
+    return combined ? `${String(q.test).toUpperCase()}-${q.question_number}` : String(q.question_number);
+  }
+
+  function historicalPaperQuestionsHtml() {
+    let lastTest = null;
+    return currentExam.questions.map((q, index) => {
+      const test = String(q.test || '').toUpperCase();
+      let divider = '';
+      if (currentExam.config.historicalKind === 'combined' && lastTest && test !== lastTest) {
+        divider = `<div class="paper-section-divider">
+          <div><strong>Fin de la Prueba ${esc(lastTest)}</strong><span>La siguiente sección continúa con la Prueba ${esc(test)}.</span></div>
+          ${!currentExam.state.breakTaken ? `<button class="btn" id="paper-break-btn">Iniciar descanso</button>` : `<span class="tag ok">Descanso registrado</span>`}
+        </div>`;
+      }
+      lastTest = test;
+      return `${divider}<article class="paper-question" id="paper-question-${index}">
+        <div class="paper-question-head">
+          <span class="paper-qnum">${esc(historicalDisplayNumber(q,index))}</span>
+          <span class="muted">${esc(q.year)} · Prueba ${esc(test)}</span>
+        </div>
+        <p class="paper-question-text">${esc(q.question)}</p>
+        <div class="paper-options">
+          ${optionList(q).map(o => `<div class="paper-option"><strong>${o.letter}.</strong><span>${esc(o.text)}</span></div>`).join('')}
+        </div>
+      </article>`;
+    }).join('');
+  }
+
+  function historicalAnswerSheetHtml() {
+    let lastTest = null;
+    return currentExam.questions.map((q, index) => {
+      const test = String(q.test || '').toUpperCase();
+      const heading = test !== lastTest
+        ? `<div class="answer-sheet-section">Prueba ${esc(test)}</div>`
+        : '';
+      lastTest = test;
+      const selected = currentExam.state.responses[q.id] ?? null;
+      return `${heading}<div class="answer-row ${selected?'answered':''}" data-answer-row="${index}">
+        <button class="answer-number" data-scroll-question="${index}" title="Ir a la pregunta">${esc(historicalDisplayNumber(q,index))}</button>
+        <div class="answer-bubbles">
+          ${optionList(q).map(o => `<button class="answer-bubble ${selected===o.letter?'selected':''}"
+            data-answer-index="${index}" data-answer-letter="${o.letter}" aria-label="${esc(historicalDisplayNumber(q,index))} ${o.letter}">${o.letter}</button>`).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function historicalAnsweredCount() {
+    return currentExam.questions.filter(q => currentExam.state.responses[q.id] != null).length;
+  }
+
+  function refreshHistoricalAnswerSheet() {
+    const count = historicalAnsweredCount();
+    const countEl = document.getElementById('historical-answered-count');
+    if (countEl) countEl.textContent = String(count);
+    for (let i = 0; i < currentExam.questions.length; i++) {
+      const q = currentExam.questions[i];
+      const selected = currentExam.state.responses[q.id] ?? null;
+      const row = document.querySelector(`[data-answer-row="${i}"]`);
+      if (row) row.classList.toggle('answered', Boolean(selected));
+      document.querySelectorAll(`[data-answer-index="${i}"]`).forEach(btn => {
+        btn.classList.toggle('selected', btn.dataset.answerLetter === selected);
+      });
+    }
+  }
+
+  function renderHistoricalExamPaper() {
+    clearTimer();
+    examQuestionEnteredAt = 0;
+    const answered = historicalAnsweredCount();
+
+    app.innerHTML = `<main class="historical-shell">
+      ${topbar(currentExam.config.title || 'Simulacro histórico', false)}
+      <section class="historical-toolbar panel">
+        <div>
+          <span class="tag">Modo histórico realista</span>
+          <strong>${esc(currentExam.config.historicalYear)} · ${esc(currentExam.config.historicalTest)}</strong>
+          <span><strong id="historical-answered-count">${answered}</strong>/${currentExam.questions.length} marcadas</span>
+        </div>
+        <div class="historical-toolbar-actions">
+          <button id="jump-answer-sheet" class="btn small">📋 Hoja de respuestas</button>
+          <div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div>
+          <button id="historical-finish" class="btn danger small">Entregar</button>
+        </div>
+      </section>
+
+      <section class="historical-layout">
+        <div class="historical-paper panel">
+          <div class="paper-cover">
+            <span class="roadmap-kicker">CUADERNILLO</span>
+            <h1>${esc(currentExam.config.title)}</h1>
+            <p>Lee el cuadernillo y marca tu respuesta únicamente en la hoja lateral, como en una hoja de respuestas física.</p>
+          </div>
+          ${historicalPaperQuestionsHtml()}
+        </div>
+
+        <aside class="answer-sheet panel" id="historical-answer-sheet">
+          <div class="answer-sheet-header">
+            <div><span class="roadmap-kicker">HOJA DE RESPUESTAS</span><h2>Marca cuando estés seguro</h2></div>
+            <span class="tag">${answered}/${currentExam.questions.length}</span>
+          </div>
+          <div class="answer-sheet-scroll">${historicalAnswerSheetHtml()}</div>
+        </aside>
+      </section>
+    </main>`;
+
+    attachTopbar();
+
+    document.querySelectorAll('[data-answer-index]').forEach(btn => {
+      btn.onclick = async () => {
+        const index = Number(btn.dataset.answerIndex);
+        const q = currentExam.questions[index];
+        currentExam.state.responses[q.id] = btn.dataset.answerLetter;
+        refreshHistoricalAnswerSheet();
+        await persistExamState();
+      };
+    });
+
+    document.querySelectorAll('[data-scroll-question]').forEach(btn => {
+      btn.onclick = () => {
+        const index = Number(btn.dataset.scrollQuestion);
+        document.getElementById(`paper-question-${index}`)?.scrollIntoView({ behavior:'smooth', block:'start' });
+      };
+    });
+
+    document.getElementById('jump-answer-sheet').onclick = () => {
+      document.getElementById('historical-answer-sheet')?.scrollIntoView({ behavior:'smooth', block:'start' });
+    };
+
+    const breakBtn = document.getElementById('paper-break-btn');
+    if (breakBtn) {
+      breakBtn.onclick = async () => {
+        clearTimer();
+        currentExam.state.breakTaken = true;
+        currentExam.state.currentIndex = currentExam.config.breakAfter || 0;
+        await persistExamState();
+        renderBreakScreen();
+      };
+    }
+
+    document.getElementById('historical-finish').onclick = renderExamOverview;
+    startExamTimer();
   }
 
   function renderRoadmap() {
@@ -691,7 +1007,7 @@
       const selected = pool.slice(0, Math.min(20,pool.length));
       launchStudy(selected, { mode:'study', count:selected.length, randomize:false, feedback:'immediate', timeMode:'none', secondsPerQuestion:Number(profile?.target_response_seconds||25), totalSeconds:0, title:'Repaso inteligente', studyMode:'smart_review' });
     };
-    document.getElementById('exam-btn').onclick = () => renderSessionBuilder('exam');
+    document.getElementById('exam-btn').onclick = renderExamHub;
     document.getElementById('roadmap-btn').onclick = renderRoadmap;
     document.getElementById('roadmap-mini').onclick = renderRoadmap;
     document.getElementById('stats-btn').onclick = renderStats;
@@ -1057,7 +1373,8 @@
     }
 
     currentExam = { row: sessionRow, config, questions: selected, state };
-    renderExamQuestion();
+    if (config.examLayout === 'paper') renderHistoricalExamPaper();
+    else renderExamQuestion();
   }
 
   async function resumePersistentSession(row) {
@@ -1069,7 +1386,8 @@
     currentExam.state.timeSpent ||= {};
     currentExam.state.currentIndex ||= 0;
     currentExam.state.remainingSeconds ??= currentExam.config.totalSeconds || 0;
-    renderExamQuestion();
+    if (currentExam.config.examLayout === 'paper') renderHistoricalExamPaper();
+    else renderExamQuestion();
   }
 
   function accumulateExamTime() {
@@ -1189,7 +1507,7 @@
     app.innerHTML = `<main class="shell">${topbar('Descanso', false)}<section class="panel empty"><h2>Bloque 1 completado</h2><p>Has llegado a la pregunta ${done}. Tu progreso está guardado.</p><p class="muted">${currentExam.config.pauseDuringBreak ? 'El cronómetro está pausado durante este descanso.' : 'El cronómetro continúa corriendo.'}</p><button id="continue-block" class="btn primary">Continuar con el siguiente bloque</button></section></main>`;
     attachTopbar();
     if (!currentExam.config.pauseDuringBreak) startExamTimer();
-    document.getElementById('continue-block').onclick = () => renderExamQuestion();
+    document.getElementById('continue-block').onclick = () => currentExam.config.examLayout === 'paper' ? renderHistoricalExamPaper() : renderExamQuestion();
   }
 
   function renderExamOverview() {
@@ -1200,7 +1518,7 @@
     app.innerHTML = `<main class="shell">${topbar('Revisión antes de entregar', false)}<section class="panel"><h2>Resumen del simulacro</h2><div class="kpis"><div class="kpi"><div class="value">${answered}</div><div class="label">Respondidas</div></div><div class="kpi"><div class="value">${currentExam.questions.length-answered}</div><div class="label">Sin responder</div></div><div class="kpi"><div class="value">${marked}</div><div class="label">Marcadas</div></div><div class="kpi"><div class="value">${formatTime(currentExam.state.remainingSeconds)}</div><div class="label">Tiempo restante</div></div></div><div class="question-grid overview-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="footer-actions"><button id="back-exam" class="btn ghost">Volver al examen</button><button id="submit-exam" class="btn danger">Entregar y corregir</button></div></section></main>`;
     attachTopbar();
     document.querySelectorAll('[data-qindex]').forEach(btn => btn.onclick = () => { currentExam.state.currentIndex = Number(btn.dataset.qindex); renderExamQuestion(); });
-    document.getElementById('back-exam').onclick = renderExamQuestion;
+    document.getElementById('back-exam').onclick = () => currentExam.config.examLayout === 'paper' ? renderHistoricalExamPaper() : renderExamQuestion();
     document.getElementById('submit-exam').onclick = async () => {
       if (confirm('¿Entregar el simulacro? Después se mostrarán las respuestas y explicaciones.')) await finishExam(false);
     };
@@ -1209,9 +1527,14 @@
   async function finishExam(timeExpired = false) {
     clearTimer();
     accumulateExamTime();
+    const answeredForTiming = currentExam.questions.filter(q => currentExam.state.responses[q.id] != null).length;
+    const elapsedSessionMs = Math.max(0, (Number(currentExam.config.totalSeconds || 0) - Number(currentExam.state.remainingSeconds || 0)) * 1000);
+    const historicalAverageMs = answeredForTiming ? Math.round(elapsedSessionMs / answeredForTiming) : 0;
+    const attemptMode = currentExam.config.studyMode || 'exam';
     const payload = currentExam.questions.map(q => {
       const selected = currentExam.state.responses[q.id] ?? null;
-      return makeAttempt(q, selected, selected === q.official_answer, currentExam.state.timeSpent[q.id] || 0, 'exam', selected == null);
+      const measuredMs = currentExam.state.timeSpent[q.id] || (currentExam.config.examLayout === 'paper' && selected != null ? historicalAverageMs : 0);
+      return makeAttempt(q, selected, selected === q.official_answer, measuredMs, attemptMode, selected == null);
     });
     await recordAttemptsBatch(payload);
 
