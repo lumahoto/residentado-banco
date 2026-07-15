@@ -15,6 +15,8 @@
   let profile = null;
   let memoryStates = [];
   let memoryByQuestion = new Map();
+  let corpusRentabilityByQuestion = new Map();
+  let corpusRentabilityMeta = { highCount: 0, groupCount: 0, yearsCount: 0, threshold: null };
 
   let timerId = null;
   let questionStartedAt = 0;
@@ -56,6 +58,10 @@
   function clearTimer() {
     if (timerId) clearInterval(timerId);
     timerId = null;
+  }
+
+  function scrollPageTop() {
+    requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
   }
 
   function localAttempts() {
@@ -273,6 +279,7 @@
     registerServiceWorker();
     if (!cloudConfigured) {
       questions = (window.PILOT_QUESTIONS || []).filter(q => String(q.active).toLowerCase() !== 'false');
+      rebuildCorpusRentability();
       attempts = localAttempts();
       activeSessions = localSessions().filter(s => s.status === 'active');
       profile = localProfile();
@@ -402,6 +409,7 @@
     if (mRes.error) { renderFatal(`Falta aplicar la migración v0.5 en Supabase: ${mRes.error.message}`); return; }
 
     questions = qRes.data || [];
+    rebuildCorpusRentability();
     attempts = aRes.data || [];
     memoryStates = mRes.data || [];
     rebuildMemoryMap();
@@ -424,14 +432,165 @@
     return `<div class="topbar">
       <div class="logo-mark">R</div><h1>${esc(title)}</h1><div class="spacer"></div>
       ${showHome ? `<button class="btn small ghost" data-home>Inicio</button>` : ''}
-      ${cloudConfigured ? `<button id="logout-btn" class="btn small ghost">Salir</button>` : ''}
+      ${cloudConfigured ? `<div class="topbar-menu-wrap">
+        <button id="account-menu-btn" class="btn small ghost icon-menu-btn" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="account-menu">⋮</button>
+        <div id="account-menu" class="topbar-menu-popover" hidden>
+          <button id="logout-btn" class="topbar-menu-item danger-menu-item" type="button">Salir de la cuenta</button>
+        </div>
+      </div>` : ''}
     </div>`;
   }
 
   function attachTopbar() {
     document.querySelectorAll('[data-home]').forEach(b => b.onclick = renderDashboard);
+
+    const menuBtn = document.getElementById('account-menu-btn');
+    const menu = document.getElementById('account-menu');
+    if (menuBtn && menu) {
+      menuBtn.onclick = (ev) => {
+        ev.stopPropagation();
+        const willOpen = menu.hidden;
+        menu.hidden = !willOpen;
+        menuBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        if (willOpen) {
+          setTimeout(() => {
+            document.addEventListener('click', () => {
+              menu.hidden = true;
+              menuBtn.setAttribute('aria-expanded', 'false');
+            }, { once:true });
+          }, 0);
+        }
+      };
+      menu.onclick = ev => ev.stopPropagation();
+    }
+
     const logout = document.getElementById('logout-btn');
-    if (logout) logout.onclick = async () => { await supa.auth.signOut(); user = null; renderLogin(); };
+    if (logout) logout.onclick = async () => {
+      if (!confirm('¿Cerrar sesión en este dispositivo?')) return;
+      await supa.auth.signOut();
+      user = null;
+      renderLogin();
+    };
+  }
+
+  function percentile(values, p = 0.7) {
+    const sorted = values.filter(Number.isFinite).slice().sort((a,b) => a-b);
+    if (!sorted.length) return null;
+    const idx = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)));
+    return sorted[idx];
+  }
+
+  function normalizeCorpusLabel(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  function corpusTopicKey(q) {
+    const topic = normalizeCorpusLabel(q.topic || q.subtopic || '');
+    if (!topic) return null;
+    return [
+      normalizeCorpusLabel(q.area || 'Sin área'),
+      normalizeCorpusLabel(q.specialty || 'Sin especialidad'),
+      topic,
+    ].join('|||');
+  }
+
+  function rebuildCorpusRentability() {
+    const valid = questions.filter(q => !observed(q));
+    const corpusYears = new Set(valid.map(q => Number(q.year)).filter(Number.isFinite));
+    const groups = new Map();
+
+    for (const q of valid) {
+      const key = corpusTopicKey(q);
+      if (!key) continue;
+      if (!groups.has(key)) groups.set(key, { count:0, years:new Set(), questionIds:[] });
+      const g = groups.get(key);
+      g.count += 1;
+      if (Number.isFinite(Number(q.year))) g.years.add(Number(q.year));
+      g.questionIds.push(q.id);
+    }
+
+    const maxCount = Math.max(1, ...[...groups.values()].map(g => g.count));
+    const yearsCount = Math.max(1, corpusYears.size);
+    const scoredGroups = [...groups.entries()].map(([key,g]) => {
+      const frequency = Math.sqrt(g.count / maxCount);
+      const breadth = g.years.size / yearsCount;
+      const score = clamp(0.62 * frequency + 0.38 * breadth, 0, 1);
+      const eligible = g.count >= 3 && (yearsCount < 2 || g.years.size >= 2);
+      return { key, ...g, score, eligible };
+    });
+
+    const threshold = percentile(scoredGroups.filter(g => g.eligible).map(g => g.score), 0.70);
+    const effectiveThreshold = threshold == null ? 1.1 : Math.max(0.56, threshold);
+    corpusRentabilityByQuestion = new Map();
+
+    for (const g of scoredGroups) {
+      const high = g.eligible && g.score >= effectiveThreshold;
+      for (const qid of g.questionIds) {
+        corpusRentabilityByQuestion.set(qid, {
+          score: high ? Math.max(0.82, g.score) : clamp(0.35 + g.score * 0.45, 0.35, 0.79),
+          high,
+          groupCount: g.count,
+          yearBreadth: g.years.size,
+          source: 'corpus_runtime',
+        });
+      }
+    }
+
+    corpusRentabilityMeta = {
+      highCount: [...corpusRentabilityByQuestion.values()].filter(x => x.high).length,
+      groupCount: scoredGroups.length,
+      yearsCount: corpusYears.size,
+      threshold: Number.isFinite(effectiveThreshold) ? Number(effectiveThreshold.toFixed(3)) : null,
+    };
+  }
+
+  function explicitRentabilityTier(q) {
+    const tier = String(q.rentability_tier || q.rentability_status || '').toUpperCase().trim();
+    if (!tier || tier.includes('PENDIENTE')) return '';
+    return tier;
+  }
+
+  function isHighRentability(q) {
+    const explicit = explicitRentabilityTier(q);
+    if (explicit.includes('MUY_ALTA') || explicit.includes('MUY ALTA') || explicit.startsWith('ALTA')) return true;
+    return Boolean(corpusRentabilityByQuestion.get(q.id)?.high);
+  }
+
+  function sortByPriority(list, now = new Date(), { diversifyYears = false, tolerance = 0.75 } = {}) {
+    const scored = list.map(q => ({ q, score: questionPriority(q, now), year: String(q.year || '') }))
+      .sort((a,b) => b.score - a.score || a.q.id.localeCompare(b.q.id));
+    if (!diversifyYears || scored.length < 2) return scored.map(x => x.q);
+
+    const queues = new Map();
+    for (const item of scored) {
+      if (!queues.has(item.year)) queues.set(item.year, []);
+      queues.get(item.year).push(item);
+    }
+
+    const result = [];
+    let lastYear = null;
+    while (result.length < scored.length) {
+      const heads = [...queues.entries()]
+        .filter(([,queue]) => queue.length)
+        .map(([year,queue]) => ({ year, item:queue[0] }))
+        .sort((a,b) => b.item.score - a.item.score || a.item.q.id.localeCompare(b.item.q.id));
+      if (!heads.length) break;
+
+      let chosen = heads[0];
+      if (chosen.year === lastYear) {
+        const alternative = heads.find(h => h.year !== lastYear && h.item.score >= chosen.item.score - tolerance);
+        if (alternative) chosen = alternative;
+      }
+
+      result.push(queues.get(chosen.year).shift().q);
+      lastYear = chosen.year;
+    }
+    return result;
   }
 
   function questionStats(qid) {
@@ -471,12 +630,12 @@
 
   function rentabilityWeight(q) {
     if (Number.isFinite(Number(q.rentability_score))) return clamp(Number(q.rentability_score), 0, 1);
-    const tier = String(q.rentability_tier || q.rentability_status || '').toUpperCase();
+    const tier = explicitRentabilityTier(q);
     if (tier.includes('MUY_ALTA') || tier.includes('MUY ALTA')) return 1;
     if (tier.includes('ALTA')) return 0.85;
     if (tier.includes('MEDIA')) return 0.6;
     if (tier.includes('BAJA')) return 0.35;
-    return 0.55;
+    return corpusRentabilityByQuestion.get(q.id)?.score ?? 0.55;
   }
 
   function questionPriority(q, now = new Date()) {
@@ -508,15 +667,21 @@
     const now = new Date();
     const nonObserved = questions.filter(q => !observed(q));
     if (kind === 'due') {
-      return nonObserved.filter(q => {
+      const due = nonObserved.filter(q => {
         const st = memoryByQuestion.get(q.id);
         return st && new Date(st.due_at) <= now;
-      }).sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+      });
+      // Solo mezcla años entre repasos ya vencidos y de prioridad muy parecida:
+      // nunca introduce preguntas no vencidas para "diversificar".
+      return sortByPriority(due, now, { diversifyYears:true, tolerance:0.35 });
     }
-    if (kind === 'new') return nonObserved.filter(q => !attempts.some(a => a.question_id === q.id)).sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+    if (kind === 'new') {
+      const unseen = nonObserved.filter(q => !attempts.some(a => a.question_id === q.id));
+      return sortByPriority(unseen, now, { diversifyYears:true, tolerance:0.75 });
+    }
     if (kind === 'errors') {
       const ids = new Set(attempts.filter(a => !a.is_correct).map(a => a.question_id));
-      return nonObserved.filter(q => ids.has(q.id)).sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+      return sortByPriority(nonObserved.filter(q => ids.has(q.id)), now, { diversifyYears:true, tolerance:0.5 });
     }
     if (kind === 'uncertain') {
       const latestByQuestion = new Map();
@@ -524,9 +689,11 @@
         const prev = latestByQuestion.get(a.question_id);
         if (!prev || new Date(a.answered_at) > new Date(prev.answered_at)) latestByQuestion.set(a.question_id, a);
       }
-      return nonObserved
-        .filter(q => latestByQuestion.get(q.id)?.was_uncertain)
-        .sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+      return sortByPriority(
+        nonObserved.filter(q => latestByQuestion.get(q.id)?.was_uncertain),
+        now,
+        { diversifyYears:true, tolerance:0.5 }
+      );
     }
     if (kind === 'speed') {
       return nonObserved.filter(q => {
@@ -535,10 +702,10 @@
       }).sort((a,b) => (extendedQuestionStats(b).avgMs||0) - (extendedQuestionStats(a).avgMs||0));
     }
     if (kind === 'high') {
-      const high = nonObserved.filter(q => rentabilityWeight(q) >= 0.8);
-      return (high.length ? high : nonObserved).sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+      const high = nonObserved.filter(isHighRentability);
+      return sortByPriority(high.length ? high : nonObserved, now, { diversifyYears:true, tolerance:0.7 });
     }
-    return nonObserved.sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+    return sortByPriority(nonObserved, now, { diversifyYears:true, tolerance:0.75 });
   }
 
 
@@ -1445,7 +1612,7 @@
     const areas = [...new Set(questions.map(q => q.area).filter(Boolean))].sort();
     const topics = [...new Set(questions.map(q => q.topic).filter(Boolean))].sort();
     const years = [...new Set(questions.map(q => Number(q.year)))].sort((a,b) => a-b);
-    const highCount = questions.filter(q => String(q.rentability_status || '').startsWith('ALTA')).length;
+    const highCount = questions.filter(isHighRentability).length;
     const isExam = mode === 'exam';
 
     app.innerHTML = `<main class="shell">
@@ -1463,7 +1630,8 @@
           <div class="builder-grid">
             <fieldset><legend>Contenido</legend>
               <label>Estado previo<select id="pool-type" class="input"><option value="all">Todas</option><option value="unseen">Nunca vistas</option><option value="errors">Solo errores</option><option value="correct">Ya acertadas</option></select></label>
-              <label>Rentabilidad<select id="rentability" class="input"><option value="all">Todas</option><option value="high" ${highCount ? '' : 'disabled'}>Alta rentabilidad${highCount ? '' : ' — disponible al analizar corpus'}</option></select></label>
+              <label>Rentabilidad<select id="rentability" class="input"><option value="all">Todas</option><option value="high" ${highCount ? '' : 'disabled'}>Alta rentabilidad${highCount ? ` · ${highCount} preguntas` : ' — requiere al menos corpus suficiente y temas clasificados'}</option></select></label>
+              <small class="muted">La rentabilidad se recalcula automáticamente con el corpus cargado (${corpusRentabilityMeta.yearsCount} años). No depende de cuántas preguntas hayas respondido.</small>
             </fieldset>
 
             <fieldset><legend>Cantidad</legend>
@@ -1579,7 +1747,7 @@
       if (config.areas.length && !config.areas.includes(q.area)) return false;
       if (config.years.length && !config.years.includes(Number(q.year))) return false;
       if (config.topics.length && !config.topics.includes(q.topic)) return false;
-      if (config.rentability === 'high' && !String(q.rentability_status || '').startsWith('ALTA')) return false;
+      if (config.rentability === 'high' && !isHighRentability(q)) return false;
       if (config.poolType === 'unseen' && seenIds.has(q.id)) return false;
       if (config.poolType === 'errors' && !wrongIds.has(q.id)) return false;
       if (config.poolType === 'correct' && !correctIds.has(q.id)) return false;
@@ -1627,6 +1795,7 @@
 
   function renderStudyQuestion() {
     clearTimer();
+    scrollPageTop();
     const q = studyCurrentQuestion();
     if (!q) return finishStudy();
     questionStartedAt = performance.now();
@@ -1729,7 +1898,7 @@
       clearTimer();
       const isCorrect = letter === q.official_answer;
       const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
-      await recordSingleAttempt(
+      const savedAttempt = await recordSingleAttempt(
         q, letter, isCorrect, currentStudy.durations[q.id] || 0,
         currentStudy.config.studyMode || 'custom_study', false,
         { uncertainOptions }
@@ -1739,7 +1908,11 @@
       renderFeedback(q, letter, isCorrect, () => {
         currentStudy.index++;
         renderStudyQuestion();
-      }, false, false, uncertainOptions);
+      }, false, false, uncertainOptions, {
+        attemptId: savedAttempt?.id || null,
+        responseTimeMs: currentStudy.durations[q.id] || 0,
+        wasUncertainAtAnswer: Boolean(savedAttempt?.was_uncertain),
+      });
     } else {
       document.querySelectorAll('.option').forEach(btn => btn.classList.toggle('selected', btn.dataset.letter === letter));
     }
@@ -1755,10 +1928,19 @@
         q, null, false, currentStudy.durations[q.id] || 0,
         currentStudy.config.studyMode || 'custom_study', true,
         { uncertainOptions }
-      ).then(() => {
+      ).then((savedAttempt) => {
         disableOptionsAndPaint(q, null);
         document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
-        renderFeedback(q, null, false, () => { currentStudy.index++; renderStudyQuestion(); }, true, false, uncertainOptions);
+        renderFeedback(
+          q, null, false,
+          () => { currentStudy.index++; renderStudyQuestion(); },
+          true, false, uncertainOptions,
+          {
+            attemptId: savedAttempt?.id || null,
+            responseTimeMs: currentStudy.durations[q.id] || 0,
+            wasUncertainAtAnswer: Boolean(savedAttempt?.was_uncertain),
+          }
+        );
       });
     } else {
       currentStudy.index++;
@@ -1928,6 +2110,7 @@
 
   function renderExamQuestion() {
     clearTimer();
+    scrollPageTop();
     const q = currentExam.questions[currentExam.state.currentIndex];
     const selected = currentExam.state.responses[q.id] ?? null;
     const marked = Boolean(currentExam.state.marked[q.id]);
@@ -2123,6 +2306,7 @@
 
   function renderReviewQuestion() {
     clearTimer();
+    scrollPageTop();
     const q = reviewContext.questions[reviewContext.index];
     const selected = reviewContext.responses[q.id]?.selected ?? reviewContext.responses[q.id] ?? null;
     const correct = selected === q.official_answer;
@@ -2131,7 +2315,15 @@
       .map(([letter]) => letter);
     app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${optionList(q).map(o => `<div class="option ${o.letter===q.official_answer?'correct':o.letter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${reviewContext.index===0?'disabled':''}>← Anterior</button><button id="next-review" class="btn primary">${reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →'}</button></div></main>`;
     attachTopbar();
-    renderFeedback(q, selected, correct, null, selected == null, true, uncertainOptions);
+    const latestAttempt = attemptsForQuestion(q.id)
+      .slice()
+      .sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0] || null;
+    renderFeedback(q, selected, correct, null, selected == null, true, uncertainOptions, {
+      attemptId: latestAttempt?.id || null,
+      responseTimeMs: Number(latestAttempt?.response_time_ms || 0),
+      wasUncertainAtAnswer: Boolean(latestAttempt?.was_uncertain),
+      allowPostMark: true,
+    });
     document.getElementById('prev-review').onclick = () => { reviewContext.index--; renderReviewQuestion(); };
     document.getElementById('next-review').onclick = () => {
       if (reviewContext.index + 1 >= reviewContext.questions.length) renderDashboard();
@@ -2198,9 +2390,24 @@
     return `<div class="framework">${esc(text).split('\n').map(line => `<div>${line}</div>`).join('')}</div>`;
   }
 
-  function renderFeedback(q, selected, isCorrect, onNext, timedOut = false, reviewOnly = false, uncertainOptions = []) {
+  function renderFeedback(q, selected, isCorrect, onNext, timedOut = false, reviewOnly = false, uncertainOptions = [], feedbackMeta = {}) {
     const target = document.getElementById('feedback');
     if (!target) return;
+    const targetSeconds = Number(profile?.target_response_seconds || 25);
+    const responseTimeMs = Number(feedbackMeta.responseTimeMs || 0);
+    const responseSeconds = responseTimeMs > 0 ? responseTimeMs / 1000 : null;
+    const timeState = responseSeconds == null
+      ? ''
+      : responseSeconds <= targetSeconds
+        ? 'ok'
+        : responseSeconds <= targetSeconds * 1.6
+          ? 'warn'
+          : 'bad';
+    const timeLabel = responseSeconds == null
+      ? ''
+      : `${responseSeconds < 10 ? responseSeconds.toFixed(1) : Math.round(responseSeconds)} s`;
+    const postMarkAvailable = Boolean(feedbackMeta.attemptId) && selected != null && (!reviewOnly || feedbackMeta.allowPostMark);
+    const alreadyUncertain = Boolean(feedbackMeta.wasUncertainAtAnswer) || uncertainOptions.length > 0;
     const distractors = optionList(q).filter(o => o.letter !== q.official_answer).map(o => {
       const reason = q[`why_not_${o.letter.toLowerCase()}`];
       return reason ? `<p><strong>${o.letter}. ${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
@@ -2210,6 +2417,7 @@
       <h3>${timedOut ? '⏱ Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
       ${selected ? `<p>Tu respuesta: <strong>${esc(selected)}. ${esc(q[`option_${selected.toLowerCase()}`])}</strong></p>` : ''}
       <p class="answer-line">Clave oficial: ${esc(q.official_answer)}. ${esc(q.official_answer_text)}</p>
+      ${responseSeconds != null ? `<div class="feedback-time ${timeState}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
 
       ${observed(q) ? `<div class="explain-block audit-box"><h4>⚠ Auditoría médica</h4><p><strong>Pregunta histórica observada: se conserva la clave oficial, pero no cuenta en dominio por defecto.</strong></p><p>${esc(q.audit_current_assessment || q.update_alert || '')}</p><p><strong>Criterio actual:</strong> ${esc(q.audit_current_answer || '')}</p></div>` : caveat(q) ? `<div class="explain-block"><h4>⚠ Precisión clínica</h4><p>${esc(q.audit_current_assessment || q.update_alert || '')}</p></div>` : ''}
 
@@ -2226,8 +2434,37 @@
       ${q.abbreviations ? `<div class="explain-block"><h4>🔤 Siglas y términos</h4><p>${esc(q.abbreviations)}</p></div>` : ''}
       ${q.exam_pearl ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(q.exam_pearl)}</p></div>` : ''}
       ${q.memory_hook ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(q.memory_hook)}</p></div>` : ''}
+      ${postMarkAvailable ? `<div class="post-answer-reflection">
+        <div>
+          <strong>¿Acertaste sin dominar realmente el razonamiento?</strong>
+          <p class="muted">Puedes marcar la pregunta después de leer la corrección. Se contará como conocimiento frágil y volverá antes al repaso.</p>
+        </div>
+        <button id="post-answer-uncertain" class="btn ${alreadyUncertain ? 'ghost' : 'warn-btn'}" type="button" ${alreadyUncertain ? 'disabled' : ''}>
+          ${alreadyUncertain ? '✓ Ya registrada como dudosa' : '❓ No dominaba el razonamiento'}
+        </button>
+        <div id="post-answer-uncertain-status" class="muted post-answer-status"></div>
+      </div>` : ''}
       ${!reviewOnly && onNext ? `<div class="footer-actions"><button id="next-feedback" class="btn primary">Siguiente pregunta →</button></div>` : ''}
     </div>`;
+
+    const postBtn = document.getElementById('post-answer-uncertain');
+    if (postBtn && !postBtn.disabled) {
+      postBtn.onclick = async () => {
+        postBtn.disabled = true;
+        const status = document.getElementById('post-answer-uncertain-status');
+        if (status) status.textContent = 'Guardando…';
+        const updated = await markAttemptUncertainAfterFeedback(feedbackMeta.attemptId, q, selected);
+        if (!updated) {
+          postBtn.disabled = false;
+          if (status) status.textContent = 'No se pudo guardar. Intenta nuevamente.';
+          return;
+        }
+        postBtn.textContent = '✓ Marcada para repaso prioritario';
+        postBtn.classList.remove('warn-btn');
+        postBtn.classList.add('ghost');
+        if (status) status.textContent = 'Registrada como duda posterior a la corrección. La memoria y la prioridad ya fueron recalculadas.';
+      };
+    }
     if (!reviewOnly && onNext) document.getElementById('next-feedback').onclick = onNext;
   }
 
@@ -2274,18 +2511,85 @@
     await upsertMemoryRows(nextRows);
   }
 
+  async function rebuildMemoryForQuestion(questionId) {
+    const q = questions.find(x => x.id === questionId);
+    if (!q) return null;
+    const list = attemptsForQuestion(questionId)
+      .slice()
+      .sort((a,b) => new Date(a.answered_at) - new Date(b.answered_at));
+    if (!list.length) return null;
+
+    let state = null;
+    for (const a of list) {
+      const normalized = {
+        ...a,
+        memory_rating: a.memory_rating || memoryRating(q, a.response_time_ms, a.is_correct, a.timed_out),
+        speed_bucket: a.speed_bucket || speedBucket(q, a.response_time_ms, a.is_correct, a.timed_out),
+      };
+      state = evolveMemory(state, normalized, q);
+    }
+    if (state) await upsertMemoryRows([state]);
+    return state;
+  }
+
+  async function markAttemptUncertainAfterFeedback(attemptId, q, selected) {
+    if (!attemptId) return null;
+    const idx = attempts.findIndex(a => a.id === attemptId);
+    if (idx < 0) return null;
+
+    const current = attempts[idx];
+    const existingOptions = Array.isArray(current.uncertain_options) ? current.uncertain_options : [];
+    const uncertainOptions = [...new Set([...existingOptions, ...(selected ? [selected] : [])])];
+    const previousNote = String(current.uncertainty_note || '').trim();
+    const marker = 'POST_ANSWER_REASONING_MISMATCH';
+    const uncertaintyNote = previousNote.includes(marker)
+      ? previousNote
+      : [previousNote, marker].filter(Boolean).join(' | ');
+
+    const changes = {
+      was_uncertain: true,
+      uncertain_options: uncertainOptions,
+      uncertainty_note: uncertaintyNote,
+      memory_rating: current.is_correct ? Math.min(Number(current.memory_rating || 4), 2) : 1,
+      speed_bucket: current.is_correct ? 'uncertain_correct' : 'uncertain_incorrect',
+    };
+
+    let updated;
+    if (cloudConfigured) {
+      const { data, error } = await supa.from('attempts')
+        .update(changes)
+        .eq('id', attemptId)
+        .eq('user_id', user.id)
+        .select()
+        .single();
+      if (error) {
+        console.warn('No se pudo registrar la duda posterior:', error.message);
+        return null;
+      }
+      updated = data;
+    } else {
+      updated = { ...current, ...changes };
+    }
+
+    attempts[idx] = updated;
+    if (!cloudConfigured) saveLocalAttempts();
+    await rebuildMemoryForQuestion(q.id);
+    return updated;
+  }
+
   async function recordSingleAttempt(q, selected, isCorrect, ms, mode, timedOut, meta = {}) {
     const attempt = makeAttempt(q, selected, isCorrect, ms, mode, timedOut, meta);
     let saved;
     if (cloudConfigured) {
       const { data, error } = await supa.from('attempts').insert({ ...attempt, user_id:user.id }).select().single();
-      if (error) { alert(`No se pudo guardar el intento: ${error.message}`); return; }
+      if (error) { alert(`No se pudo guardar el intento: ${error.message}`); return null; }
       saved = data; attempts.push(data);
     } else {
       saved = { id: crypto.randomUUID(), ...attempt };
       attempts.push(saved); saveLocalAttempts();
     }
     await applyAttemptsToMemory([saved]);
+    return saved;
   }
 
   async function recordAttemptsBatch(payload) {
