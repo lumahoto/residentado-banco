@@ -1,6 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
+  const APP_VERSION = '0.6.10';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
@@ -15,6 +16,8 @@
   let profile = null;
   let memoryStates = [];
   let memoryByQuestion = new Map();
+  let corpusRentabilityByQuestion = new Map();
+  let corpusRentabilityMeta = { highCount: 0, groupCount: 0, yearsCount: 0, threshold: null };
 
   let timerId = null;
   let questionStartedAt = 0;
@@ -42,6 +45,138 @@
     return a;
   };
 
+  const localeSort = (a, b) => String(a || '').localeCompare(String(b || ''), 'es', { sensitivity:'base' });
+
+  function topicPathParts(q) {
+    const area = String(q?.area || 'Sin área').trim() || 'Sin área';
+    const specialty = String(q?.specialty || 'General').trim() || 'General';
+    const topic = String(q?.topic || q?.subtopic || 'Sin tema').trim() || 'Sin tema';
+    return { area, specialty, topic };
+  }
+
+  function topicPathKey(q) {
+    const { area, specialty, topic } = topicPathParts(q);
+    return encodeURIComponent([area, specialty, topic].join('\u001f'));
+  }
+
+  function normalizeTopicSearch(value = '') {
+    return String(value)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
+  function buildTopicHierarchy() {
+    const areas = new Map();
+
+    for (const q of questions) {
+      const { area, specialty, topic } = topicPathParts(q);
+      if (!areas.has(area)) areas.set(area, { name:area, count:0, specialties:new Map() });
+      const areaNode = areas.get(area);
+      areaNode.count += 1;
+
+      if (!areaNode.specialties.has(specialty)) {
+        areaNode.specialties.set(specialty, { name:specialty, count:0, topics:new Map() });
+      }
+      const specialtyNode = areaNode.specialties.get(specialty);
+      specialtyNode.count += 1;
+
+      const key = topicPathKey(q);
+      if (!specialtyNode.topics.has(key)) specialtyNode.topics.set(key, { key, name:topic, count:0 });
+      specialtyNode.topics.get(key).count += 1;
+    }
+
+    return [...areas.values()]
+      .sort((a,b) => localeSort(a.name, b.name))
+      .map(area => ({
+        ...area,
+        specialties:[...area.specialties.values()]
+          .sort((a,b) => localeSort(a.name, b.name))
+          .map(specialty => ({
+            ...specialty,
+            topics:[...specialty.topics.values()].sort((a,b) => localeSort(a.name, b.name)),
+          })),
+      }));
+  }
+
+  function topicHierarchyHtml(hierarchy) {
+    return hierarchy.map((area, areaIndex) => {
+      const areaId = `topic-area-${areaIndex}`;
+      const areaTopicCount = area.specialties.reduce((sum, sp) => sum + sp.topics.length, 0);
+      const specialtiesHtml = area.specialties.map((specialty, specialtyIndex) => {
+        const specialtyId = `${areaId}-specialty-${specialtyIndex}`;
+        const topicsHtml = specialty.topics.map(topic => {
+          const searchText = normalizeTopicSearch(`${area.name} ${specialty.name} ${topic.name}`);
+          return `<label class="topic-leaf" data-topic-search="${esc(searchText)}">
+            <input type="checkbox" name="topicPath" value="${esc(topic.key)}" data-topic-area-id="${areaId}" data-topic-specialty-id="${specialtyId}" checked>
+            <span class="topic-leaf-copy"><strong>${esc(topic.name)}</strong><small>${topic.count} pregunta${topic.count === 1 ? '' : 's'}</small></span>
+          </label>`;
+        }).join('');
+
+        return `<details class="topic-specialty-group" data-topic-specialty-wrap="${specialtyId}" open>
+          <summary><span>${esc(specialty.name)}</span><small>${specialty.topics.length} tema${specialty.topics.length === 1 ? '' : 's'} · ${specialty.count} pregunta${specialty.count === 1 ? '' : 's'}</small></summary>
+          <div class="topic-group-actions">
+            <button type="button" class="topic-scope-btn" data-topic-select-specialty="${specialtyId}">Todos</button>
+            <button type="button" class="topic-scope-btn" data-topic-clear-specialty="${specialtyId}">Ninguno</button>
+          </div>
+          <div class="topic-leaf-list">${topicsHtml}</div>
+        </details>`;
+      }).join('');
+
+      return `<details class="topic-area-group" data-topic-area-wrap="${areaId}" open>
+        <summary><span>${esc(area.name)}</span><small>${areaTopicCount} tema${areaTopicCount === 1 ? '' : 's'} · ${area.count} pregunta${area.count === 1 ? '' : 's'}</small></summary>
+        <div class="topic-group-actions">
+          <button type="button" class="topic-scope-btn" data-topic-select-area="${areaId}">Todos</button>
+          <button type="button" class="topic-scope-btn" data-topic-clear-area="${areaId}">Ninguno</button>
+        </div>
+        <div class="topic-specialty-list">${specialtiesHtml}</div>
+      </details>`;
+    }).join('');
+  }
+
+  const OPTION_REFERENCE_PATTERNS = [
+    /\b(?:todas?|ninguna?)\s+(?:de\s+)?(?:las\s+)?(?:anteriores|opciones|alternativas)\b/i,
+    /\b(?:opci[oó]n|alternativa)\s+[A-E]\b/i,
+    /\b[A-E]\s*(?:y|e|\/|\+)\s*[A-E]\b/i,
+  ];
+
+  function optionOrderMustStayCanonical(q) {
+    return optionList(q).some(o => OPTION_REFERENCE_PATTERNS.some(rx => rx.test(String(o.text || ''))));
+  }
+
+  function buildOptionOrder(q, shouldShuffle = true) {
+    const letters = optionList(q).map(o => o.letter);
+    return shouldShuffle && !optionOrderMustStayCanonical(q) ? shuffle(letters) : letters;
+  }
+
+  function createOptionOrders(list, shouldShuffle = true) {
+    if (!shouldShuffle) return {};
+    return Object.fromEntries((list || []).map(q => [q.id, buildOptionOrder(q, true)]));
+  }
+
+  function displayOptionList(q, orderStore = null, shouldShuffle = true) {
+    const canonical = optionList(q);
+    if (!shouldShuffle) return canonical.map(o => ({ ...o, sourceLetter: o.letter }));
+
+    const byLetter = new Map(canonical.map(o => [o.letter, o]));
+    if (orderStore && !Array.isArray(orderStore[q.id])) {
+      orderStore[q.id] = buildOptionOrder(q, true);
+    }
+    const order = Array.isArray(orderStore?.[q.id])
+      ? orderStore[q.id].filter(letter => byLetter.has(letter))
+      : buildOptionOrder(q, true);
+
+    const missing = canonical.map(o => o.letter).filter(letter => !order.includes(letter));
+    const completeOrder = [...order, ...missing];
+
+    return completeOrder.map((sourceLetter, index) => ({
+      letter: String.fromCharCode(65 + index),
+      sourceLetter,
+      text: byLetter.get(sourceLetter)?.text || '',
+    }));
+  }
+
   const pct = (n, d) => d ? `${Math.round((n / d) * 100)}%` : '—';
   const formatTime = seconds => {
     const s = Math.max(0, Math.round(seconds || 0));
@@ -56,6 +191,10 @@
   function clearTimer() {
     if (timerId) clearInterval(timerId);
     timerId = null;
+  }
+
+  function scrollPageTop() {
+    requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: 'auto' }));
   }
 
   function localAttempts() {
@@ -137,17 +276,38 @@
     return 0.90;
   }
 
-  function effectiveTargetSeconds(q) {
-    const base = Number(profile?.target_response_seconds || 25);
-    const len = String(q?.question || '').length;
-    const readingFactor = clamp(Math.sqrt(Math.max(80, len) / 260), 0.85, 1.35);
-    return base * readingFactor;
+  function questionReadingLoad(q) {
+    return String(q?.question || '').length
+      + optionList(q).reduce((sum, o) => sum + String(o?.text || '').length, 0);
   }
 
-  function speedBucket(q, responseMs, correct, timedOut = false) {
+  function effectiveTargetSeconds(q, baseOverride = null) {
+    const base = Number(baseOverride || profile?.target_response_seconds || 25);
+    const load = questionReadingLoad(q);
+    const fullText = `${q?.question || ''} ${optionList(q).map(o => o.text || '').join(' ')}`;
+    const numericTokens = fullText.match(/\b\d+(?:[.,]\d+)?\b/g) || [];
+    const complexCue = /(calcula|calcule|cálculo|ecuación|fórmula|riesgo relativo|odds ratio|depuración|clearance|score|puntaje|dosis|mg\/?kg|ml\/?kg|mEq|clasificación|estadio|grado|criterios de ranson|glasgow)/i.test(fullText);
+
+    // Objetivo adaptable: las preguntas directas deben resolverse más rápido y
+    // las largas reciben margen adicional. Con una base de 25 s, los escalones
+    // habituales son 15 / 20 / 25 / 30 / 35 s.
+    let factor = load <= 170 ? 0.60
+      : load <= 260 ? 0.80
+      : load <= 380 ? 1.00
+      : load <= 520 ? 1.20
+      : 1.40;
+
+    // Guardia de complejidad: una pregunta corta que exige cálculo, puntuación,
+    // dosis o clasificación no recibe un objetivo agresivo de 15–20 s.
+    if (factor < 1 && (complexCue || numericTokens.length >= 4)) factor = 1.00;
+
+    return Math.round(clamp(base * factor, 8, 60));
+  }
+
+  function speedBucket(q, responseMs, correct, timedOut = false, targetOverride = null) {
     if (timedOut) return 'timed_out';
     const sec = Number(responseMs || 0) / 1000;
-    const target = Number(profile?.target_response_seconds || 25);
+    const target = Number(targetOverride || effectiveTargetSeconds(q));
     if (!correct && sec <= target) return 'wrong_fast';
     if (!correct) return 'incorrect';
     if (sec <= target) return 'fluent';
@@ -155,10 +315,10 @@
     return 'very_slow_correct';
   }
 
-  function memoryRating(q, responseMs, correct, timedOut = false) {
+  function memoryRating(q, responseMs, correct, timedOut = false, targetOverride = null) {
     if (!correct || timedOut) return 1;
     const sec = Number(responseMs || 0) / 1000;
-    const target = Number(profile?.target_response_seconds || 25);
+    const target = Number(targetOverride || effectiveTargetSeconds(q));
     if (sec <= target) return 4;
     if (sec <= target * 1.6) return 3;
     return 2;
@@ -259,8 +419,8 @@
       for (const a of list) {
         const normalized = {
           ...a,
-          memory_rating: a.memory_rating || memoryRating(q, a.response_time_ms, a.is_correct, a.timed_out),
-          speed_bucket: a.speed_bucket || speedBucket(q, a.response_time_ms, a.is_correct, a.timed_out),
+          memory_rating: a.memory_rating || memoryRating(q, a.response_time_ms, a.is_correct, a.timed_out, a.target_seconds),
+          speed_bucket: a.speed_bucket || speedBucket(q, a.response_time_ms, a.is_correct, a.timed_out, a.target_seconds),
         };
         state = evolveMemory(state, normalized, q);
       }
@@ -273,6 +433,7 @@
     registerServiceWorker();
     if (!cloudConfigured) {
       questions = (window.PILOT_QUESTIONS || []).filter(q => String(q.active).toLowerCase() !== 'false');
+      rebuildCorpusRentability();
       attempts = localAttempts();
       activeSessions = localSessions().filter(s => s.status === 'active');
       profile = localProfile();
@@ -313,6 +474,7 @@
         <div class="panel login-card">
           <div class="logo-mark">R</div>
           <h1>Residentado</h1>
+          <div class="app-version app-version-login">v${APP_VERSION}</div>
           <p class="muted">Banco personal de preguntas. Tu progreso se guarda en tu cuenta.</p>
           <form id="login-form">
             <div class="form-row"><label for="email">Correo</label><input class="input" id="email" type="email" autocomplete="email" required></div>
@@ -402,6 +564,7 @@
     if (mRes.error) { renderFatal(`Falta aplicar la migración v0.5 en Supabase: ${mRes.error.message}`); return; }
 
     questions = qRes.data || [];
+    rebuildCorpusRentability();
     attempts = aRes.data || [];
     memoryStates = mRes.data || [];
     rebuildMemoryMap();
@@ -422,16 +585,209 @@
 
   function topbar(title = 'Residentado', showHome = false) {
     return `<div class="topbar">
-      <div class="logo-mark">R</div><h1>${esc(title)}</h1><div class="spacer"></div>
+      <div class="logo-mark">R</div><div class="topbar-title-wrap"><h1>${esc(title)}</h1><small class="app-version">v${APP_VERSION}</small></div><div class="spacer"></div>
       ${showHome ? `<button class="btn small ghost" data-home>Inicio</button>` : ''}
-      ${cloudConfigured ? `<button id="logout-btn" class="btn small ghost">Salir</button>` : ''}
+      ${cloudConfigured ? `<div class="topbar-menu-wrap">
+        <button id="account-menu-btn" class="btn small ghost icon-menu-btn" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="account-menu">⋮</button>
+        <div id="account-menu" class="topbar-menu-popover" hidden>
+          <button id="logout-btn" class="topbar-menu-item danger-menu-item" type="button">Salir de la cuenta</button>
+        </div>
+      </div>` : ''}
     </div>`;
   }
 
   function attachTopbar() {
     document.querySelectorAll('[data-home]').forEach(b => b.onclick = renderDashboard);
+
+    const menuBtn = document.getElementById('account-menu-btn');
+    const menu = document.getElementById('account-menu');
+    if (menuBtn && menu) {
+      menuBtn.onclick = (ev) => {
+        ev.stopPropagation();
+        const willOpen = menu.hidden;
+        menu.hidden = !willOpen;
+        menuBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        if (willOpen) {
+          setTimeout(() => {
+            document.addEventListener('click', () => {
+              menu.hidden = true;
+              menuBtn.setAttribute('aria-expanded', 'false');
+            }, { once:true });
+          }, 0);
+        }
+      };
+      menu.onclick = ev => ev.stopPropagation();
+    }
+
     const logout = document.getElementById('logout-btn');
-    if (logout) logout.onclick = async () => { await supa.auth.signOut(); user = null; renderLogin(); };
+    if (logout) logout.onclick = async () => {
+      if (!confirm('¿Cerrar sesión en este dispositivo?')) return;
+      await supa.auth.signOut();
+      user = null;
+      renderLogin();
+    };
+  }
+
+  function percentile(values, p = 0.7) {
+    const sorted = values.filter(Number.isFinite).slice().sort((a,b) => a-b);
+    if (!sorted.length) return null;
+    const idx = Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * p)));
+    return sorted[idx];
+  }
+
+  function normalizeCorpusLabel(value) {
+    return String(value || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  function corpusTopicKey(q) {
+    const topic = normalizeCorpusLabel(q.topic || q.subtopic || '');
+    if (!topic) return null;
+    return [
+      normalizeCorpusLabel(q.area || 'Sin área'),
+      normalizeCorpusLabel(q.specialty || 'Sin especialidad'),
+      topic,
+    ].join('|||');
+  }
+
+  function rebuildCorpusRentability() {
+    const valid = questions.filter(q => !observed(q));
+    const corpusYears = new Set(valid.map(q => Number(q.year)).filter(Number.isFinite));
+    const yearsCount = Math.max(1, corpusYears.size);
+
+    // v0.6.10: la taxonomía editorial usa temas muy granulares y, por tanto,
+    // muchos temas exactos aparecen una sola vez. La rentabilidad combina
+    // recurrencia de tema + especialidad + área, en lugar de exigir que el
+    // nombre exacto del tema se repita varias veces.
+    const levels = [
+      { name: 'topic', field: q => q.topic || q.subtopic || '', frequencyWeight: 0.62, breadthWeight: 0.38 },
+      { name: 'specialty', field: q => q.specialty || '', frequencyWeight: 0.65, breadthWeight: 0.35 },
+      { name: 'area', field: q => q.area || '', frequencyWeight: 0.70, breadthWeight: 0.30 },
+    ];
+
+    const statsByLevel = new Map();
+    for (const level of levels) {
+      const groups = new Map();
+      for (const q of valid) {
+        const key = normalizeCorpusLabel(level.field(q));
+        if (!key) continue;
+        if (!groups.has(key)) groups.set(key, { count: 0, years: new Set() });
+        const g = groups.get(key);
+        g.count += 1;
+        if (Number.isFinite(Number(q.year))) g.years.add(Number(q.year));
+      }
+      const maxCount = Math.max(1, ...[...groups.values()].map(g => g.count));
+      statsByLevel.set(level.name, { groups, maxCount });
+    }
+
+    const scoredQuestions = valid.map(q => {
+      const components = {};
+      for (const level of levels) {
+        const key = normalizeCorpusLabel(level.field(q));
+        const { groups, maxCount } = statsByLevel.get(level.name);
+        const g = key ? groups.get(key) : null;
+        if (!g) {
+          components[level.name] = 0;
+          continue;
+        }
+        const frequency = Math.sqrt(g.count / maxCount);
+        const breadth = g.years.size / yearsCount;
+        components[level.name] = clamp(
+          level.frequencyWeight * frequency + level.breadthWeight * breadth,
+          0,
+          1
+        );
+      }
+
+      const score = clamp(
+        0.50 * components.topic +
+        0.35 * components.specialty +
+        0.15 * components.area,
+        0,
+        1
+      );
+
+      return { q, score, components };
+    });
+
+    // Selecciona aproximadamente el 30% superior del corpus cargado.
+    // Es una estimación histórica provisional hasta la auditoría final de las 2.180 preguntas.
+    const threshold = percentile(scoredQuestions.map(x => x.score), 0.70);
+    const effectiveThreshold = threshold == null ? 1.1 : Math.max(0.42, threshold);
+
+    corpusRentabilityByQuestion = new Map();
+    for (const item of scoredQuestions) {
+      const explicit = explicitRentabilityTier(item.q);
+      const explicitHigh =
+        explicit.includes('MUY_ALTA') ||
+        explicit.includes('MUY ALTA') ||
+        explicit.startsWith('ALTA');
+
+      const high = explicitHigh || item.score >= effectiveThreshold;
+      corpusRentabilityByQuestion.set(item.q.id, {
+        score: explicitHigh ? 1 : item.score,
+        high,
+        topicScore: item.components.topic,
+        specialtyScore: item.components.specialty,
+        areaScore: item.components.area,
+        source: explicitHigh ? 'explicit' : 'corpus_runtime_v2',
+      });
+    }
+
+    corpusRentabilityMeta = {
+      highCount: [...corpusRentabilityByQuestion.values()].filter(x => x.high).length,
+      groupCount: statsByLevel.get('topic')?.groups?.size || 0,
+      yearsCount: corpusYears.size,
+      threshold: Number.isFinite(effectiveThreshold) ? Number(effectiveThreshold.toFixed(3)) : null,
+    };
+  }
+
+  function explicitRentabilityTier(q) {
+    const tier = String(q.rentability_tier || q.rentability_status || '').toUpperCase().trim();
+    if (!tier || tier.includes('PENDIENTE')) return '';
+    return tier;
+  }
+
+  function isHighRentability(q) {
+    const explicit = explicitRentabilityTier(q);
+    if (explicit.includes('MUY_ALTA') || explicit.includes('MUY ALTA') || explicit.startsWith('ALTA')) return true;
+    return Boolean(corpusRentabilityByQuestion.get(q.id)?.high);
+  }
+
+  function sortByPriority(list, now = new Date(), { diversifyYears = false, tolerance = 0.75 } = {}) {
+    const scored = list.map(q => ({ q, score: questionPriority(q, now), year: String(q.year || '') }))
+      .sort((a,b) => b.score - a.score || a.q.id.localeCompare(b.q.id));
+    if (!diversifyYears || scored.length < 2) return scored.map(x => x.q);
+
+    const queues = new Map();
+    for (const item of scored) {
+      if (!queues.has(item.year)) queues.set(item.year, []);
+      queues.get(item.year).push(item);
+    }
+
+    const result = [];
+    let lastYear = null;
+    while (result.length < scored.length) {
+      const heads = [...queues.entries()]
+        .filter(([,queue]) => queue.length)
+        .map(([year,queue]) => ({ year, item:queue[0] }))
+        .sort((a,b) => b.item.score - a.item.score || a.item.q.id.localeCompare(b.item.q.id));
+      if (!heads.length) break;
+
+      let chosen = heads[0];
+      if (chosen.year === lastYear) {
+        const alternative = heads.find(h => h.year !== lastYear && h.item.score >= chosen.item.score - tolerance);
+        if (alternative) chosen = alternative;
+      }
+
+      result.push(queues.get(chosen.year).shift().q);
+      lastYear = chosen.year;
+    }
+    return result;
   }
 
   function questionStats(qid) {
@@ -465,18 +821,19 @@
     const correct = qa.filter(a => a.is_correct).length;
     const wrong = qa.length - correct;
     const avgMs = positive.length ? positive.reduce((s,v)=>s+v,0)/positive.length : null;
-    const fluent = qa.filter(a => a.is_correct && Number(a.response_time_ms || 0) <= Number(profile?.target_response_seconds || 25)*1000).length;
+    const targetMs = effectiveTargetSeconds(q) * 1000;
+    const fluent = qa.filter(a => a.is_correct && Number(a.response_time_ms || 0) <= Number(a.target_seconds || targetMs / 1000) * 1000).length;
     return { seen:qa.length, correct, wrong, avgMs, fluent };
   }
 
   function rentabilityWeight(q) {
     if (Number.isFinite(Number(q.rentability_score))) return clamp(Number(q.rentability_score), 0, 1);
-    const tier = String(q.rentability_tier || q.rentability_status || '').toUpperCase();
+    const tier = explicitRentabilityTier(q);
     if (tier.includes('MUY_ALTA') || tier.includes('MUY ALTA')) return 1;
     if (tier.includes('ALTA')) return 0.85;
     if (tier.includes('MEDIA')) return 0.6;
     if (tier.includes('BAJA')) return 0.35;
-    return 0.55;
+    return corpusRentabilityByQuestion.get(q.id)?.score ?? 0.55;
   }
 
   function questionPriority(q, now = new Date()) {
@@ -492,7 +849,8 @@
       ? Math.max(0, retention - recall) * 8 + Math.max(0, (now - new Date(state.due_at)) / 86400000) * 0.35
       : 2.2;
     const weakness = s.seen ? (s.wrong / s.seen) * 3.2 : 1.4;
-    const speed = s.avgMs ? Math.max(0, (s.avgMs / 1000 - Number(profile?.target_response_seconds || 25)) / 15) : 0.8;
+    const targetSeconds = effectiveTargetSeconds(q);
+    const speed = s.avgMs ? Math.max(0, (s.avgMs / 1000 - targetSeconds) / 15) : 0.8;
     const rent = rentabilityWeight(q) * 2.6;
     const unseen = s.seen ? 0 : 1.2;
     const wrongFast = qAttempts.some(a => a.speed_bucket === 'wrong_fast') ? 1.2 : 0;
@@ -508,15 +866,21 @@
     const now = new Date();
     const nonObserved = questions.filter(q => !observed(q));
     if (kind === 'due') {
-      return nonObserved.filter(q => {
+      const due = nonObserved.filter(q => {
         const st = memoryByQuestion.get(q.id);
         return st && new Date(st.due_at) <= now;
-      }).sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+      });
+      // Solo mezcla años entre repasos ya vencidos y de prioridad muy parecida:
+      // nunca introduce preguntas no vencidas para "diversificar".
+      return sortByPriority(due, now, { diversifyYears:true, tolerance:0.35 });
     }
-    if (kind === 'new') return nonObserved.filter(q => !attempts.some(a => a.question_id === q.id)).sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+    if (kind === 'new') {
+      const unseen = nonObserved.filter(q => !attempts.some(a => a.question_id === q.id));
+      return sortByPriority(unseen, now, { diversifyYears:true, tolerance:0.75 });
+    }
     if (kind === 'errors') {
       const ids = new Set(attempts.filter(a => !a.is_correct).map(a => a.question_id));
-      return nonObserved.filter(q => ids.has(q.id)).sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+      return sortByPriority(nonObserved.filter(q => ids.has(q.id)), now, { diversifyYears:true, tolerance:0.5 });
     }
     if (kind === 'uncertain') {
       const latestByQuestion = new Map();
@@ -524,21 +888,23 @@
         const prev = latestByQuestion.get(a.question_id);
         if (!prev || new Date(a.answered_at) > new Date(prev.answered_at)) latestByQuestion.set(a.question_id, a);
       }
-      return nonObserved
-        .filter(q => latestByQuestion.get(q.id)?.was_uncertain)
-        .sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+      return sortByPriority(
+        nonObserved.filter(q => latestByQuestion.get(q.id)?.was_uncertain),
+        now,
+        { diversifyYears:true, tolerance:0.5 }
+      );
     }
     if (kind === 'speed') {
       return nonObserved.filter(q => {
         const s = extendedQuestionStats(q);
-        return s.seen && (s.avgMs || 0) > Number(profile?.target_response_seconds || 25)*1000;
+        return s.seen && (s.avgMs || 0) > effectiveTargetSeconds(q) * 1000;
       }).sort((a,b) => (extendedQuestionStats(b).avgMs||0) - (extendedQuestionStats(a).avgMs||0));
     }
     if (kind === 'high') {
-      const high = nonObserved.filter(q => rentabilityWeight(q) >= 0.8);
-      return (high.length ? high : nonObserved).sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+      const high = nonObserved.filter(isHighRentability);
+      return sortByPriority(high.length ? high : nonObserved, now, { diversifyYears:true, tolerance:0.7 });
     }
-    return nonObserved.sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+    return sortByPriority(nonObserved, now, { diversifyYears:true, tolerance:0.75 });
   }
 
 
@@ -645,6 +1011,120 @@
       b.latestWrongUncertainRate - a.latestWrongUncertainRate ||
       b.attempts - a.attempts
     );
+  }
+
+
+  function priorityReadingAlertData() {
+    const report = weaknessReportData().filter(x => x.seenQuestions > 0);
+    if (!report.length) return null;
+
+    const strongSignal = report.find(x =>
+      (x.level === 'Crítica' || x.level === 'Alta') &&
+      (x.evidence === 'Media' || x.evidence === 'Alta')
+    );
+
+    const earlyCritical = report.find(x => x.level === 'Crítica');
+    const moderateStrong = report.find(x =>
+      x.level === 'Moderada' &&
+      (x.evidence === 'Media' || x.evidence === 'Alta')
+    );
+
+    const item = strongSignal || earlyCritical || moderateStrong || null;
+    if (!item) return null;
+
+    const qs = questions.filter(q => item.questionIds.includes(q.id));
+    const focus = [...new Set(qs.flatMap(q => [
+      q.subtopic,
+      q.comparison_title,
+      q.topic !== item.topic ? q.topic : null,
+    ].filter(Boolean)))].slice(0, 4);
+
+    const reasons = [];
+    if (item.latestAccuracy < 0.7) reasons.push(`dominio actual ${Math.round(item.latestAccuracy * 100)}%`);
+    if (item.latestWrongUncertainRate >= 0.15) reasons.push(`error + duda ${Math.round(item.latestWrongUncertainRate * 100)}%`);
+    else if (item.latestUncertaintyRate >= 0.2) reasons.push(`duda ${Math.round(item.latestUncertaintyRate * 100)}%`);
+    if (item.latestSlowRate >= 0.3) reasons.push(`respuestas lentas ${Math.round(item.latestSlowRate * 100)}%`);
+    if (item.dueQuestions > 0) reasons.push(`${item.dueQuestions} repaso${item.dueQuestions === 1 ? '' : 's'} vencido${item.dueQuestions === 1 ? '' : 's'}`);
+
+    return {
+      ...item,
+      focus,
+      reasonText: reasons.length ? reasons.join(' · ') : `prioridad adaptativa ${item.score}/100`,
+    };
+  }
+
+  function priorityReadingPrompt(item) {
+    const focus = item.focus?.length
+      ? `Enfócate especialmente en: ${item.focus.join(', ')}.`
+      : 'Enfócate en diagnóstico, criterios, manejo, puntos de corte y trampas de examen.';
+    return [
+      'Necesito un repaso de lectura prioritaria para el Residentado Médico Perú.',
+      `Tema crítico: ${item.topic}.`,
+      `Área: ${item.area}. Especialidad: ${item.specialty}.`,
+      `Motivo de prioridad: ${item.reasonText}.`,
+      focus,
+      'Haz un resumen de 15–25 minutos de lectura, orientado al examen.',
+      'Empieza por la lógica de banqueo, luego comparación clave, algoritmos o puntos de corte y termina con trampas frecuentes.',
+      'Define cualquier abreviatura la primera vez que aparezca y define también los epónimos.',
+      'Cuando aparezcan fármacos, resume brevemente los mecanismos de acción diferenciales relevantes para examen.',
+    ].join('\n');
+  }
+
+  function priorityReadingAlertMarkup(item, prefix = 'priority-reading') {
+    if (!item) return '';
+    const focus = item.focus?.length
+      ? `<ul>${item.focus.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`
+      : '<p class="muted">Repasa diagnóstico, criterios, manejo, puntos de corte y trampas frecuentes.</p>';
+
+    return `<section class="panel priority-reading-alert">
+      <div class="priority-reading-copy">
+        <span class="roadmap-kicker">🚨 ALERTA DE LECTURA PRIORITARIA</span>
+        <h2>${esc(item.topic)}</h2>
+        <p>${esc(item.reasonText)} · evidencia ${esc(item.evidence.toLowerCase())}</p>
+        <div class="priority-reading-metrics">
+          <span>Dominio <strong>${Math.round(item.latestAccuracy * 100)}%</strong></span>
+          <span>Prioridad <strong>${item.score}/100</strong></span>
+          <span>Cobertura <strong>${item.seenQuestions}/${item.totalQuestions}</strong></span>
+        </div>
+        <div class="priority-reading-focus">
+          <strong>Lee primero:</strong>
+          ${focus}
+        </div>
+      </div>
+      <div class="priority-reading-actions">
+        <button id="${prefix}-copy" class="btn primary">📋 Copiar pedido de repaso</button>
+        <button id="${prefix}-practice" class="btn">🔥 Practicar este tema</button>
+      </div>
+    </section>`;
+  }
+
+  function attachPriorityReadingAlert(item, prefix = 'priority-reading') {
+    if (!item) return;
+
+    const copyBtn = document.getElementById(`${prefix}-copy`);
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        const prompt = priorityReadingPrompt(item);
+        try {
+          await navigator.clipboard.writeText(prompt);
+        } catch {
+          const box = document.createElement('textarea');
+          box.value = prompt;
+          box.style.position = 'fixed';
+          box.style.left = '-9999px';
+          document.body.appendChild(box);
+          box.select();
+          document.execCommand('copy');
+          box.remove();
+        }
+        const original = copyBtn.textContent;
+        copyBtn.textContent = '✓ Pedido copiado';
+        setTimeout(() => { copyBtn.textContent = original; }, 1800);
+      };
+    }
+
+    const practiceBtn = document.getElementById(`${prefix}-practice`);
+    if (practiceBtn) practiceBtn.onclick = () => launchWeakTopicPractice(item, 10);
   }
 
   function weaknessLevelClass(level) {
@@ -1088,6 +1568,7 @@
       historicalYear:item.year,
       historicalTest:item.test,
       historicalKind:item.kind,
+      shuffleOptions:false,
     });
   }
 
@@ -1322,8 +1803,10 @@
   function renderRoadmap() {
     clearTimer();
     const road = topicRoadmap();
+    const readingAlert = priorityReadingAlertData();
     const list = items => items.length ? items.map(x=>`<li>${esc(x)}</li>`).join('') : '<li>Se completará al clasificar el banco completo.</li>';
     app.innerHTML = `<main class="shell">${topbar('Qué viene después', true)}
+      ${priorityReadingAlertMarkup(readingAlert, 'roadmap-reading')}
       <section class="roadmap-grid">
         <div class="panel roadmap-card"><span class="roadmap-kicker">HOY</span><h2>Prioridad actual</h2><ul>${list(road.today)}</ul></div>
         <div class="panel roadmap-card highlighted"><span class="roadmap-kicker">MAÑANA</span><h2>Prelectura recomendada</h2><ul>${list(road.tomorrow)}</ul></div>
@@ -1332,6 +1815,7 @@
       <section class="panel preread"><h2>📖 Qué leer antes</h2>${road.preRead ? `<p><strong>${esc(road.preRead)}</strong> · 20–30 minutos de prelectura ligera.</p><p class="muted">Enfócate en:</p><ul>${road.focus.map(x=>`<li>${esc(x)}</li>`).join('') || '<li>diagnóstico, criterios, manejo y trampas frecuentes</li>'}</ul>` : '<p>Aún no hay suficiente clasificación temática.</p>'}<p class="muted">La finalidad es activar el esquema mental, no dominar el tema antes de banquearlo.</p></section>
     </main>`;
     attachTopbar();
+    attachPriorityReadingAlert(readingAlert, 'roadmap-reading');
   }
 
   function renderDashboard() {
@@ -1344,6 +1828,7 @@
     const status = pressureStatus(plan);
     const ready = readinessIndicator();
     const road = topicRoadmap();
+    const readingAlert = priorityReadingAlertData();
     const dueCount = smartPool('due').length;
     const slowCount = smartPool('speed').length;
     const daysExam = daysUntil(profile?.exam_date || DEFAULT_PROFILE.exam_date);
@@ -1366,6 +1851,8 @@
         <div class="meter"><div style="width:${completion}%"></div></div>
         <div class="plan-meta"><span>Deuda acumulada: <strong>${plan.debt}</strong></span><span>Ritmo 7 días: <strong>${pace7.toFixed(0)}/día</strong></span><span>Repasos vencidos: <strong>${dueCount}</strong></span><span>Lentas: <strong>${slowCount}</strong></span></div>
       </section>
+
+      ${priorityReadingAlertMarkup(readingAlert, 'dashboard-reading')}
 
       ${plan.next ? `<button id="next-task-btn" class="next-task"><span><small>SIGUIENTE TAREA</small><strong>${esc(plan.next.label)}</strong><em>${plan.next.remaining} pendientes de este bloque</em></span><b>▶</b></button>` : `<div class="banner"><strong>Checklist principal completa.</strong> Usa Practicar para adelantar trabajo de mañana.</div>`}
 
@@ -1395,6 +1882,7 @@
     </main>`;
 
     attachTopbar();
+    attachPriorityReadingAlert(readingAlert, 'dashboard-reading');
     if (plan.next) document.getElementById('next-task-btn').onclick = () => launchAutoTask(plan.next);
     document.querySelectorAll('[data-task]').forEach(btn => {
       const task = plan.tasks.find(t => t.id === btn.dataset.task);
@@ -1442,10 +1930,10 @@
 
   function renderSessionBuilder(mode) {
     clearTimer();
-    const areas = [...new Set(questions.map(q => q.area).filter(Boolean))].sort();
-    const topics = [...new Set(questions.map(q => q.topic).filter(Boolean))].sort();
+    const areas = [...new Set(questions.map(q => q.area).filter(Boolean))].sort(localeSort);
+    const topicHierarchy = buildTopicHierarchy();
     const years = [...new Set(questions.map(q => Number(q.year)))].sort((a,b) => a-b);
-    const highCount = questions.filter(q => String(q.rentability_status || '').startsWith('ALTA')).length;
+    const highCount = questions.filter(isHighRentability).length;
     const isExam = mode === 'exam';
 
     app.innerHTML = `<main class="shell">
@@ -1463,20 +1951,27 @@
           <div class="builder-grid">
             <fieldset><legend>Contenido</legend>
               <label>Estado previo<select id="pool-type" class="input"><option value="all">Todas</option><option value="unseen">Nunca vistas</option><option value="errors">Solo errores</option><option value="correct">Ya acertadas</option></select></label>
-              <label>Rentabilidad<select id="rentability" class="input"><option value="all">Todas</option><option value="high" ${highCount ? '' : 'disabled'}>Alta rentabilidad${highCount ? '' : ' — disponible al analizar corpus'}</option></select></label>
+              <label>Rentabilidad<select id="rentability" class="input"><option value="all">Todas</option><option value="high" ${highCount ? '' : 'disabled'}>Alta rentabilidad${highCount ? ` · ${highCount} preguntas` : ' — requiere al menos corpus suficiente y temas clasificados'}</option></select></label>
+              <small class="muted">La rentabilidad se estima automáticamente por frecuencia y recurrencia histórica de tema, especialidad y área en el corpus cargado (${corpusRentabilityMeta.yearsCount} años). No depende de cuántas preguntas hayas respondido.</small>
             </fieldset>
 
             <fieldset><legend>Cantidad</legend>
               <label>Número de preguntas<input id="question-count" class="input" type="number" min="1" max="2000" value="${isExam ? 80 : 15}" required></label>
-              <label><input id="randomize" type="checkbox" checked> Orden aleatorio</label>
+              <label class="inline-check"><input id="randomize" type="checkbox" checked> <span>Orden aleatorio de preguntas</span></label>
+              <label class="inline-check"><input id="shuffle-options" type="checkbox" checked> <span>Mezclar alternativas</span></label>
             </fieldset>
 
             <fieldset><legend>Áreas</legend><div class="check-list" id="areas-list">${areas.map(a => `<label><input type="checkbox" name="area" value="${esc(a)}" checked> ${esc(a)}</label>`).join('')}</div></fieldset>
             <fieldset><legend>Años</legend><div class="check-list compact">${years.map(y => `<label><input type="checkbox" name="year" value="${y}" checked> ${y}</label>`).join('')}</div></fieldset>
 
             <fieldset class="wide"><legend>Temas específicos</legend>
-              <div class="topic-tools"><button type="button" id="topics-all" class="btn small">Todos</button><button type="button" id="topics-none" class="btn small ghost">Ninguno</button></div>
-              <div class="check-list topics">${topics.map(t => `<label><input type="checkbox" name="topic" value="${esc(t)}" checked> ${esc(t)}</label>`).join('')}</div>
+              <div class="topic-browser-toolbar">
+                <input id="topic-search" class="input topic-search" type="search" placeholder="Buscar tema o especialidad: exantemas, cardiología, sepsis…" autocomplete="off">
+                <div class="topic-tools"><button type="button" id="topics-all" class="btn small">Todos</button><button type="button" id="topics-none" class="btn small ghost">Ninguno</button></div>
+              </div>
+              <div class="topic-browser-help">Navega por Área → Especialidad → Tema o usa el buscador. Puedes dejar solo el tema que quieras practicar.</div>
+              <div id="topic-search-status" class="topic-search-status muted"></div>
+              <div class="topic-browser" id="topic-browser">${topicHierarchyHtml(topicHierarchy)}</div>
             </fieldset>
 
             ${isExam ? `
@@ -1499,9 +1994,55 @@
     </main>`;
 
     attachTopbar();
-    const allTopics = () => document.querySelectorAll('input[name="topic"]');
+    const allTopics = () => document.querySelectorAll('input[name="topicPath"]');
     document.getElementById('topics-all').onclick = () => allTopics().forEach(c => c.checked = true);
     document.getElementById('topics-none').onclick = () => allTopics().forEach(c => c.checked = false);
+
+    const setTopicScope = (selector, checked) => document.querySelectorAll(selector).forEach(c => c.checked = checked);
+    document.querySelectorAll('[data-topic-select-area]').forEach(btn => {
+      btn.onclick = () => setTopicScope(`input[data-topic-area-id="${btn.dataset.topicSelectArea}"]`, true);
+    });
+    document.querySelectorAll('[data-topic-clear-area]').forEach(btn => {
+      btn.onclick = () => setTopicScope(`input[data-topic-area-id="${btn.dataset.topicClearArea}"]`, false);
+    });
+    document.querySelectorAll('[data-topic-select-specialty]').forEach(btn => {
+      btn.onclick = () => setTopicScope(`input[data-topic-specialty-id="${btn.dataset.topicSelectSpecialty}"]`, true);
+    });
+    document.querySelectorAll('[data-topic-clear-specialty]').forEach(btn => {
+      btn.onclick = () => setTopicScope(`input[data-topic-specialty-id="${btn.dataset.topicClearSpecialty}"]`, false);
+    });
+
+    const topicSearch = document.getElementById('topic-search');
+    const topicSearchStatus = document.getElementById('topic-search-status');
+    const applyTopicSearch = () => {
+      const query = normalizeTopicSearch(topicSearch.value);
+      const leaves = [...document.querySelectorAll('.topic-leaf')];
+      let visibleCount = 0;
+
+      leaves.forEach(leaf => {
+        const visible = !query || String(leaf.dataset.topicSearch || '').includes(query);
+        leaf.hidden = !visible;
+        if (visible) visibleCount += 1;
+      });
+
+      document.querySelectorAll('.topic-specialty-group').forEach(group => {
+        const hasVisible = [...group.querySelectorAll('.topic-leaf')].some(leaf => !leaf.hidden);
+        group.hidden = !hasVisible;
+        if (query && hasVisible) group.open = true;
+      });
+
+      document.querySelectorAll('.topic-area-group').forEach(group => {
+        const hasVisible = [...group.querySelectorAll('.topic-leaf')].some(leaf => !leaf.hidden);
+        group.hidden = !hasVisible;
+        if (query && hasVisible) group.open = true;
+      });
+
+      topicSearchStatus.textContent = query
+        ? `${visibleCount} tema${visibleCount === 1 ? '' : 's'} coincide${visibleCount === 1 ? '' : 'n'} con la búsqueda.`
+        : `${leaves.length} temas disponibles en el corpus cargado.`;
+    };
+    topicSearch.addEventListener('input', applyTopicSearch);
+    applyTopicSearch();
 
     document.querySelectorAll('.preset').forEach(btn => btn.onclick = () => {
       const p = Number(btn.dataset.preset);
@@ -1550,11 +2091,12 @@
       mode,
       count: Number(document.getElementById('question-count').value),
       randomize: document.getElementById('randomize').checked,
+      shuffleOptions: document.getElementById('shuffle-options').checked,
       poolType: document.getElementById('pool-type').value,
       rentability: document.getElementById('rentability').value,
       areas: checked('area'),
       years: checked('year').map(Number),
-      topics: checked('topic'),
+      topicPaths: checked('topicPath'),
       feedback: document.getElementById('feedback-mode').value,
     };
     if (mode === 'exam') {
@@ -1578,8 +2120,8 @@
     return questions.filter(q => {
       if (config.areas.length && !config.areas.includes(q.area)) return false;
       if (config.years.length && !config.years.includes(Number(q.year))) return false;
-      if (config.topics.length && !config.topics.includes(q.topic)) return false;
-      if (config.rentability === 'high' && !String(q.rentability_status || '').startsWith('ALTA')) return false;
+      if (config.topicPaths.length && !config.topicPaths.includes(topicPathKey(q))) return false;
+      if (config.rentability === 'high' && !isHighRentability(q)) return false;
       if (config.poolType === 'unseen' && seenIds.has(q.id)) return false;
       if (config.poolType === 'errors' && !wrongIds.has(q.id)) return false;
       if (config.poolType === 'correct' && !correctIds.has(q.id)) return false;
@@ -1597,6 +2139,7 @@
 
   function launchStudy(selected, config) {
     clearTimer();
+    config = { shuffleOptions: true, ...config };
     currentStudy = {
       config,
       questions: selected,
@@ -1604,6 +2147,7 @@
       responses: {},
       scratch: {},
       durations: {},
+      optionOrders: createOptionOrders(selected, config.shuffleOptions !== false),
       totalRemaining: config.timeMode === 'total' ? config.totalSeconds : null,
     };
     renderStudyQuestion();
@@ -1627,26 +2171,33 @@
 
   function renderStudyQuestion() {
     clearTimer();
+    scrollPageTop();
     const q = studyCurrentQuestion();
     if (!q) return finishStudy();
     questionStartedAt = performance.now();
     const selected = currentStudy.responses[q.id]?.selected || null;
     currentStudy.scratch ||= {};
     const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
-    const opts = optionList(q);
+    const opts = displayOptionList(q, currentStudy.optionOrders, currentStudy.config.shuffleOptions !== false);
+    const baseTargetSeconds = Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25);
+    const adaptiveTargetSeconds = effectiveTargetSeconds(q, baseTargetSeconds);
     const timerHtml = currentStudy.config.timeMode === 'per_question'
-      ? `<div id="timer" class="timer">${formatTime(currentStudy.config.secondsPerQuestion)}</div>`
+      ? `<div id="timer" class="timer">${formatTime(adaptiveTargetSeconds)}</div>`
       : currentStudy.config.timeMode === 'total'
         ? `<div id="timer" class="timer">${formatTime(currentStudy.totalRemaining)}</div>` : '';
+    const targetTag = currentStudy.config.timeMode === 'none'
+      ? `<span class="tag target-tag">🎯 ${adaptiveTargetSeconds} s objetivo</span>`
+      : '';
 
     app.innerHTML = `<main class="shell">
       ${topbar(currentStudy.config.title, false)}
       <section class="panel question-card">
         <div class="progress"><div style="width:${(currentStudy.index/currentStudy.questions.length)*100}%"></div></div>
-        <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${timerHtml}</div>
+        <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${targetTag}${timerHtml}</div>
         <div class="q-body"><p class="q-text">${esc(q.question)}</p>
           <div class="uncertainty-hint">Marca <strong>?</strong> en cualquier alternativa que no domines del todo. No cambia tu respuesta; sí hace que el concepto vuelva antes al repaso.</div>
-          <div class="options">${opts.map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.letter))).join('')}</div>
+          <div class="options">${opts.map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.sourceLetter || o.letter))).join('')}</div>
+          ${currentStudy.config.timeMode === 'none' ? `<div class="dont-know-row"><button id="dont-know-study" class="btn ghost dont-know-btn" type="button">🤷 No sé · mostrar respuesta</button><span class="muted">Cuenta como respuesta incorrecta explícita; no como pregunta en blanco.</span></div>` : ''}
         </div>
         <div id="feedback"></div>
       </section>
@@ -1655,6 +2206,8 @@
     attachTopbar();
 
     document.querySelectorAll('.option').forEach(btn => btn.onclick = () => handleStudyAnswer(btn.dataset.letter));
+    const dontKnowBtn = document.getElementById('dont-know-study');
+    if (dontKnowBtn) dontKnowBtn.onclick = handleStudyDontKnow;
     document.querySelectorAll('[data-uncertain-letter]').forEach(btn => {
       btn.onclick = (ev) => {
         ev.stopPropagation();
@@ -1680,7 +2233,9 @@
 
   function startStudyTimer() {
     if (currentStudy.config.timeMode === 'per_question') {
-      let remaining = currentStudy.config.secondsPerQuestion;
+      const q = studyCurrentQuestion();
+      const baseTargetSeconds = Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25);
+      let remaining = effectiveTargetSeconds(q, baseTargetSeconds);
       updateTimer(remaining);
       timerId = setInterval(() => {
         remaining--;
@@ -1729,19 +2284,69 @@
       clearTimer();
       const isCorrect = letter === q.official_answer;
       const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
-      await recordSingleAttempt(
+      const savedAttempt = await recordSingleAttempt(
         q, letter, isCorrect, currentStudy.durations[q.id] || 0,
         currentStudy.config.studyMode || 'custom_study', false,
-        { uncertainOptions }
+        {
+          uncertainOptions,
+          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
+        }
       );
       disableOptionsAndPaint(q, letter);
       document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
       renderFeedback(q, letter, isCorrect, () => {
         currentStudy.index++;
         renderStudyQuestion();
-      }, false, false, uncertainOptions);
+      }, false, false, uncertainOptions, {
+        attemptId: savedAttempt?.id || null,
+        responseTimeMs: currentStudy.durations[q.id] || 0,
+        targetSeconds: Number(savedAttempt?.target_seconds || effectiveTargetSeconds(q, currentStudy.config.secondsPerQuestion)),
+        wasUncertainAtAnswer: Boolean(savedAttempt?.was_uncertain),
+      });
     } else {
       document.querySelectorAll('.option').forEach(btn => btn.classList.toggle('selected', btn.dataset.letter === letter));
+    }
+  }
+
+  async function handleStudyDontKnow() {
+    const q = studyCurrentQuestion();
+    if (!q || !currentStudy || currentStudy.config.timeMode !== 'none') return;
+
+    saveStudyDuration();
+    currentStudy.responses[q.id] = { selected: null, didNotKnow: true };
+
+    if (currentStudy.config.feedback === 'immediate') {
+      clearTimer();
+      const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
+      const savedAttempt = await recordSingleAttempt(
+        q, null, false, currentStudy.durations[q.id] || 0,
+        currentStudy.config.studyMode || 'custom_study', false,
+        {
+          uncertainOptions,
+          dontKnow: true,
+          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
+        }
+      );
+      disableOptionsAndPaint(q, null);
+      document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
+      const dontKnowBtn = document.getElementById('dont-know-study');
+      if (dontKnowBtn) dontKnowBtn.disabled = true;
+      renderFeedback(
+        q, null, false,
+        () => { currentStudy.index++; renderStudyQuestion(); },
+        false, false, uncertainOptions,
+        {
+          attemptId: savedAttempt?.id || null,
+          responseTimeMs: currentStudy.durations[q.id] || 0,
+          targetSeconds: Number(savedAttempt?.target_seconds || effectiveTargetSeconds(q, currentStudy.config.secondsPerQuestion)),
+          wasUncertainAtAnswer: Boolean(savedAttempt?.was_uncertain),
+          didNotKnow: true,
+        }
+      );
+    } else {
+      currentStudy.index++;
+      if (currentStudy.index >= currentStudy.questions.length) finishStudy();
+      else renderStudyQuestion();
     }
   }
 
@@ -1754,11 +2359,24 @@
       recordSingleAttempt(
         q, null, false, currentStudy.durations[q.id] || 0,
         currentStudy.config.studyMode || 'custom_study', true,
-        { uncertainOptions }
-      ).then(() => {
+        {
+          uncertainOptions,
+          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
+        }
+      ).then((savedAttempt) => {
         disableOptionsAndPaint(q, null);
         document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
-        renderFeedback(q, null, false, () => { currentStudy.index++; renderStudyQuestion(); }, true, false, uncertainOptions);
+        renderFeedback(
+          q, null, false,
+          () => { currentStudy.index++; renderStudyQuestion(); },
+          true, false, uncertainOptions,
+          {
+            attemptId: savedAttempt?.id || null,
+            responseTimeMs: currentStudy.durations[q.id] || 0,
+            targetSeconds: Number(savedAttempt?.target_seconds || effectiveTargetSeconds(q, currentStudy.config.secondsPerQuestion)),
+            wasUncertainAtAnswer: Boolean(savedAttempt?.was_uncertain),
+          }
+        );
       });
     } else {
       currentStudy.index++;
@@ -1776,23 +2394,29 @@
       // En sesiones con corrección al final, las preguntas en blanco forman parte
       // del resultado de la sesión, pero no se guardan como intentos de aprendizaje.
       const payload = currentStudy.questions
-        .filter(q => currentStudy.responses[q.id]?.selected != null)
+        .filter(q => currentStudy.responses[q.id]?.selected != null || currentStudy.responses[q.id]?.didNotKnow)
         .map(q => {
           const selected = currentStudy.responses[q.id].selected;
+          const didNotKnow = Boolean(currentStudy.responses[q.id]?.didNotKnow);
           const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
           return makeAttempt(
-            q, selected, selected === q.official_answer,
+            q, selected, !didNotKnow && selected === q.official_answer,
             currentStudy.durations[q.id] || 0,
             currentStudy.config.studyMode || 'custom_study_end', false,
-            { uncertainOptions }
+            {
+              uncertainOptions,
+              dontKnow: didNotKnow,
+              baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
+            }
           );
         });
       await recordAttemptsBatch(payload);
     }
 
     const result = currentStudy.questions.map(q => {
-      const selected = currentStudy.responses[q.id]?.selected ?? null;
-      return { q, selected, correct: selected === q.official_answer };
+      const response = currentStudy.responses[q.id] || {};
+      const selected = response.selected ?? null;
+      return { q, selected, didNotKnow:Boolean(response.didNotKnow), correct: !response.didNotKnow && selected === q.official_answer };
     });
     const correct = result.filter(r => r.correct).length;
     const uncertainCount = currentStudy.questions.filter(q => uncertaintyOptionsFor(currentStudy.scratch, q.id).length > 0).length;
@@ -1801,6 +2425,8 @@
       questions: currentStudy.questions,
       responses: currentStudy.responses,
       scratch: currentStudy.scratch || {},
+      optionOrders: currentStudy.optionOrders || {},
+      shuffleOptions: currentStudy.config.shuffleOptions !== false,
       index: 0
     };
 
@@ -1811,12 +2437,17 @@
 
   async function launchExam(selected, config) {
     clearTimer();
+    config = { shuffleOptions: true, ...config };
     const state = {
       currentIndex: 0,
       responses: {},
       marked: {},
       scratch: {},
       timeSpent: {},
+      optionOrders: createOptionOrders(
+        selected,
+        config.shuffleOptions !== false && config.examLayout !== 'paper'
+      ),
       remainingSeconds: config.totalSeconds,
       breakTaken: false,
     };
@@ -1857,6 +2488,10 @@
     currentExam.state.marked ||= {};
     currentExam.state.scratch ||= {};
     currentExam.state.timeSpent ||= {};
+    currentExam.state.optionOrders ||= createOptionOrders(
+      selected,
+      currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper'
+    );
     currentExam.state.currentIndex ||= 0;
     currentExam.state.remainingSeconds ??= currentExam.config.totalSeconds || 0;
     if (currentExam.config.examLayout === 'paper') renderHistoricalExamPaper();
@@ -1928,6 +2563,7 @@
 
   function renderExamQuestion() {
     clearTimer();
+    scrollPageTop();
     const q = currentExam.questions[currentExam.state.currentIndex];
     const selected = currentExam.state.responses[q.id] ?? null;
     const marked = Boolean(currentExam.state.marked[q.id]);
@@ -1943,7 +2579,11 @@
           <div class="q-head"><span class="tag">${currentExam.state.currentIndex+1}/${currentExam.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
           <div class="q-body"><p class="q-text">${esc(q.question)}</p>
             <div class="uncertainty-hint">Puedes marcar <strong>?</strong> en una o varias alternativas sin cambiar tu respuesta definitiva.</div>
-            <div class="options">${optionList(q).map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.letter))).join('')}</div>
+            <div class="options">${displayOptionList(
+              q,
+              currentExam.state.optionOrders,
+              currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper'
+            ).map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.sourceLetter || o.letter))).join('')}</div>
           </div>
         </div>
         <aside class="panel exam-nav"><div class="exam-nav-head"><strong>Navegación</strong><button id="mark-btn" class="btn small ${marked?'warn-btn':''}">${marked?'⚑ Marcada':'⚐ Marcar'}</button></div><div class="question-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="legend"><span>● respondida</span><span>⚑ revisar</span></div></aside>
@@ -2114,7 +2754,16 @@
     });
     const correct = result.filter(r => r.correct).length;
     const answered = result.filter(r => r.selected != null).length;
-    reviewContext = { type:'exam', questions:currentExam.questions, responses:currentExam.state.responses, scratch:currentExam.state.scratch || {}, marked:currentExam.state.marked || {}, index:0 };
+    reviewContext = {
+      type:'exam',
+      questions:currentExam.questions,
+      responses:currentExam.state.responses,
+      scratch:currentExam.state.scratch || {},
+      marked:currentExam.state.marked || {},
+      optionOrders: currentExam.state.optionOrders || {},
+      shuffleOptions: currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper',
+      index:0
+    };
 
     app.innerHTML = `<main class="shell">${topbar('Resultado del simulacro', true)}<section class="panel empty"><h2>${timeExpired?'Tiempo agotado':'Simulacro entregado'}</h2><p class="score-big">${correct}/${result.length}</p><p>${pct(correct,result.length)} · ${answered} respondidas · ${result.length-answered} omitidas</p><div class="actions"><button id="review-btn" class="btn">Revisar pregunta por pregunta</button><button class="btn primary" data-home>Volver al inicio</button></div></section></main>`;
     attachTopbar();
@@ -2123,15 +2772,32 @@
 
   function renderReviewQuestion() {
     clearTimer();
+    scrollPageTop();
     const q = reviewContext.questions[reviewContext.index];
-    const selected = reviewContext.responses[q.id]?.selected ?? reviewContext.responses[q.id] ?? null;
-    const correct = selected === q.official_answer;
+    const responseValue = reviewContext.responses[q.id];
+    const selected = responseValue?.selected ?? responseValue ?? null;
+    const didNotKnow = Boolean(responseValue?.didNotKnow);
+    const correct = !didNotKnow && selected === q.official_answer;
     const uncertainOptions = Object.entries(reviewContext.scratch?.[q.id] || {})
       .filter(([,state]) => state === 'tentative')
       .map(([letter]) => letter);
-    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${optionList(q).map(o => `<div class="option ${o.letter===q.official_answer?'correct':o.letter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${reviewContext.index===0?'disabled':''}>← Anterior</button><button id="next-review" class="btn primary">${reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →'}</button></div></main>`;
+    const reviewOptions = displayOptionList(q, reviewContext.optionOrders || {}, reviewContext.shuffleOptions !== false);
+    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${reviewOptions.map(o => {
+      const sourceLetter = o.sourceLetter || o.letter;
+      return `<div class="option ${sourceLetter===q.official_answer?'correct':sourceLetter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`;
+    }).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${reviewContext.index===0?'disabled':''}>← Anterior</button><button id="next-review" class="btn primary">${reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →'}</button></div></main>`;
     attachTopbar();
-    renderFeedback(q, selected, correct, null, selected == null, true, uncertainOptions);
+    const latestAttempt = attemptsForQuestion(q.id)
+      .slice()
+      .sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0] || null;
+    renderFeedback(q, selected, correct, null, selected == null && !didNotKnow, true, uncertainOptions, {
+      attemptId: latestAttempt?.id || null,
+      responseTimeMs: Number(latestAttempt?.response_time_ms || 0),
+      targetSeconds: Number(latestAttempt?.target_seconds || effectiveTargetSeconds(q)),
+      wasUncertainAtAnswer: Boolean(latestAttempt?.was_uncertain),
+      allowPostMark: !didNotKnow,
+      didNotKnow,
+    });
     document.getElementById('prev-review').onclick = () => { reviewContext.index--; renderReviewQuestion(); };
     document.getElementById('next-review').onclick = () => {
       if (reviewContext.index + 1 >= reviewContext.questions.length) renderDashboard();
@@ -2160,9 +2826,10 @@
   }
 
   function optionWithUncertaintyButton(o, selected, uncertain = false) {
+    const sourceLetter = o.sourceLetter || o.letter;
     return `<div class="option-with-uncertainty">
       ${optionButton(o, selected)}
-      <button class="uncertainty-toggle ${uncertain?'active':''}" data-uncertain-letter="${o.letter}"
+      <button class="uncertainty-toggle ${uncertain?'active':''}" data-uncertain-letter="${sourceLetter}"
         type="button" aria-pressed="${uncertain?'true':'false'}"
         title="${uncertain?'Quitar marca de duda':'Marcar esta alternativa con ?'}">?</button>
     </div>`;
@@ -2173,7 +2840,8 @@
   }
 
   function optionButton(o, selected) {
-    return `<button class="option ${selected===o.letter?'selected':''}" data-letter="${o.letter}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></button>`;
+    const sourceLetter = o.sourceLetter || o.letter;
+    return `<button class="option ${selected===sourceLetter?'selected':''}" data-letter="${sourceLetter}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></button>`;
   }
 
   function auditBadge(q) {
@@ -2198,25 +2866,64 @@
     return `<div class="framework">${esc(text).split('\n').map(line => `<div>${line}</div>`).join('')}</div>`;
   }
 
-  function renderFeedback(q, selected, isCorrect, onNext, timedOut = false, reviewOnly = false, uncertainOptions = []) {
+  function renderFeedback(q, selected, isCorrect, onNext, timedOut = false, reviewOnly = false, uncertainOptions = [], feedbackMeta = {}) {
     const target = document.getElementById('feedback');
     if (!target) return;
-    const distractors = optionList(q).filter(o => o.letter !== q.official_answer).map(o => {
-      const reason = q[`why_not_${o.letter.toLowerCase()}`];
-      return reason ? `<p><strong>${o.letter}. ${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
-    }).join('');
+
+    const optionOrderStore = reviewOnly
+      ? (reviewContext?.optionOrders || {})
+      : currentStudy
+        ? (currentStudy.optionOrders || {})
+        : (currentExam?.state?.optionOrders || {});
+    const shouldShuffleOptions = reviewOnly
+      ? reviewContext?.shuffleOptions !== false
+      : currentStudy
+        ? currentStudy.config.shuffleOptions !== false
+        : currentExam
+          ? currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper'
+          : false;
+    const feedbackOptions = displayOptionList(q, optionOrderStore, shouldShuffleOptions);
+    const displayLetterFor = sourceLetter =>
+      feedbackOptions.find(o => (o.sourceLetter || o.letter) === sourceLetter)?.letter || sourceLetter;
+    const selectedDisplayLetter = selected ? displayLetterFor(selected) : null;
+    const officialDisplayLetter = displayLetterFor(q.official_answer);
+
+    const targetSeconds = Number(feedbackMeta.targetSeconds || effectiveTargetSeconds(q));
+    const responseTimeMs = Number(feedbackMeta.responseTimeMs || 0);
+    const responseSeconds = responseTimeMs > 0 ? responseTimeMs / 1000 : null;
+    const timeState = responseSeconds == null
+      ? ''
+      : responseSeconds <= targetSeconds
+        ? 'ok'
+        : responseSeconds <= targetSeconds * 1.6
+          ? 'warn'
+          : 'bad';
+    const timeLabel = responseSeconds == null
+      ? ''
+      : `${responseSeconds < 10 ? responseSeconds.toFixed(1) : Math.round(responseSeconds)} s`;
+    const postMarkAvailable = Boolean(feedbackMeta.attemptId) && selected != null && (!reviewOnly || feedbackMeta.allowPostMark);
+    const alreadyUncertain = Boolean(feedbackMeta.wasUncertainAtAnswer) || uncertainOptions.length > 0;
+    const distractors = feedbackOptions
+      .filter(o => (o.sourceLetter || o.letter) !== q.official_answer)
+      .map(o => {
+        const sourceLetter = o.sourceLetter || o.letter;
+        const reason = q[`why_not_${sourceLetter.toLowerCase()}`];
+        return reason ? `<p><strong>${o.letter}. ${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
+      }).join('');
 
     target.innerHTML = `<div class="feedback">
-      <h3>${timedOut ? '⏱ Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
-      ${selected ? `<p>Tu respuesta: <strong>${esc(selected)}. ${esc(q[`option_${selected.toLowerCase()}`])}</strong></p>` : ''}
-      <p class="answer-line">Clave oficial: ${esc(q.official_answer)}. ${esc(q.official_answer_text)}</p>
+      <h3>${feedbackMeta.didNotKnow ? '🤷 No sabía' : timedOut ? '⏱ Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
+      ${selected ? `<p>Tu respuesta: <strong>${esc(selectedDisplayLetter)}. ${esc(q[`option_${selected.toLowerCase()}`])}</strong></p>` : ''}
+      <p class="answer-line">Respuesta correcta: ${esc(officialDisplayLetter)}. ${esc(q.official_answer_text)}</p>
+      ${responseSeconds != null ? `<div class="feedback-time ${timeState}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
 
       ${observed(q) ? `<div class="explain-block audit-box"><h4>⚠ Auditoría médica</h4><p><strong>Pregunta histórica observada: se conserva la clave oficial, pero no cuenta en dominio por defecto.</strong></p><p>${esc(q.audit_current_assessment || q.update_alert || '')}</p><p><strong>Criterio actual:</strong> ${esc(q.audit_current_answer || '')}</p></div>` : caveat(q) ? `<div class="explain-block"><h4>⚠ Precisión clínica</h4><p>${esc(q.audit_current_assessment || q.update_alert || '')}</p></div>` : ''}
 
       ${uncertainOptions.length ? `<div class="explain-block uncertainty-box"><h4>❓ Alternativas que marcaste como dudosas</h4><p>Esta pregunta se programará antes en tu repaso aunque la hayas acertado.</p>${uncertainOptions.map(letter => {
         const text = q[`option_${letter.toLowerCase()}`] || '';
         const reason = letter === q.official_answer ? (q.correct_explanation || '') : (q[`why_not_${letter.toLowerCase()}`] || '');
-        return `<p><strong>${esc(letter)}. ${esc(text)}</strong>${reason ? ` — ${esc(reason)}` : ''}</p>`;
+        const displayLetter = displayLetterFor(letter);
+        return `<p><strong>${esc(displayLetter)}. ${esc(text)}</strong>${reason ? ` — ${esc(reason)}` : ''}</p>`;
       }).join('')}</div>` : ''}
       ${q.exam_logic ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(q.exam_logic)}</p></div>` : ''}
       ${q.comparison_framework ? `<div class="explain-block"><h4>📊 ${esc(q.comparison_title || 'Comparación clave')}</h4>${frameworkHtml(q.comparison_framework)}</div>` : ''}
@@ -2226,21 +2933,51 @@
       ${q.abbreviations ? `<div class="explain-block"><h4>🔤 Siglas y términos</h4><p>${esc(q.abbreviations)}</p></div>` : ''}
       ${q.exam_pearl ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(q.exam_pearl)}</p></div>` : ''}
       ${q.memory_hook ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(q.memory_hook)}</p></div>` : ''}
+      ${postMarkAvailable ? `<div class="post-answer-reflection">
+        <div>
+          <strong>¿Acertaste sin dominar realmente el razonamiento?</strong>
+          <p class="muted">Puedes marcar la pregunta después de leer la corrección. Se contará como conocimiento frágil y volverá antes al repaso.</p>
+        </div>
+        <button id="post-answer-uncertain" class="btn ${alreadyUncertain ? 'ghost' : 'warn-btn'}" type="button" ${alreadyUncertain ? 'disabled' : ''}>
+          ${alreadyUncertain ? '✓ Ya registrada como dudosa' : '❓ No dominaba el razonamiento'}
+        </button>
+        <div id="post-answer-uncertain-status" class="muted post-answer-status"></div>
+      </div>` : ''}
       ${!reviewOnly && onNext ? `<div class="footer-actions"><button id="next-feedback" class="btn primary">Siguiente pregunta →</button></div>` : ''}
     </div>`;
+
+    const postBtn = document.getElementById('post-answer-uncertain');
+    if (postBtn && !postBtn.disabled) {
+      postBtn.onclick = async () => {
+        postBtn.disabled = true;
+        const status = document.getElementById('post-answer-uncertain-status');
+        if (status) status.textContent = 'Guardando…';
+        const updated = await markAttemptUncertainAfterFeedback(feedbackMeta.attemptId, q, selected);
+        if (!updated) {
+          postBtn.disabled = false;
+          if (status) status.textContent = 'No se pudo guardar. Intenta nuevamente.';
+          return;
+        }
+        postBtn.textContent = '✓ Marcada para repaso prioritario';
+        postBtn.classList.remove('warn-btn');
+        postBtn.classList.add('ghost');
+        if (status) status.textContent = 'Registrada como duda posterior a la corrección. La memoria y la prioridad ya fueron recalculadas.';
+      };
+    }
     if (!reviewOnly && onNext) document.getElementById('next-feedback').onclick = onNext;
   }
 
   function makeAttempt(q, selected, isCorrect, responseTimeMs, studyMode, timedOut, meta = {}) {
-    const target = Number(profile?.target_response_seconds || 25);
-    const normalizedTarget = effectiveTargetSeconds(q);
+    const baseTarget = Number(meta.baseTargetSeconds || profile?.target_response_seconds || 25);
+    const normalizedTarget = effectiveTargetSeconds(q, baseTarget);
     const state = memoryByQuestion.get(q.id);
     const answeredAt = new Date().toISOString();
     const uncertainOptions = [...new Set((meta.uncertainOptions || []).filter(x => ['A','B','C','D','E'].includes(x)))];
     const wasUncertain = uncertainOptions.length > 0;
-    const baseMemoryRating = memoryRating(q, responseTimeMs, isCorrect, timedOut);
+    const didNotKnow = Boolean(meta.dontKnow);
+    const baseMemoryRating = memoryRating(q, responseTimeMs, isCorrect, timedOut, normalizedTarget);
     const adjustedMemoryRating = wasUncertain && isCorrect ? Math.min(baseMemoryRating, 2) : baseMemoryRating;
-    const baseSpeedBucket = speedBucket(q, responseTimeMs, isCorrect, timedOut);
+    const baseSpeedBucket = didNotKnow ? 'dont_know' : speedBucket(q, responseTimeMs, isCorrect, timedOut, normalizedTarget);
     return {
       question_id: q.id,
       selected_answer: selected,
@@ -2252,9 +2989,13 @@
       speed_bucket: wasUncertain ? (isCorrect ? 'uncertain_correct' : 'uncertain_incorrect') : baseSpeedBucket,
       was_uncertain: wasUncertain,
       uncertain_options: uncertainOptions,
-      uncertainty_note: wasUncertain ? `Alternativas marcadas con ?: ${uncertainOptions.join(', ')}` : null,
+      uncertainty_note: didNotKnow
+        ? 'NO_SE_EXPLICITO'
+        : wasUncertain
+          ? `Alternativas marcadas con ?: ${uncertainOptions.join(', ')}`
+          : null,
       normalized_speed: Number(((Number(responseTimeMs||0)/1000) / Math.max(1, normalizedTarget)).toFixed(4)),
-      target_seconds: target,
+      target_seconds: normalizedTarget,
       was_due: Boolean(state && new Date(state.due_at) <= new Date(answeredAt)),
       answered_at: answeredAt,
     };
@@ -2274,18 +3015,85 @@
     await upsertMemoryRows(nextRows);
   }
 
+  async function rebuildMemoryForQuestion(questionId) {
+    const q = questions.find(x => x.id === questionId);
+    if (!q) return null;
+    const list = attemptsForQuestion(questionId)
+      .slice()
+      .sort((a,b) => new Date(a.answered_at) - new Date(b.answered_at));
+    if (!list.length) return null;
+
+    let state = null;
+    for (const a of list) {
+      const normalized = {
+        ...a,
+        memory_rating: a.memory_rating || memoryRating(q, a.response_time_ms, a.is_correct, a.timed_out, a.target_seconds),
+        speed_bucket: a.speed_bucket || speedBucket(q, a.response_time_ms, a.is_correct, a.timed_out, a.target_seconds),
+      };
+      state = evolveMemory(state, normalized, q);
+    }
+    if (state) await upsertMemoryRows([state]);
+    return state;
+  }
+
+  async function markAttemptUncertainAfterFeedback(attemptId, q, selected) {
+    if (!attemptId) return null;
+    const idx = attempts.findIndex(a => a.id === attemptId);
+    if (idx < 0) return null;
+
+    const current = attempts[idx];
+    const existingOptions = Array.isArray(current.uncertain_options) ? current.uncertain_options : [];
+    const uncertainOptions = [...new Set([...existingOptions, ...(selected ? [selected] : [])])];
+    const previousNote = String(current.uncertainty_note || '').trim();
+    const marker = 'POST_ANSWER_REASONING_MISMATCH';
+    const uncertaintyNote = previousNote.includes(marker)
+      ? previousNote
+      : [previousNote, marker].filter(Boolean).join(' | ');
+
+    const changes = {
+      was_uncertain: true,
+      uncertain_options: uncertainOptions,
+      uncertainty_note: uncertaintyNote,
+      memory_rating: current.is_correct ? Math.min(Number(current.memory_rating || 4), 2) : 1,
+      speed_bucket: current.is_correct ? 'uncertain_correct' : 'uncertain_incorrect',
+    };
+
+    let updated;
+    if (cloudConfigured) {
+      const { data, error } = await supa.from('attempts')
+        .update(changes)
+        .eq('id', attemptId)
+        .eq('user_id', user.id)
+        .select()
+        .single();
+      if (error) {
+        console.warn('No se pudo registrar la duda posterior:', error.message);
+        return null;
+      }
+      updated = data;
+    } else {
+      updated = { ...current, ...changes };
+    }
+
+    attempts[idx] = updated;
+    if (!cloudConfigured) saveLocalAttempts();
+    await rebuildMemoryForQuestion(q.id);
+    return updated;
+  }
+
   async function recordSingleAttempt(q, selected, isCorrect, ms, mode, timedOut, meta = {}) {
     const attempt = makeAttempt(q, selected, isCorrect, ms, mode, timedOut, meta);
     let saved;
     if (cloudConfigured) {
       const { data, error } = await supa.from('attempts').insert({ ...attempt, user_id:user.id }).select().single();
-      if (error) { alert(`No se pudo guardar el intento: ${error.message}`); return; }
+      if (error) { alert(`No se pudo guardar el intento: ${error.message}`); return null; }
       saved = data; attempts.push(data);
     } else {
       saved = { id: crypto.randomUUID(), ...attempt };
       attempts.push(saved); saveLocalAttempts();
     }
     await applyAttemptsToMemory([saved]);
+    return saved;
   }
 
   async function recordAttemptsBatch(payload) {
