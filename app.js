@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = '0.6.10';
+  const APP_VERSION = '0.6.11';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
@@ -47,10 +47,61 @@
 
   const localeSort = (a, b) => String(a || '').localeCompare(String(b || ''), 'es', { sensitivity:'base' });
 
+  // Capa defensiva de taxonomía. La base está normalizada, pero la app evita
+  // volver a mostrar etiquetas antiguas o valores numéricos si una importación
+  // futura llega con datos inconsistentes.
+  const NUMERIC_TAXONOMY_LABEL = /^[\s]*[0-9]+(?:[.,][0-9]+)?[\s]*$/;
+  const taxonomyKey = (value = '') => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[-_/]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const CANONICAL_AREA_BY_KEY = new Map([
+    ['ciencias basicas', 'Ciencias Básicas'],
+    ['cirugia', 'Cirugía'],
+    ['gineco obstetricia', 'Ginecología y Obstetricia'],
+    ['ginecologia y obstetricia', 'Ginecología y Obstetricia'],
+    ['obstetricia y ginecologia', 'Ginecología y Obstetricia'],
+    ['medicina', 'Medicina Interna'],
+    ['medicina interna', 'Medicina Interna'],
+    ['psiquiatria', 'Medicina Interna'],
+    ['pediatria', 'Pediatría'],
+    ['salud publica', 'Salud Pública'],
+  ]);
+
+  function cleanTaxonomyLabel(value = '') {
+    const label = String(value ?? '').trim();
+    if (!label || NUMERIC_TAXONOMY_LABEL.test(label)) return '';
+    return label;
+  }
+
+  function canonicalArea(value = '') {
+    const label = cleanTaxonomyLabel(value);
+    return CANONICAL_AREA_BY_KEY.get(taxonomyKey(label)) || label || 'Sin área';
+  }
+
+  function normalizedTaxonomyParts(q) {
+    const area = canonicalArea(q?.area);
+    const specialty = cleanTaxonomyLabel(q?.specialty) || 'General';
+    const subtopic = cleanTaxonomyLabel(q?.subtopic);
+    const topic = cleanTaxonomyLabel(q?.topic) || subtopic || 'Sin tema clasificado';
+    return { area, specialty, topic, subtopic };
+  }
+
+  function normalizeQuestionTaxonomy(q) {
+    const { area, specialty, topic, subtopic } = normalizedTaxonomyParts(q);
+    return { ...q, area, specialty, topic, subtopic: subtopic || q?.subtopic || null };
+  }
+
+  function normalizeQuestionCorpus(list = []) {
+    return (list || []).map(normalizeQuestionTaxonomy);
+  }
+
   function topicPathParts(q) {
-    const area = String(q?.area || 'Sin área').trim() || 'Sin área';
-    const specialty = String(q?.specialty || 'General').trim() || 'General';
-    const topic = String(q?.topic || q?.subtopic || 'Sin tema').trim() || 'Sin tema';
+    const { area, specialty, topic } = normalizedTaxonomyParts(q);
     return { area, specialty, topic };
   }
 
@@ -114,7 +165,7 @@
           </label>`;
         }).join('');
 
-        return `<details class="topic-specialty-group" data-topic-specialty-wrap="${specialtyId}" open>
+        return `<details class="topic-specialty-group" data-topic-specialty-wrap="${specialtyId}">
           <summary><span>${esc(specialty.name)}</span><small>${specialty.topics.length} tema${specialty.topics.length === 1 ? '' : 's'} · ${specialty.count} pregunta${specialty.count === 1 ? '' : 's'}</small></summary>
           <div class="topic-group-actions">
             <button type="button" class="topic-scope-btn" data-topic-select-specialty="${specialtyId}">Todos</button>
@@ -124,7 +175,7 @@
         </details>`;
       }).join('');
 
-      return `<details class="topic-area-group" data-topic-area-wrap="${areaId}" open>
+      return `<details class="topic-area-group" data-topic-area-wrap="${areaId}">
         <summary><span>${esc(area.name)}</span><small>${areaTopicCount} tema${areaTopicCount === 1 ? '' : 's'} · ${area.count} pregunta${area.count === 1 ? '' : 's'}</small></summary>
         <div class="topic-group-actions">
           <button type="button" class="topic-scope-btn" data-topic-select-area="${areaId}">Todos</button>
@@ -432,7 +483,7 @@
   async function init() {
     registerServiceWorker();
     if (!cloudConfigured) {
-      questions = (window.PILOT_QUESTIONS || []).filter(q => String(q.active).toLowerCase() !== 'false');
+      questions = normalizeQuestionCorpus((window.PILOT_QUESTIONS || []).filter(q => String(q.active).toLowerCase() !== 'false'));
       rebuildCorpusRentability();
       attempts = localAttempts();
       activeSessions = localSessions().filter(s => s.status === 'active');
@@ -563,7 +614,7 @@
     if (pRes.error) { renderFatal(`Falta aplicar la migración v0.5 en Supabase: ${pRes.error.message}`); return; }
     if (mRes.error) { renderFatal(`Falta aplicar la migración v0.5 en Supabase: ${mRes.error.message}`); return; }
 
-    questions = qRes.data || [];
+    questions = normalizeQuestionCorpus(qRes.data || []);
     rebuildCorpusRentability();
     attempts = aRes.data || [];
     memoryStates = mRes.data || [];
@@ -2072,8 +2123,14 @@
     document.getElementById('builder-form').addEventListener('submit', async e => {
       e.preventDefault();
       const config = readBuilderConfig(mode);
-      const pool = filterPool(config);
       const errorEl = document.getElementById('builder-error');
+      if (!config.areas.length) { errorEl.textContent = 'Selecciona al menos un área.'; return; }
+      if (!config.years.length) { errorEl.textContent = 'Selecciona al menos un año.'; return; }
+      if (document.querySelectorAll('input[name="topicPath"]').length && !config.topicPaths.length) {
+        errorEl.textContent = 'Selecciona al menos un tema. Usa “Todos” para incluirlos todos.';
+        return;
+      }
+      const pool = filterPool(config);
       if (!pool.length) { errorEl.textContent = 'No hay preguntas que cumplan esos filtros.'; return; }
       if (config.count > pool.length) {
         errorEl.textContent = `Pediste ${config.count}, pero con estos filtros solo hay ${pool.length}. Reduce la cantidad o amplía los filtros.`;
