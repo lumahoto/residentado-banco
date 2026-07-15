@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = '0.6.12';
+  const APP_VERSION = '0.6.13';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
@@ -2872,7 +2872,7 @@
           .map(([letter]) => letter);
         return makeAttempt(q, selected, selected === q.official_answer, measuredMs, attemptMode, false, { uncertainOptions });
       });
-    await recordAttemptsBatch(payload);
+    const savedExamAttempts = await recordAttemptsBatch(payload) || [];
 
     if (cloudConfigured) {
       await supa.from('practice_sessions').update({ status:'completed', state: currentExam.state, completed_at:new Date().toISOString(), updated_at:new Date().toISOString() }).eq('id', currentExam.row.id);
@@ -2897,6 +2897,7 @@
       marked:currentExam.state.marked || {},
       optionOrders: currentExam.state.optionOrders || {},
       shuffleOptions: currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper',
+      attemptsByQuestion: Object.fromEntries(savedExamAttempts.map(a => [a.question_id, a])),
       index:0
     };
 
@@ -2930,15 +2931,32 @@
       : attemptsForQuestion(q.id)
           .slice()
           .sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0] || null);
-    renderFeedback(q, selected, correct, null, timedOut, true, uncertainOptions, {
+    const reviewFeedbackMeta = {
       attemptId: latestAttempt?.id || null,
       responseTimeMs: Number(latestAttempt?.response_time_ms || 0),
       targetSeconds: Number(latestAttempt?.target_seconds || effectiveTargetSeconds(q)),
       wasUncertainAtAnswer: Boolean(latestAttempt?.was_uncertain),
-      allowPostMark: !didNotKnow,
+      // En la revisión al final, cualquier pregunta respondida debe permitir
+      // registrar que el razonamiento no estaba realmente dominado, incluso
+      // si la alternativa final fue correcta o el tiempo terminó después de
+      // haber marcado una respuesta.
+      allowPostMark: !didNotKnow && selected != null,
       didNotKnow,
       omitted,
-    });
+    };
+
+    // La explicación es parte esencial de la revisión, no un extra opcional.
+    // La protegemos con un fallback para que un dato editorial inesperado no
+    // deje una respuesta correcta mostrando solo el color verde.
+    try {
+      renderFeedback(q, selected, correct, null, timedOut, true, uncertainOptions, reviewFeedbackMeta);
+    } catch (error) {
+      console.error('Error al renderizar la explicación de revisión:', error);
+    }
+    const reviewFeedbackNode = document.getElementById('feedback');
+    if (reviewFeedbackNode && !reviewFeedbackNode.innerHTML.trim()) {
+      renderReviewFeedbackFallback(q, selected, correct, timedOut, uncertainOptions, reviewFeedbackMeta);
+    }
     document.getElementById('prev-review').onclick = () => { reviewContext.index--; renderReviewQuestion(); };
     document.getElementById('next-review').onclick = () => {
       if (reviewContext.index + 1 >= reviewContext.questions.length) renderDashboard();
@@ -3005,6 +3023,87 @@
   function frameworkHtml(text) {
     if (!text) return '';
     return `<div class="framework">${esc(text).split('\n').map(line => `<div>${line}</div>`).join('')}</div>`;
+  }
+
+  function bindPostAnswerUncertainButton(feedbackMeta, q, selected) {
+    const postBtn = document.getElementById('post-answer-uncertain');
+    if (!postBtn || postBtn.disabled) return;
+    postBtn.onclick = async () => {
+      postBtn.disabled = true;
+      const status = document.getElementById('post-answer-uncertain-status');
+      if (status) status.textContent = 'Guardando…';
+      const updated = await markAttemptUncertainAfterFeedback(feedbackMeta.attemptId, q, selected);
+      if (!updated) {
+        postBtn.disabled = false;
+        if (status) status.textContent = 'No se pudo guardar. Intenta nuevamente.';
+        return;
+      }
+      postBtn.textContent = '✓ Marcada para repaso prioritario';
+      postBtn.classList.remove('warn-btn');
+      postBtn.classList.add('ghost');
+      if (status) status.textContent = 'Registrada como duda posterior a la corrección. La memoria y la prioridad ya fueron recalculadas.';
+    };
+  }
+
+  function renderReviewFeedbackFallback(q, selected, isCorrect, timedOut = false, uncertainOptions = [], feedbackMeta = {}) {
+    const target = document.getElementById('feedback');
+    if (!target) return;
+
+    const optionOrderStore = reviewContext?.optionOrders || {};
+    const shouldShuffleOptions = reviewContext?.shuffleOptions !== false;
+    const feedbackOptions = displayOptionList(q, optionOrderStore, shouldShuffleOptions);
+    const displayLetterFor = sourceLetter =>
+      feedbackOptions.find(o => (o.sourceLetter || o.letter) === sourceLetter)?.letter || sourceLetter || '—';
+    const optionTextFor = sourceLetter => {
+      const key = typeof sourceLetter === 'string' ? sourceLetter.toLowerCase() : '';
+      return key ? (q?.[`option_${key}`] || '') : '';
+    };
+
+    const selectedDisplayLetter = selected ? displayLetterFor(selected) : null;
+    const officialDisplayLetter = displayLetterFor(q?.official_answer);
+    const correctText = q?.correct_explanation || 'La explicación detallada de esta clave aún no está disponible en el registro cargado.';
+    const distractors = feedbackOptions
+      .filter(o => (o.sourceLetter || o.letter) !== q?.official_answer)
+      .map(o => {
+        const sourceLetter = o.sourceLetter || o.letter;
+        const key = typeof sourceLetter === 'string' ? sourceLetter.toLowerCase() : '';
+        const reason = key ? q?.[`why_not_${key}`] : '';
+        return `<p><strong>${esc(o.letter)}. ${esc(o.text)}:</strong> ${esc(reason || 'Sin explicación específica cargada para esta alternativa.')}</p>`;
+      }).join('');
+
+    const postMarkAvailable = Boolean(feedbackMeta.attemptId) && selected != null && feedbackMeta.allowPostMark !== false;
+    const alreadyUncertain = Boolean(feedbackMeta.wasUncertainAtAnswer) || uncertainOptions.length > 0;
+    const targetSeconds = Number(feedbackMeta.targetSeconds || effectiveTargetSeconds(q));
+    const responseTimeMs = Number(feedbackMeta.responseTimeMs || 0);
+    const responseSeconds = responseTimeMs > 0 ? responseTimeMs / 1000 : null;
+    const timeLabel = responseSeconds == null ? '' : `${responseSeconds < 10 ? responseSeconds.toFixed(1) : Math.round(responseSeconds)} s`;
+
+    target.innerHTML = `<div class="feedback">
+      <h3>${feedbackMeta.didNotKnow ? '🤷 No sabía' : timedOut ? '⏱ Tiempo agotado' : feedbackMeta.omitted ? '— Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
+      ${selected ? `<p>Tu respuesta: <strong>${esc(selectedDisplayLetter)}. ${esc(optionTextFor(selected))}</strong></p>` : ''}
+      <p class="answer-line">Respuesta correcta: ${esc(officialDisplayLetter)}. ${esc(q?.official_answer_text || optionTextFor(q?.official_answer))}</p>
+      ${responseSeconds != null ? `<div class="feedback-time ${responseSeconds <= targetSeconds ? 'ok' : responseSeconds <= targetSeconds * 1.6 ? 'warn' : 'bad'}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
+      ${q?.exam_logic ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(q.exam_logic)}</p></div>` : ''}
+      ${q?.comparison_framework ? `<div class="explain-block"><h4>📊 ${esc(q.comparison_title || 'Comparación clave')}</h4>${frameworkHtml(q.comparison_framework)}</div>` : ''}
+      <details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>
+      <details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>
+      ${q?.common_trap ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(q.common_trap)}</p></div>` : ''}
+      ${q?.abbreviations ? `<div class="explain-block"><h4>🔤 Siglas y términos</h4><p>${esc(q.abbreviations)}</p></div>` : ''}
+      ${q?.exam_pearl ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(q.exam_pearl)}</p></div>` : ''}
+      ${q?.memory_hook ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(q.memory_hook)}</p></div>` : ''}
+      ${postMarkAvailable ? `<div class="post-answer-reflection">
+        <div>
+          <strong>¿Acertaste sin dominar realmente el razonamiento?</strong>
+          <p class="muted">Márcala como duda después de leer la explicación. Se conservará el acierto, pero volverá antes al repaso.</p>
+        </div>
+        <button id="post-answer-uncertain" class="btn ${alreadyUncertain ? 'ghost' : 'warn-btn'}" type="button" ${alreadyUncertain ? 'disabled' : ''}>
+          ${alreadyUncertain ? '✓ Ya registrada como dudosa' : '❓ No dominaba el razonamiento'}
+        </button>
+        <div id="post-answer-uncertain-status" class="muted post-answer-status"></div>
+      </div>` : ''}
+    </div>`;
+
+    bindPostAnswerUncertainButton(feedbackMeta, q, selected);
   }
 
   function renderFeedback(q, selected, isCorrect, onNext, timedOut = false, reviewOnly = false, uncertainOptions = [], feedbackMeta = {}) {
@@ -3087,24 +3186,7 @@
       ${!reviewOnly && onNext ? `<div class="footer-actions"><button id="next-feedback" class="btn primary">Siguiente pregunta →</button></div>` : ''}
     </div>`;
 
-    const postBtn = document.getElementById('post-answer-uncertain');
-    if (postBtn && !postBtn.disabled) {
-      postBtn.onclick = async () => {
-        postBtn.disabled = true;
-        const status = document.getElementById('post-answer-uncertain-status');
-        if (status) status.textContent = 'Guardando…';
-        const updated = await markAttemptUncertainAfterFeedback(feedbackMeta.attemptId, q, selected);
-        if (!updated) {
-          postBtn.disabled = false;
-          if (status) status.textContent = 'No se pudo guardar. Intenta nuevamente.';
-          return;
-        }
-        postBtn.textContent = '✓ Marcada para repaso prioritario';
-        postBtn.classList.remove('warn-btn');
-        postBtn.classList.add('ghost');
-        if (status) status.textContent = 'Registrada como duda posterior a la corrección. La memoria y la prioridad ya fueron recalculadas.';
-      };
-    }
+    bindPostAnswerUncertainButton(feedbackMeta, q, selected);
     if (!reviewOnly && onNext) document.getElementById('next-feedback').onclick = onNext;
   }
 
