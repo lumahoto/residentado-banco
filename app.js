@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = '0.6.11';
+  const APP_VERSION = '0.6.12';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
@@ -2204,6 +2204,7 @@
       responses: {},
       scratch: {},
       durations: {},
+      answerTimes: {},
       optionOrders: createOptionOrders(selected, config.shuffleOptions !== false),
       totalRemaining: config.timeMode === 'total' ? config.totalSeconds : null,
     };
@@ -2226,20 +2227,40 @@
   }
 
 
+  function studyQuestionTargetMs(q) {
+    const baseTargetSeconds = Number(currentStudy?.config?.secondsPerQuestion || profile?.target_response_seconds || 25);
+    return effectiveTargetSeconds(q, baseTargetSeconds) * 1000;
+  }
+
+  function studyQuestionRemainingSeconds(q) {
+    const targetMs = studyQuestionTargetMs(q);
+    const usedMs = Number(currentStudy?.durations?.[q.id] || 0);
+    return Math.max(0, Math.ceil((targetMs - usedMs) / 1000));
+  }
+
+  function studyQuestionLocked(q) {
+    return Boolean(currentStudy?.responses?.[q.id]?.locked);
+  }
+
   function renderStudyQuestion() {
     clearTimer();
     scrollPageTop();
     const q = studyCurrentQuestion();
     if (!q) return finishStudy();
     questionStartedAt = performance.now();
-    const selected = currentStudy.responses[q.id]?.selected || null;
+    const responseState = currentStudy.responses[q.id] || {};
+    const selected = responseState.selected ?? null;
+    const locked = Boolean(responseState.locked);
     currentStudy.scratch ||= {};
     const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
     const opts = displayOptionList(q, currentStudy.optionOrders, currentStudy.config.shuffleOptions !== false);
     const baseTargetSeconds = Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25);
     const adaptiveTargetSeconds = effectiveTargetSeconds(q, baseTargetSeconds);
+    const remainingQuestionSeconds = currentStudy.config.timeMode === 'per_question'
+      ? (locked ? 0 : studyQuestionRemainingSeconds(q))
+      : null;
     const timerHtml = currentStudy.config.timeMode === 'per_question'
-      ? `<div id="timer" class="timer">${formatTime(adaptiveTargetSeconds)}</div>`
+      ? `<div id="timer" class="timer ${locked?'urgent':''}">${formatTime(remainingQuestionSeconds)}</div>`
       : currentStudy.config.timeMode === 'total'
         ? `<div id="timer" class="timer">${formatTime(currentStudy.totalRemaining)}</div>` : '';
     const targetTag = currentStudy.config.timeMode === 'none'
@@ -2252,6 +2273,7 @@
         <div class="progress"><div style="width:${(currentStudy.index/currentStudy.questions.length)*100}%"></div></div>
         <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${targetTag}${timerHtml}</div>
         <div class="q-body"><p class="q-text">${esc(q.question)}</p>
+          ${locked ? `<div class="banner compact"><strong>⏱ Pregunta cerrada.</strong> ${responseState.timedOut ? 'El tiempo terminó sin respuesta; contará como un único intento fallido por tiempo.' : 'El tiempo terminó después de que respondiste; se conserva esa respuesta y ya no puede modificarse.'}</div>` : ''}
           <div class="uncertainty-hint">Marca <strong>?</strong> en cualquier alternativa que no domines del todo. No cambia tu respuesta; sí hace que el concepto vuelva antes al repaso.</div>
           <div class="options">${opts.map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.sourceLetter || o.letter))).join('')}</div>
           ${currentStudy.config.timeMode === 'none' ? `<div class="dont-know-row"><button id="dont-know-study" class="btn ghost dont-know-btn" type="button">🤷 No sé · mostrar respuesta</button><span class="muted">Cuenta como respuesta incorrecta explícita; no como pregunta en blanco.</span></div>` : ''}
@@ -2262,10 +2284,20 @@
     </main>`;
     attachTopbar();
 
-    document.querySelectorAll('.option').forEach(btn => btn.onclick = () => handleStudyAnswer(btn.dataset.letter));
+    document.querySelectorAll('.option').forEach(btn => {
+      if (locked) btn.disabled = true;
+      else btn.onclick = () => handleStudyAnswer(btn.dataset.letter);
+    });
     const dontKnowBtn = document.getElementById('dont-know-study');
-    if (dontKnowBtn) dontKnowBtn.onclick = handleStudyDontKnow;
+    if (dontKnowBtn) {
+      if (locked) dontKnowBtn.disabled = true;
+      else dontKnowBtn.onclick = handleStudyDontKnow;
+    }
     document.querySelectorAll('[data-uncertain-letter]').forEach(btn => {
+      if (locked) {
+        btn.disabled = true;
+        return;
+      }
       btn.onclick = (ev) => {
         ev.stopPropagation();
         const letter = btn.dataset.uncertainLetter;
@@ -2291,9 +2323,17 @@
   function startStudyTimer() {
     if (currentStudy.config.timeMode === 'per_question') {
       const q = studyCurrentQuestion();
-      const baseTargetSeconds = Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25);
-      let remaining = effectiveTargetSeconds(q, baseTargetSeconds);
+      if (!q) return;
+      if (studyQuestionLocked(q)) {
+        updateTimer(0);
+        return;
+      }
+      let remaining = studyQuestionRemainingSeconds(q);
       updateTimer(remaining);
+      if (remaining <= 0) {
+        handleStudyTimeout();
+        return;
+      }
       timerId = setInterval(() => {
         remaining--;
         updateTimer(remaining);
@@ -2325,7 +2365,7 @@
   function saveStudyDuration() {
     if (!currentStudy) return;
     const q = studyCurrentQuestion();
-    if (!q) return;
+    if (!q || studyQuestionLocked(q)) return;
     const elapsed = Math.max(0, Math.round(performance.now() - questionStartedAt));
     currentStudy.durations[q.id] = (currentStudy.durations[q.id] || 0) + elapsed;
     questionStartedAt = performance.now();
@@ -2333,9 +2373,11 @@
 
   async function handleStudyAnswer(letter) {
     const q = studyCurrentQuestion();
-    if (!q) return;
+    if (!q || studyQuestionLocked(q)) return;
     saveStudyDuration();
-    currentStudy.responses[q.id] = { selected: letter };
+    const previousResponse = currentStudy.responses[q.id] || {};
+    currentStudy.responses[q.id] = { ...previousResponse, selected: letter, didNotKnow: false, timedOut: false };
+    currentStudy.answerTimes[q.id] = Number(currentStudy.durations[q.id] || 0);
 
     if (currentStudy.config.feedback === 'immediate') {
       clearTimer();
@@ -2409,12 +2451,18 @@
 
   function handleStudyTimeout() {
     const q = studyCurrentQuestion();
+    if (!q || !currentStudy || studyQuestionLocked(q)) return;
     saveStudyDuration();
-    currentStudy.responses[q.id] = { selected: null };
+    const targetMs = studyQuestionTargetMs(q);
+    currentStudy.durations[q.id] = targetMs;
+    const prior = currentStudy.responses[q.id] || {};
+    const hadAnswer = prior.selected != null;
+
     if (currentStudy.config.feedback === 'immediate') {
+      currentStudy.responses[q.id] = { selected: null, timedOut: true, locked: true, lockedByTimeout: true };
       const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
       recordSingleAttempt(
-        q, null, false, currentStudy.durations[q.id] || 0,
+        q, null, false, targetMs,
         currentStudy.config.studyMode || 'custom_study', true,
         {
           uncertainOptions,
@@ -2429,17 +2477,30 @@
           true, false, uncertainOptions,
           {
             attemptId: savedAttempt?.id || null,
-            responseTimeMs: currentStudy.durations[q.id] || 0,
+            responseTimeMs: targetMs,
             targetSeconds: Number(savedAttempt?.target_seconds || effectiveTargetSeconds(q, currentStudy.config.secondsPerQuestion)),
             wasUncertainAtAnswer: Boolean(savedAttempt?.was_uncertain),
           }
         );
       });
-    } else {
-      currentStudy.index++;
-      if (currentStudy.index >= currentStudy.questions.length) finishStudy();
-      else renderStudyQuestion();
+      return;
     }
+
+    // Corrección al final + tiempo por pregunta:
+    // - si no hubo respuesta, el tiempo agotado cierra la pregunta como fallo por tiempo;
+    // - si ya había una respuesta, se conserva y se cierra para impedir cambios posteriores;
+    // - volver atrás nunca reinicia el reloj ni crea un segundo intento.
+    currentStudy.responses[q.id] = {
+      ...prior,
+      selected: prior.selected ?? null,
+      timedOut: !hadAnswer,
+      locked: true,
+      lockedByTimeout: true,
+    };
+
+    currentStudy.index++;
+    if (currentStudy.index >= currentStudy.questions.length) finishStudy();
+    else renderStudyQuestion();
   }
 
   async function finishStudy(timeExpired = false) {
@@ -2447,19 +2508,28 @@
     if (!currentStudy) return renderDashboard();
     saveStudyDuration();
 
+    let savedStudyAttempts = [];
     if (currentStudy.config.feedback === 'end') {
       // En sesiones con corrección al final, las preguntas en blanco forman parte
       // del resultado de la sesión, pero no se guardan como intentos de aprendizaje.
       const payload = currentStudy.questions
-        .filter(q => currentStudy.responses[q.id]?.selected != null || currentStudy.responses[q.id]?.didNotKnow)
+        .filter(q => {
+          const response = currentStudy.responses[q.id] || {};
+          return response.selected != null || response.didNotKnow || response.timedOut;
+        })
         .map(q => {
-          const selected = currentStudy.responses[q.id].selected;
-          const didNotKnow = Boolean(currentStudy.responses[q.id]?.didNotKnow);
+          const response = currentStudy.responses[q.id] || {};
+          const selected = response.selected ?? null;
+          const didNotKnow = Boolean(response.didNotKnow);
+          const timedOut = Boolean(response.timedOut);
           const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
+          const responseTimeMs = timedOut
+            ? studyQuestionTargetMs(q)
+            : Number(currentStudy.answerTimes?.[q.id] ?? currentStudy.durations[q.id] ?? 0);
           return makeAttempt(
-            q, selected, !didNotKnow && selected === q.official_answer,
-            currentStudy.durations[q.id] || 0,
-            currentStudy.config.studyMode || 'custom_study_end', false,
+            q, selected, !didNotKnow && !timedOut && selected === q.official_answer,
+            responseTimeMs,
+            currentStudy.config.studyMode || 'custom_study_end', timedOut,
             {
               uncertainOptions,
               dontKnow: didNotKnow,
@@ -2467,13 +2537,20 @@
             }
           );
         });
-      await recordAttemptsBatch(payload);
+      savedStudyAttempts = await recordAttemptsBatch(payload) || [];
     }
 
     const result = currentStudy.questions.map(q => {
       const response = currentStudy.responses[q.id] || {};
       const selected = response.selected ?? null;
-      return { q, selected, didNotKnow:Boolean(response.didNotKnow), correct: !response.didNotKnow && selected === q.official_answer };
+      const timedOut = Boolean(response.timedOut);
+      return {
+        q,
+        selected,
+        didNotKnow: Boolean(response.didNotKnow),
+        timedOut,
+        correct: !response.didNotKnow && !timedOut && selected === q.official_answer
+      };
     });
     const correct = result.filter(r => r.correct).length;
     const uncertainCount = currentStudy.questions.filter(q => uncertaintyOptionsFor(currentStudy.scratch, q.id).length > 0).length;
@@ -2484,6 +2561,7 @@
       scratch: currentStudy.scratch || {},
       optionOrders: currentStudy.optionOrders || {},
       shuffleOptions: currentStudy.config.shuffleOptions !== false,
+      attemptsByQuestion: Object.fromEntries(savedStudyAttempts.map(a => [a.question_id, a])),
       index: 0
     };
 
@@ -2834,26 +2912,32 @@
     const responseValue = reviewContext.responses[q.id];
     const selected = responseValue?.selected ?? responseValue ?? null;
     const didNotKnow = Boolean(responseValue?.didNotKnow);
-    const correct = !didNotKnow && selected === q.official_answer;
+    const timedOut = Boolean(responseValue?.timedOut);
+    const omitted = selected == null && !didNotKnow && !timedOut;
+    const correct = !didNotKnow && !timedOut && selected === q.official_answer;
     const uncertainOptions = Object.entries(reviewContext.scratch?.[q.id] || {})
       .filter(([,state]) => state === 'tentative')
       .map(([letter]) => letter);
     const reviewOptions = displayOptionList(q, reviewContext.optionOrders || {}, reviewContext.shuffleOptions !== false);
-    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${reviewOptions.map(o => {
+    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${reviewOptions.map(o => {
       const sourceLetter = o.sourceLetter || o.letter;
       return `<div class="option ${sourceLetter===q.official_answer?'correct':sourceLetter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`;
     }).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${reviewContext.index===0?'disabled':''}>← Anterior</button><button id="next-review" class="btn primary">${reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →'}</button></div></main>`;
     attachTopbar();
-    const latestAttempt = attemptsForQuestion(q.id)
-      .slice()
-      .sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0] || null;
-    renderFeedback(q, selected, correct, null, selected == null && !didNotKnow, true, uncertainOptions, {
+    const sessionAttempt = reviewContext?.attemptsByQuestion?.[q.id] || null;
+    const latestAttempt = sessionAttempt || (reviewContext?.type === 'study'
+      ? null
+      : attemptsForQuestion(q.id)
+          .slice()
+          .sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0] || null);
+    renderFeedback(q, selected, correct, null, timedOut, true, uncertainOptions, {
       attemptId: latestAttempt?.id || null,
       responseTimeMs: Number(latestAttempt?.response_time_ms || 0),
       targetSeconds: Number(latestAttempt?.target_seconds || effectiveTargetSeconds(q)),
       wasUncertainAtAnswer: Boolean(latestAttempt?.was_uncertain),
       allowPostMark: !didNotKnow,
       didNotKnow,
+      omitted,
     });
     document.getElementById('prev-review').onclick = () => { reviewContext.index--; renderReviewQuestion(); };
     document.getElementById('next-review').onclick = () => {
@@ -2969,7 +3053,7 @@
       }).join('');
 
     target.innerHTML = `<div class="feedback">
-      <h3>${feedbackMeta.didNotKnow ? '🤷 No sabía' : timedOut ? '⏱ Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
+      <h3>${feedbackMeta.didNotKnow ? '🤷 No sabía' : timedOut ? '⏱ Tiempo agotado' : feedbackMeta.omitted ? '— Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
       ${selected ? `<p>Tu respuesta: <strong>${esc(selectedDisplayLetter)}. ${esc(q[`option_${selected.toLowerCase()}`])}</strong></p>` : ''}
       <p class="answer-line">Respuesta correcta: ${esc(officialDisplayLetter)}. ${esc(q.official_answer_text)}</p>
       ${responseSeconds != null ? `<div class="feedback-time ${timeState}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
@@ -3154,18 +3238,19 @@
   }
 
   async function recordAttemptsBatch(payload) {
-    if (!payload.length) return;
+    if (!payload.length) return [];
     let saved = [];
     if (cloudConfigured) {
       const rows = payload.map(a => ({ ...a, user_id:user.id }));
       const { data, error } = await supa.from('attempts').insert(rows).select();
-      if (error) { alert(`No se pudieron guardar todos los intentos: ${error.message}`); return; }
+      if (error) { alert(`No se pudieron guardar todos los intentos: ${error.message}`); return []; }
       saved = data || []; attempts.push(...saved);
     } else {
       saved = payload.map(a => ({ id:crypto.randomUUID(), ...a }));
       attempts.push(...saved); saveLocalAttempts();
     }
     await applyAttemptsToMemory(saved);
+    return saved;
   }
 
   function renderStats() {
