@@ -477,6 +477,10 @@
     const s = extendedQuestionStats(q);
     const state = memoryByQuestion.get(q.id);
     const recall = estimateRecall(state, now);
+    const qAttempts = attemptsForQuestion(q.id);
+    const latestAttempt = qAttempts.length
+      ? qAttempts.slice().sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0]
+      : null;
     const retention = targetRetention(isoDateLocal(now));
     const duePressure = state
       ? Math.max(0, retention - recall) * 8 + Math.max(0, (now - new Date(state.due_at)) / 86400000) * 0.35
@@ -485,9 +489,10 @@
     const speed = s.avgMs ? Math.max(0, (s.avgMs / 1000 - Number(profile?.target_response_seconds || 25)) / 15) : 0.8;
     const rent = rentabilityWeight(q) * 2.6;
     const unseen = s.seen ? 0 : 1.2;
-    const wrongFast = attemptsForQuestion(q.id).some(a => a.speed_bucket === 'wrong_fast') ? 1.2 : 0;
+    const wrongFast = qAttempts.some(a => a.speed_bucket === 'wrong_fast') ? 1.2 : 0;
+    const uncertainty = latestAttempt?.was_uncertain ? 1.4 : 0;
     const observedPenalty = observed(q) ? -2.5 : 0;
-    return duePressure + weakness + speed + rent + unseen + wrongFast + observedPenalty;
+    return duePressure + weakness + speed + rent + unseen + wrongFast + uncertainty + observedPenalty;
   }
 
   function smartPool(kind = 'priority') {
@@ -503,6 +508,16 @@
     if (kind === 'errors') {
       const ids = new Set(attempts.filter(a => !a.is_correct).map(a => a.question_id));
       return nonObserved.filter(q => ids.has(q.id)).sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
+    }
+    if (kind === 'uncertain') {
+      const latestByQuestion = new Map();
+      for (const a of attempts) {
+        const prev = latestByQuestion.get(a.question_id);
+        if (!prev || new Date(a.answered_at) > new Date(prev.answered_at)) latestByQuestion.set(a.question_id, a);
+      }
+      return nonObserved
+        .filter(q => latestByQuestion.get(q.id)?.was_uncertain)
+        .sort((a,b)=>questionPriority(b,now)-questionPriority(a,now));
     }
     if (kind === 'speed') {
       return nonObserved.filter(q => {
@@ -634,6 +649,7 @@
       { id:'high', title:'🎯 Temas rentables', detail:'30 preguntas · selección automática', kind:'high', count:30, timed:false },
       { id:'weak', title:'🧠 Puntos débiles', detail:'15 preguntas · prioridad personal', kind:'priority', count:15, timed:false },
       { id:'errors', title:'❌ Errores recientes', detail:'10 preguntas', kind:'errors', count:10, timed:false },
+      { id:'uncertain', title:'❓ Dudé / no dominaba una alternativa', detail:'10 preguntas · vuelve antes al repaso', kind:'uncertain', count:10, timed:false },
     ];
     app.innerHTML = `<main class="shell">${topbar('Practicar', true)}
       <section class="panel"><h2>Práctica rápida</h2><p class="muted">La primera opción usa memoria, errores, lentitud y rentabilidad para decidir por ti.</p>
@@ -786,6 +802,40 @@
     return combined ? `${String(q.test).toUpperCase()}-${q.question_number}` : String(q.question_number);
   }
 
+
+  function scratchOptionState(qId, letter) {
+    return currentExam?.state?.scratch?.[qId]?.[letter] || 'neutral';
+  }
+
+  function scratchStateLabel(state) {
+    if (state === 'tentative') return 'Tentativa';
+    if (state === 'crossed') return 'Tachada';
+    return 'Sin marca';
+  }
+
+  function cycleScratchState(qId, letter) {
+    currentExam.state.scratch ||= {};
+    currentExam.state.scratch[qId] ||= {};
+    const current = currentExam.state.scratch[qId][letter] || 'neutral';
+    const next = current === 'neutral' ? 'tentative' : current === 'tentative' ? 'crossed' : 'neutral';
+    if (next === 'neutral') delete currentExam.state.scratch[qId][letter];
+    else currentExam.state.scratch[qId][letter] = next;
+    if (!Object.keys(currentExam.state.scratch[qId]).length) delete currentExam.state.scratch[qId];
+    return next;
+  }
+
+  function paperOptionHtml(q, index, o) {
+    const state = scratchOptionState(q.id, o.letter);
+    const icon = state === 'tentative' ? '?' : state === 'crossed' ? '×' : '';
+    return `<button class="paper-option scratch-${state}"
+      data-scratch-index="${index}" data-scratch-letter="${o.letter}"
+      aria-label="${esc(historicalDisplayNumber(q,index))} ${o.letter}: ${scratchStateLabel(state)}">
+      <span class="paper-option-letter">${o.letter}.</span>
+      <span class="paper-option-text">${esc(o.text)}</span>
+      <span class="paper-option-mark" aria-hidden="true">${icon}</span>
+    </button>`;
+  }
+
   function historicalPaperQuestionsHtml() {
     let lastTest = null;
     return currentExam.questions.map((q, index) => {
@@ -798,14 +848,16 @@
         </div>`;
       }
       lastTest = test;
+      const flagged = Boolean(currentExam.state.marked[q.id]);
       return `${divider}<article class="paper-question" id="paper-question-${index}">
         <div class="paper-question-head">
           <span class="paper-qnum">${esc(historicalDisplayNumber(q,index))}</span>
           <span class="muted">${esc(q.year)} · Prueba ${esc(test)}</span>
+          <button class="paper-flag ${flagged?'active':''}" data-paper-flag-index="${index}">${flagged?'⚑ Revisar':'⚐ Marcar para revisar'}</button>
         </div>
         <p class="paper-question-text">${esc(q.question)}</p>
         <div class="paper-options">
-          ${optionList(q).map(o => `<div class="paper-option"><strong>${o.letter}.</strong><span>${esc(o.text)}</span></div>`).join('')}
+          ${optionList(q).map(o => paperOptionHtml(q, index, o)).join('')}
         </div>
       </article>`;
     }).join('');
@@ -820,8 +872,10 @@
         : '';
       lastTest = test;
       const selected = currentExam.state.responses[q.id] ?? null;
-      return `${heading}<div class="answer-row ${selected?'answered':''}" data-answer-row="${index}">
-        <button class="answer-number" data-scroll-question="${index}" title="Ir a la pregunta">${esc(historicalDisplayNumber(q,index))}</button>
+      const uncertain = Object.values(currentExam.state.scratch?.[q.id] || {}).includes('tentative');
+      const flagged = Boolean(currentExam.state.marked?.[q.id]);
+      return `${heading}<div class="answer-row ${selected?'answered':''} ${uncertain?'uncertain':''} ${flagged?'flagged':''}" data-answer-row="${index}">
+        <button class="answer-number" data-scroll-question="${index}" title="Ir a la pregunta">${flagged?'⚑ ':''}${esc(historicalDisplayNumber(q,index))}${uncertain?' ?':''}</button>
         <div class="answer-bubbles">
           ${optionList(q).map(o => `<button class="answer-bubble ${selected===o.letter?'selected':''}"
             data-answer-index="${index}" data-answer-letter="${o.letter}" aria-label="${esc(historicalDisplayNumber(q,index))} ${o.letter}">${o.letter}</button>`).join('')}
@@ -842,7 +896,15 @@
       const q = currentExam.questions[i];
       const selected = currentExam.state.responses[q.id] ?? null;
       const row = document.querySelector(`[data-answer-row="${i}"]`);
-      if (row) row.classList.toggle('answered', Boolean(selected));
+      const uncertain = Object.values(currentExam.state.scratch?.[q.id] || {}).includes('tentative');
+      const flagged = Boolean(currentExam.state.marked?.[q.id]);
+      if (row) {
+        row.classList.toggle('answered', Boolean(selected));
+        row.classList.toggle('uncertain', uncertain);
+        row.classList.toggle('flagged', flagged);
+      }
+      const numberBtn = document.querySelector(`[data-scroll-question="${i}"]`);
+      if (numberBtn) numberBtn.textContent = `${flagged?'⚑ ':''}${historicalDisplayNumber(q,i)}${uncertain?' ?':''}`;
       document.querySelectorAll(`[data-answer-index="${i}"]`).forEach(btn => {
         btn.classList.toggle('selected', btn.dataset.answerLetter === selected);
       });
@@ -864,6 +926,8 @@
         </div>
         <div class="historical-toolbar-actions">
           <button id="jump-answer-sheet" class="btn small">📋 Hoja de respuestas</button>
+          <button id="historical-exit" class="btn small ghost">Salir y continuar después</button>
+          <button id="historical-cancel" class="btn small danger ghost-danger">Cancelar</button>
           <div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div>
           <button id="historical-finish" class="btn danger small">Entregar</button>
         </div>
@@ -874,7 +938,8 @@
           <div class="paper-cover">
             <span class="roadmap-kicker">CUADERNILLO</span>
             <h1>${esc(currentExam.config.title)}</h1>
-            <p>Lee el cuadernillo y marca tu respuesta únicamente en la hoja lateral, como en una hoja de respuestas física.</p>
+            <p>Lee el cuadernillo y marca tu respuesta definitiva únicamente en la hoja lateral. En el cuadernillo puedes hacer anotaciones provisionales: toca una alternativa para alternar entre <strong>tentativa (?)</strong>, <strong>tachada (×)</strong> y <strong>sin marca</strong>.</p>
+            <div class="scratch-legend"><span><b>?</b> tentativa</span><span><b>×</b> descartada</span><span>La hoja de respuestas es la que cuenta.</span></div>
           </div>
           ${historicalPaperQuestionsHtml()}
         </div>
@@ -891,11 +956,41 @@
 
     attachTopbar();
 
+    document.querySelectorAll('[data-scratch-index]').forEach(btn => {
+      btn.onclick = async () => {
+        const index = Number(btn.dataset.scratchIndex);
+        const q = currentExam.questions[index];
+        const letter = btn.dataset.scratchLetter;
+        const next = cycleScratchState(q.id, letter);
+        btn.classList.remove('scratch-neutral', 'scratch-tentative', 'scratch-crossed');
+        btn.classList.add(`scratch-${next}`);
+        const mark = btn.querySelector('.paper-option-mark');
+        if (mark) mark.textContent = next === 'tentative' ? '?' : next === 'crossed' ? '×' : '';
+        btn.setAttribute('aria-label', `${historicalDisplayNumber(q,index)} ${letter}: ${scratchStateLabel(next)}`);
+        refreshHistoricalAnswerSheet();
+        await persistExamState();
+      };
+    });
+
+    document.querySelectorAll('[data-paper-flag-index]').forEach(btn => {
+      btn.onclick = async () => {
+        const index = Number(btn.dataset.paperFlagIndex);
+        const q = currentExam.questions[index];
+        currentExam.state.marked[q.id] = !currentExam.state.marked[q.id];
+        btn.classList.toggle('active', Boolean(currentExam.state.marked[q.id]));
+        btn.textContent = currentExam.state.marked[q.id] ? '⚑ Revisar' : '⚐ Marcar para revisar';
+        refreshHistoricalAnswerSheet();
+        await persistExamState();
+      };
+    });
+
     document.querySelectorAll('[data-answer-index]').forEach(btn => {
       btn.onclick = async () => {
         const index = Number(btn.dataset.answerIndex);
         const q = currentExam.questions[index];
-        currentExam.state.responses[q.id] = btn.dataset.answerLetter;
+        const letter = btn.dataset.answerLetter;
+        if (currentExam.state.responses[q.id] === letter) delete currentExam.state.responses[q.id];
+        else currentExam.state.responses[q.id] = letter;
         refreshHistoricalAnswerSheet();
         await persistExamState();
       };
@@ -923,6 +1018,9 @@
       };
     }
 
+    document.getElementById('historical-exit').onclick = exitCurrentExam;
+    document.getElementById('historical-cancel').onclick = cancelCurrentExam;
+
     document.getElementById('historical-finish').onclick = renderExamOverview;
     startExamTimer();
   }
@@ -948,7 +1046,6 @@
     currentExam = null;
     reviewContext = null;
     const s = overallStats();
-    const resumable = activeSessions[0] || null;
     const plan = buildTodayPlan();
     const status = pressureStatus(plan);
     const ready = readinessIndicator();
@@ -982,7 +1079,15 @@
         <div class="checklist-items">${plan.tasks.map(t => `<div class="check-item ${t.remaining===0?'done':''}"><span class="checkmark">${t.remaining===0?'✓':'○'}</span><div><strong>${esc(t.label)}</strong><small>${t.completed}/${t.count} completadas</small></div><button class="btn small" data-task="${t.id}" ${t.remaining===0?'disabled':''}>${t.remaining===0?'Hecho':'Empezar'}</button></div>`).join('')}</div>
       </section>
 
-      ${resumable ? `<section class="panel resume-card"><div><strong>Simulacro en curso</strong><div class="muted">${esc(resumable.title || 'Sesión')} · ${resumable.question_ids?.length || 0} preguntas</div></div><button id="resume-btn" class="btn primary">Reanudar</button></section>` : ''}
+      ${activeSessions.length ? `<section class="panel active-sessions-panel">
+        <div class="section-head"><div><h2>Sesiones en curso</h2><p class="muted">Reanuda o cancela para que no queden sesiones activas olvidadas.</p></div></div>
+        <div class="active-session-list">
+          ${activeSessions.map(s => `<div class="active-session-row">
+            <div><strong>${esc(s.title || 'Simulacro')}</strong><small>${s.question_ids?.length || 0} preguntas · guardado ${new Date(s.updated_at || s.created_at || Date.now()).toLocaleString()}</small></div>
+            <div class="active-session-actions"><button class="btn small primary" data-resume-session="${esc(s.id)}">Reanudar</button><button class="btn small danger" data-cancel-session="${esc(s.id)}">Cancelar</button></div>
+          </div>`).join('')}
+        </div>
+      </section>` : ''}
 
       <section class="actions actions-main v05-actions">
         <button id="practice-btn" class="btn primary">⚡ PRACTICAR</button>
@@ -1011,7 +1116,18 @@
     document.getElementById('roadmap-btn').onclick = renderRoadmap;
     document.getElementById('roadmap-mini').onclick = renderRoadmap;
     document.getElementById('stats-btn').onclick = renderStats;
-    if (resumable) document.getElementById('resume-btn').onclick = () => resumePersistentSession(resumable);
+    document.querySelectorAll('[data-resume-session]').forEach(btn => {
+      btn.onclick = () => {
+        const row = activeSessions.find(s => s.id === btn.dataset.resumeSession);
+        if (row) resumePersistentSession(row);
+      };
+    });
+    document.querySelectorAll('[data-cancel-session]').forEach(btn => {
+      btn.onclick = async () => {
+        const row = activeSessions.find(s => s.id === btn.dataset.cancelSession);
+        if (row) await abandonSessionRow(row, true);
+      };
+    });
   }
 
   function renderMessage(title, message) {
@@ -1200,6 +1316,20 @@
 
   function studyCurrentQuestion() { return currentStudy?.questions[currentStudy.index]; }
 
+  function cancelCurrentStudy() {
+    if (!currentStudy) return renderDashboard();
+    const answered = Object.values(currentStudy.responses || {}).filter(x => x && x.selected != null).length;
+    const immediate = currentStudy.config.feedback === 'immediate';
+    const message = immediate
+      ? `¿Cancelar esta sesión?\n\nLas ${answered} preguntas ya respondidas y corregidas permanecerán registradas. La cola restante se descartará.`
+      : `¿Cancelar esta sesión?\n\nSe descartarán las respuestas de esta sesión porque aún no fueron entregadas. No se añadirá ningún intento nuevo.`;
+    if (!confirm(message)) return;
+    clearTimer();
+    currentStudy = null;
+    renderDashboard();
+  }
+
+
   function renderStudyQuestion() {
     clearTimer();
     const q = studyCurrentQuestion();
@@ -1213,18 +1343,19 @@
         ? `<div id="timer" class="timer">${formatTime(currentStudy.totalRemaining)}</div>` : '';
 
     app.innerHTML = `<main class="shell">
-      ${topbar(currentStudy.config.title, true)}
+      ${topbar(currentStudy.config.title, false)}
       <section class="panel question-card">
         <div class="progress"><div style="width:${(currentStudy.index/currentStudy.questions.length)*100}%"></div></div>
         <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${timerHtml}</div>
         <div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${opts.map(o => optionButton(o, selected)).join('')}</div></div>
         <div id="feedback"></div>
       </section>
-      ${currentStudy.config.feedback === 'end' ? `<div class="footer-actions"><button id="prev-study" class="btn ghost" ${currentStudy.index===0?'disabled':''}>← Anterior</button><button id="next-study" class="btn primary">${currentStudy.index+1===currentStudy.questions.length?'Terminar':'Siguiente →'}</button></div>` : ''}
+      ${currentStudy.config.feedback === 'end' ? `<div class="footer-actions"><button id="prev-study" class="btn ghost" ${currentStudy.index===0?'disabled':''}>← Anterior</button><button id="cancel-study" class="btn danger ghost-danger">Cancelar sesión</button><button id="next-study" class="btn primary">${currentStudy.index+1===currentStudy.questions.length?'Terminar':'Siguiente →'}</button></div>` : `<div class="footer-actions"><button id="cancel-study" class="btn danger ghost-danger">Cancelar sesión</button></div>`}
     </main>`;
     attachTopbar();
 
     document.querySelectorAll('.option').forEach(btn => btn.onclick = () => handleStudyAnswer(btn.dataset.letter));
+    document.getElementById('cancel-study').onclick = cancelCurrentStudy;
     if (currentStudy.config.feedback === 'end') {
       document.getElementById('prev-study').onclick = () => { saveStudyDuration(); currentStudy.index--; renderStudyQuestion(); };
       document.getElementById('next-study').onclick = () => {
@@ -1319,10 +1450,14 @@
     saveStudyDuration();
 
     if (currentStudy.config.feedback === 'end') {
-      const payload = currentStudy.questions.map(q => {
-        const selected = currentStudy.responses[q.id]?.selected ?? null;
-        return makeAttempt(q, selected, selected === q.official_answer, currentStudy.durations[q.id] || 0, currentStudy.config.studyMode || 'custom_study_end', selected == null);
-      });
+      // En sesiones con corrección al final, las preguntas en blanco forman parte
+      // del resultado de la sesión, pero no se guardan como intentos de aprendizaje.
+      const payload = currentStudy.questions
+        .filter(q => currentStudy.responses[q.id]?.selected != null)
+        .map(q => {
+          const selected = currentStudy.responses[q.id].selected;
+          return makeAttempt(q, selected, selected === q.official_answer, currentStudy.durations[q.id] || 0, currentStudy.config.studyMode || 'custom_study_end', false);
+        });
       await recordAttemptsBatch(payload);
     }
 
@@ -1344,6 +1479,7 @@
       currentIndex: 0,
       responses: {},
       marked: {},
+      scratch: {},
       timeSpent: {},
       remainingSeconds: config.totalSeconds,
       breakTaken: false,
@@ -1383,6 +1519,7 @@
     currentExam = { row, config: row.config || {}, questions: selected, state: row.state || {} };
     currentExam.state.responses ||= {};
     currentExam.state.marked ||= {};
+    currentExam.state.scratch ||= {};
     currentExam.state.timeSpent ||= {};
     currentExam.state.currentIndex ||= 0;
     currentExam.state.remainingSeconds ??= currentExam.config.totalSeconds || 0;
@@ -1412,6 +1549,47 @@
     }
   }
 
+
+  async function abandonSessionRow(row, returnHome = false) {
+    if (!row) return;
+    if (!confirm(`¿Cancelar "${row.title || 'esta sesión'}"?\n\nSe eliminará de las sesiones en curso. Las respuestas de este simulacro que aún no hayan sido entregadas NO contarán como intentos.`)) return;
+
+    const now = new Date().toISOString();
+    if (cloudConfigured) {
+      const { error } = await supa.from('practice_sessions')
+        .update({ status:'abandoned', updated_at:now })
+        .eq('id', row.id);
+      if (error) {
+        alert(`No se pudo cancelar la sesión: ${error.message}`);
+        return;
+      }
+    } else {
+      const idx = activeSessions.findIndex(s => s.id === row.id);
+      if (idx >= 0) activeSessions[idx] = { ...activeSessions[idx], status:'abandoned', updated_at:now };
+      saveLocalSessions();
+    }
+
+    activeSessions = activeSessions.filter(s => s.id !== row.id);
+    if (currentExam?.row?.id === row.id) currentExam = null;
+    if (returnHome) renderDashboard();
+  }
+
+  async function exitCurrentExam() {
+    if (!currentExam) return renderDashboard();
+    clearTimer();
+    accumulateExamTime();
+    await persistExamState();
+    currentExam = null;
+    renderDashboard();
+  }
+
+  async function cancelCurrentExam() {
+    if (!currentExam) return renderDashboard();
+    clearTimer();
+    accumulateExamTime();
+    await abandonSessionRow(currentExam.row, true);
+  }
+
   function renderExamQuestion() {
     clearTimer();
     const q = currentExam.questions[currentExam.state.currentIndex];
@@ -1429,7 +1607,13 @@
         </div>
         <aside class="panel exam-nav"><div class="exam-nav-head"><strong>Navegación</strong><button id="mark-btn" class="btn small ${marked?'warn-btn':''}">${marked?'⚑ Marcada':'⚐ Marcar'}</button></div><div class="question-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="legend"><span>● respondida</span><span>⚑ revisar</span></div></aside>
       </section>
-      <div class="exam-controls"><button id="prev-exam" class="btn ghost" ${currentExam.state.currentIndex===0?'disabled':''}>← Anterior</button><button id="finish-exam" class="btn danger">Entregar examen</button><button id="next-exam" class="btn primary">${currentExam.state.currentIndex+1===currentExam.questions.length?'Ir al final':'Siguiente →'}</button></div>
+      <div class="exam-controls">
+        <button id="prev-exam" class="btn ghost" ${currentExam.state.currentIndex===0?'disabled':''}>← Anterior</button>
+        <button id="exit-exam" class="btn ghost">Salir y continuar después</button>
+        <button id="cancel-exam" class="btn danger ghost-danger">Cancelar simulacro</button>
+        <button id="finish-exam" class="btn danger">Entregar examen</button>
+        <button id="next-exam" class="btn primary">${currentExam.state.currentIndex+1===currentExam.questions.length?'Ir al final':'Siguiente →'}</button>
+      </div>
     </main>`;
     attachTopbar();
 
@@ -1469,6 +1653,8 @@
         await persistExamState(); renderExamQuestion();
       } else renderExamOverview();
     };
+    document.getElementById('exit-exam').onclick = exitCurrentExam;
+    document.getElementById('cancel-exam').onclick = cancelCurrentExam;
     document.getElementById('finish-exam').onclick = renderExamOverview;
     startExamTimer();
   }
@@ -1490,7 +1676,8 @@
     const answered = currentExam.state.responses[q.id] != null;
     const marked = Boolean(currentExam.state.marked[q.id]);
     const current = i === currentExam.state.currentIndex;
-    return `<button class="qnav ${answered?'answered':''} ${marked?'marked':''} ${current?'current':''}" data-qindex="${i}">${i+1}${marked?'⚑':''}</button>`;
+    const label = currentExam?.config?.examLayout === 'paper' ? historicalDisplayNumber(q, i) : String(i + 1);
+    return `<button class="qnav ${answered?'answered':''} ${marked?'marked':''} ${current?'current':''}" data-qindex="${i}">${esc(label)}${marked?'⚑':''}</button>`;
   }
 
   function refreshExamGridOnly() {
@@ -1504,10 +1691,12 @@
   function renderBreakScreen() {
     clearTimer();
     const done = currentExam.config.breakAfter;
-    app.innerHTML = `<main class="shell">${topbar('Descanso', false)}<section class="panel empty"><h2>Bloque 1 completado</h2><p>Has llegado a la pregunta ${done}. Tu progreso está guardado.</p><p class="muted">${currentExam.config.pauseDuringBreak ? 'El cronómetro está pausado durante este descanso.' : 'El cronómetro continúa corriendo.'}</p><button id="continue-block" class="btn primary">Continuar con el siguiente bloque</button></section></main>`;
+    app.innerHTML = `<main class="shell">${topbar('Descanso', false)}<section class="panel empty"><h2>Bloque 1 completado</h2><p>Has llegado a la pregunta ${done}. Tu progreso está guardado.</p><p class="muted">${currentExam.config.pauseDuringBreak ? 'El cronómetro está pausado durante este descanso.' : 'El cronómetro continúa corriendo.'}</p><div class="actions"><button id="continue-block" class="btn primary">Continuar con el siguiente bloque</button><button id="exit-break" class="btn ghost">Salir y continuar después</button><button id="cancel-break" class="btn danger ghost-danger">Cancelar simulacro</button></div></section></main>`;
     attachTopbar();
     if (!currentExam.config.pauseDuringBreak) startExamTimer();
     document.getElementById('continue-block').onclick = () => currentExam.config.examLayout === 'paper' ? renderHistoricalExamPaper() : renderExamQuestion();
+    document.getElementById('exit-break').onclick = exitCurrentExam;
+    document.getElementById('cancel-break').onclick = cancelCurrentExam;
   }
 
   function renderExamOverview() {
@@ -1515,12 +1704,23 @@
     accumulateExamTime();
     const answered = currentExam.questions.filter(q => currentExam.state.responses[q.id] != null).length;
     const marked = currentExam.questions.filter(q => currentExam.state.marked[q.id]).length;
-    app.innerHTML = `<main class="shell">${topbar('Revisión antes de entregar', false)}<section class="panel"><h2>Resumen del simulacro</h2><div class="kpis"><div class="kpi"><div class="value">${answered}</div><div class="label">Respondidas</div></div><div class="kpi"><div class="value">${currentExam.questions.length-answered}</div><div class="label">Sin responder</div></div><div class="kpi"><div class="value">${marked}</div><div class="label">Marcadas</div></div><div class="kpi"><div class="value">${formatTime(currentExam.state.remainingSeconds)}</div><div class="label">Tiempo restante</div></div></div><div class="question-grid overview-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="footer-actions"><button id="back-exam" class="btn ghost">Volver al examen</button><button id="submit-exam" class="btn danger">Entregar y corregir</button></div></section></main>`;
+    const uncertain = currentExam.questions.filter(q => Object.values(currentExam.state.scratch?.[q.id] || {}).includes('tentative')).length;
+    app.innerHTML = `<main class="shell">${topbar('Revisión antes de entregar', false)}<section class="panel"><h2>Resumen del simulacro</h2><div class="kpis"><div class="kpi"><div class="value">${answered}</div><div class="label">Respondidas</div></div><div class="kpi"><div class="value">${currentExam.questions.length-answered}</div><div class="label">Sin responder</div></div><div class="kpi"><div class="value">${marked}</div><div class="label">Marcadas para revisar</div></div><div class="kpi"><div class="value">${uncertain}</div><div class="label">Dudosas (?)</div></div><div class="kpi"><div class="value">${formatTime(currentExam.state.remainingSeconds)}</div><div class="label">Tiempo restante</div></div></div><div class="question-grid overview-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="footer-actions"><button id="back-exam" class="btn ghost">Volver al examen</button><button id="cancel-overview" class="btn danger ghost-danger">Cancelar simulacro</button><button id="submit-exam" class="btn danger">Entregar y corregir</button></div></section></main>`;
     attachTopbar();
-    document.querySelectorAll('[data-qindex]').forEach(btn => btn.onclick = () => { currentExam.state.currentIndex = Number(btn.dataset.qindex); renderExamQuestion(); });
+    document.querySelectorAll('[data-qindex]').forEach(btn => btn.onclick = () => {
+      currentExam.state.currentIndex = Number(btn.dataset.qindex);
+      if (currentExam.config.examLayout === 'paper') {
+        const index = currentExam.state.currentIndex;
+        renderHistoricalExamPaper();
+        setTimeout(() => document.getElementById(`paper-question-${index}`)?.scrollIntoView({ behavior:'smooth', block:'start' }), 0);
+      } else renderExamQuestion();
+    });
     document.getElementById('back-exam').onclick = () => currentExam.config.examLayout === 'paper' ? renderHistoricalExamPaper() : renderExamQuestion();
+    document.getElementById('cancel-overview').onclick = cancelCurrentExam;
     document.getElementById('submit-exam').onclick = async () => {
-      if (confirm('¿Entregar el simulacro? Después se mostrarán las respuestas y explicaciones.')) await finishExam(false);
+      const missing = currentExam.questions.length - answered;
+      const warning = `¿Entregar el simulacro?\n\nRespondidas: ${answered}\nSin responder: ${missing}\nDudosas (?): ${uncertain}\nMarcadas para revisar: ${marked}\n\nDespués se mostrarán las respuestas y explicaciones.`;
+      if (confirm(warning)) await finishExam(false);
     };
   }
 
@@ -1531,11 +1731,19 @@
     const elapsedSessionMs = Math.max(0, (Number(currentExam.config.totalSeconds || 0) - Number(currentExam.state.remainingSeconds || 0)) * 1000);
     const historicalAverageMs = answeredForTiming ? Math.round(elapsedSessionMs / answeredForTiming) : 0;
     const attemptMode = currentExam.config.studyMode || 'exam';
-    const payload = currentExam.questions.map(q => {
-      const selected = currentExam.state.responses[q.id] ?? null;
-      const measuredMs = currentExam.state.timeSpent[q.id] || (currentExam.config.examLayout === 'paper' && selected != null ? historicalAverageMs : 0);
-      return makeAttempt(q, selected, selected === q.official_answer, measuredMs, attemptMode, selected == null);
-    });
+    // Las preguntas en blanco siguen contando como omitidas en el RESULTADO del simulacro,
+    // pero NO se guardan como intentos de práctica ni alimentan el repaso espaciado.
+    // Así, una maratón entregada con 20 respuestas suma 20 preguntas al volumen diario, no 200.
+    const payload = currentExam.questions
+      .filter(q => currentExam.state.responses[q.id] != null)
+      .map(q => {
+        const selected = currentExam.state.responses[q.id];
+        const measuredMs = currentExam.state.timeSpent[q.id] || (currentExam.config.examLayout === 'paper' ? historicalAverageMs : 0);
+        const uncertainOptions = Object.entries(currentExam.state.scratch?.[q.id] || {})
+          .filter(([,state]) => state === 'tentative')
+          .map(([letter]) => letter);
+        return makeAttempt(q, selected, selected === q.official_answer, measuredMs, attemptMode, false, { uncertainOptions });
+      });
     await recordAttemptsBatch(payload);
 
     if (cloudConfigured) {
@@ -1553,7 +1761,7 @@
     });
     const correct = result.filter(r => r.correct).length;
     const answered = result.filter(r => r.selected != null).length;
-    reviewContext = { type:'exam', questions:currentExam.questions, responses:currentExam.state.responses, index:0 };
+    reviewContext = { type:'exam', questions:currentExam.questions, responses:currentExam.state.responses, scratch:currentExam.state.scratch || {}, marked:currentExam.state.marked || {}, index:0 };
 
     app.innerHTML = `<main class="shell">${topbar('Resultado del simulacro', true)}<section class="panel empty"><h2>${timeExpired?'Tiempo agotado':'Simulacro entregado'}</h2><p class="score-big">${correct}/${result.length}</p><p>${pct(correct,result.length)} · ${answered} respondidas · ${result.length-answered} omitidas</p><div class="actions"><button id="review-btn" class="btn">Revisar pregunta por pregunta</button><button class="btn primary" data-home>Volver al inicio</button></div></section></main>`;
     attachTopbar();
@@ -1565,9 +1773,12 @@
     const q = reviewContext.questions[reviewContext.index];
     const selected = reviewContext.responses[q.id]?.selected ?? reviewContext.responses[q.id] ?? null;
     const correct = selected === q.official_answer;
-    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${optionList(q).map(o => `<div class="option ${o.letter===q.official_answer?'correct':o.letter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${reviewContext.index===0?'disabled':''}>← Anterior</button><button id="next-review" class="btn primary">${reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →'}</button></div></main>`;
+    const uncertainOptions = Object.entries(reviewContext.scratch?.[q.id] || {})
+      .filter(([,state]) => state === 'tentative')
+      .map(([letter]) => letter);
+    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${optionList(q).map(o => `<div class="option ${o.letter===q.official_answer?'correct':o.letter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${reviewContext.index===0?'disabled':''}>← Anterior</button><button id="next-review" class="btn primary">${reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →'}</button></div></main>`;
     attachTopbar();
-    renderFeedback(q, selected, correct, null, selected == null, true);
+    renderFeedback(q, selected, correct, null, selected == null, true, uncertainOptions);
     document.getElementById('prev-review').onclick = () => { reviewContext.index--; renderReviewQuestion(); };
     document.getElementById('next-review').onclick = () => {
       if (reviewContext.index + 1 >= reviewContext.questions.length) renderDashboard();
@@ -1605,7 +1816,7 @@
     return `<div class="framework">${esc(text).split('\n').map(line => `<div>${line}</div>`).join('')}</div>`;
   }
 
-  function renderFeedback(q, selected, isCorrect, onNext, timedOut = false, reviewOnly = false) {
+  function renderFeedback(q, selected, isCorrect, onNext, timedOut = false, reviewOnly = false, uncertainOptions = []) {
     const target = document.getElementById('feedback');
     if (!target) return;
     const distractors = optionList(q).filter(o => o.letter !== q.official_answer).map(o => {
@@ -1620,6 +1831,11 @@
 
       ${observed(q) ? `<div class="explain-block audit-box"><h4>⚠ Auditoría médica</h4><p><strong>Pregunta histórica observada: se conserva la clave oficial, pero no cuenta en dominio por defecto.</strong></p><p>${esc(q.audit_current_assessment || q.update_alert || '')}</p><p><strong>Criterio actual:</strong> ${esc(q.audit_current_answer || '')}</p></div>` : caveat(q) ? `<div class="explain-block"><h4>⚠ Precisión clínica</h4><p>${esc(q.audit_current_assessment || q.update_alert || '')}</p></div>` : ''}
 
+      ${uncertainOptions.length ? `<div class="explain-block uncertainty-box"><h4>❓ Alternativas que marcaste como dudosas</h4><p>Esta pregunta se programará antes en tu repaso aunque la hayas acertado.</p>${uncertainOptions.map(letter => {
+        const text = q[`option_${letter.toLowerCase()}`] || '';
+        const reason = letter === q.official_answer ? (q.correct_explanation || '') : (q[`why_not_${letter.toLowerCase()}`] || '');
+        return `<p><strong>${esc(letter)}. ${esc(text)}</strong>${reason ? ` — ${esc(reason)}` : ''}</p>`;
+      }).join('')}</div>` : ''}
       ${q.exam_logic ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(q.exam_logic)}</p></div>` : ''}
       ${q.comparison_framework ? `<div class="explain-block"><h4>📊 ${esc(q.comparison_title || 'Comparación clave')}</h4>${frameworkHtml(q.comparison_framework)}</div>` : ''}
       <details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(q.correct_explanation || '')}</p></details>
@@ -1633,11 +1849,16 @@
     if (!reviewOnly && onNext) document.getElementById('next-feedback').onclick = onNext;
   }
 
-  function makeAttempt(q, selected, isCorrect, responseTimeMs, studyMode, timedOut) {
+  function makeAttempt(q, selected, isCorrect, responseTimeMs, studyMode, timedOut, meta = {}) {
     const target = Number(profile?.target_response_seconds || 25);
     const normalizedTarget = effectiveTargetSeconds(q);
     const state = memoryByQuestion.get(q.id);
     const answeredAt = new Date().toISOString();
+    const uncertainOptions = [...new Set((meta.uncertainOptions || []).filter(x => ['A','B','C','D','E'].includes(x)))];
+    const wasUncertain = uncertainOptions.length > 0;
+    const baseMemoryRating = memoryRating(q, responseTimeMs, isCorrect, timedOut);
+    const adjustedMemoryRating = wasUncertain && isCorrect ? Math.min(baseMemoryRating, 2) : baseMemoryRating;
+    const baseSpeedBucket = speedBucket(q, responseTimeMs, isCorrect, timedOut);
     return {
       question_id: q.id,
       selected_answer: selected,
@@ -1645,8 +1866,11 @@
       response_time_ms: Math.max(0, Math.round(responseTimeMs || 0)),
       study_mode: studyMode,
       timed_out: Boolean(timedOut),
-      memory_rating: memoryRating(q, responseTimeMs, isCorrect, timedOut),
-      speed_bucket: speedBucket(q, responseTimeMs, isCorrect, timedOut),
+      memory_rating: adjustedMemoryRating,
+      speed_bucket: wasUncertain ? (isCorrect ? 'uncertain_correct' : 'uncertain_incorrect') : baseSpeedBucket,
+      was_uncertain: wasUncertain,
+      uncertain_options: uncertainOptions,
+      uncertainty_note: wasUncertain ? `Alternativas marcadas con ?: ${uncertainOptions.join(', ')}` : null,
       normalized_speed: Number(((Number(responseTimeMs||0)/1000) / Math.max(1, normalizedTarget)).toFixed(4)),
       target_seconds: target,
       was_due: Boolean(state && new Date(state.due_at) <= new Date(answeredAt)),
