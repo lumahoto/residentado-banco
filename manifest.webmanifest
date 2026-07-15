@@ -1,7 +1,7 @@
 {
-  "name": "Residentado — Banco personal",
+  "name": "Residentado — Banco personal v0.4",
   "short_name": "Residentado",
-  "description": "Banco personal de preguntas del Residentado Médico Perú",
+  "description": "Banco personal de preguntas del Residentado Médico Perú con sesiones personalizadas y simulacros",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

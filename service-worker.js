@@ -1,4 +1,4 @@
-const CACHE = "residentado-piloto-v1";
+const CACHE = "residentado-v0-5";
 const ASSETS = [
   "./",
   "./index.html",
