@@ -44,6 +44,48 @@
     return a;
   };
 
+  const OPTION_REFERENCE_PATTERNS = [
+    /\b(?:todas?|ninguna?)\s+(?:de\s+)?(?:las\s+)?(?:anteriores|opciones|alternativas)\b/i,
+    /\b(?:opci[oó]n|alternativa)\s+[A-E]\b/i,
+    /\b[A-E]\s*(?:y|e|\/|\+)\s*[A-E]\b/i,
+  ];
+
+  function optionOrderMustStayCanonical(q) {
+    return optionList(q).some(o => OPTION_REFERENCE_PATTERNS.some(rx => rx.test(String(o.text || ''))));
+  }
+
+  function buildOptionOrder(q, shouldShuffle = true) {
+    const letters = optionList(q).map(o => o.letter);
+    return shouldShuffle && !optionOrderMustStayCanonical(q) ? shuffle(letters) : letters;
+  }
+
+  function createOptionOrders(list, shouldShuffle = true) {
+    if (!shouldShuffle) return {};
+    return Object.fromEntries((list || []).map(q => [q.id, buildOptionOrder(q, true)]));
+  }
+
+  function displayOptionList(q, orderStore = null, shouldShuffle = true) {
+    const canonical = optionList(q);
+    if (!shouldShuffle) return canonical.map(o => ({ ...o, sourceLetter: o.letter }));
+
+    const byLetter = new Map(canonical.map(o => [o.letter, o]));
+    if (orderStore && !Array.isArray(orderStore[q.id])) {
+      orderStore[q.id] = buildOptionOrder(q, true);
+    }
+    const order = Array.isArray(orderStore?.[q.id])
+      ? orderStore[q.id].filter(letter => byLetter.has(letter))
+      : buildOptionOrder(q, true);
+
+    const missing = canonical.map(o => o.letter).filter(letter => !order.includes(letter));
+    const completeOrder = [...order, ...missing];
+
+    return completeOrder.map((sourceLetter, index) => ({
+      letter: String.fromCharCode(65 + index),
+      sourceLetter,
+      text: byLetter.get(sourceLetter)?.text || '',
+    }));
+  }
+
   const pct = (n, d) => d ? `${Math.round((n / d) * 100)}%` : '—';
   const formatTime = seconds => {
     const s = Math.max(0, Math.round(seconds || 0));
@@ -837,6 +879,120 @@
     );
   }
 
+
+  function priorityReadingAlertData() {
+    const report = weaknessReportData().filter(x => x.seenQuestions > 0);
+    if (!report.length) return null;
+
+    const strongSignal = report.find(x =>
+      (x.level === 'Crítica' || x.level === 'Alta') &&
+      (x.evidence === 'Media' || x.evidence === 'Alta')
+    );
+
+    const earlyCritical = report.find(x => x.level === 'Crítica');
+    const moderateStrong = report.find(x =>
+      x.level === 'Moderada' &&
+      (x.evidence === 'Media' || x.evidence === 'Alta')
+    );
+
+    const item = strongSignal || earlyCritical || moderateStrong || null;
+    if (!item) return null;
+
+    const qs = questions.filter(q => item.questionIds.includes(q.id));
+    const focus = [...new Set(qs.flatMap(q => [
+      q.subtopic,
+      q.comparison_title,
+      q.topic !== item.topic ? q.topic : null,
+    ].filter(Boolean)))].slice(0, 4);
+
+    const reasons = [];
+    if (item.latestAccuracy < 0.7) reasons.push(`dominio actual ${Math.round(item.latestAccuracy * 100)}%`);
+    if (item.latestWrongUncertainRate >= 0.15) reasons.push(`error + duda ${Math.round(item.latestWrongUncertainRate * 100)}%`);
+    else if (item.latestUncertaintyRate >= 0.2) reasons.push(`duda ${Math.round(item.latestUncertaintyRate * 100)}%`);
+    if (item.latestSlowRate >= 0.3) reasons.push(`respuestas lentas ${Math.round(item.latestSlowRate * 100)}%`);
+    if (item.dueQuestions > 0) reasons.push(`${item.dueQuestions} repaso${item.dueQuestions === 1 ? '' : 's'} vencido${item.dueQuestions === 1 ? '' : 's'}`);
+
+    return {
+      ...item,
+      focus,
+      reasonText: reasons.length ? reasons.join(' · ') : `prioridad adaptativa ${item.score}/100`,
+    };
+  }
+
+  function priorityReadingPrompt(item) {
+    const focus = item.focus?.length
+      ? `Enfócate especialmente en: ${item.focus.join(', ')}.`
+      : 'Enfócate en diagnóstico, criterios, manejo, puntos de corte y trampas de examen.';
+    return [
+      'Necesito un repaso de lectura prioritaria para el Residentado Médico Perú.',
+      `Tema crítico: ${item.topic}.`,
+      `Área: ${item.area}. Especialidad: ${item.specialty}.`,
+      `Motivo de prioridad: ${item.reasonText}.`,
+      focus,
+      'Haz un resumen de 15–25 minutos de lectura, orientado al examen.',
+      'Empieza por la lógica de banqueo, luego comparación clave, algoritmos o puntos de corte y termina con trampas frecuentes.',
+      'Define cualquier abreviatura la primera vez que aparezca y define también los epónimos.',
+      'Cuando aparezcan fármacos, resume brevemente los mecanismos de acción diferenciales relevantes para examen.',
+    ].join('\n');
+  }
+
+  function priorityReadingAlertMarkup(item, prefix = 'priority-reading') {
+    if (!item) return '';
+    const focus = item.focus?.length
+      ? `<ul>${item.focus.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`
+      : '<p class="muted">Repasa diagnóstico, criterios, manejo, puntos de corte y trampas frecuentes.</p>';
+
+    return `<section class="panel priority-reading-alert">
+      <div class="priority-reading-copy">
+        <span class="roadmap-kicker">🚨 ALERTA DE LECTURA PRIORITARIA</span>
+        <h2>${esc(item.topic)}</h2>
+        <p>${esc(item.reasonText)} · evidencia ${esc(item.evidence.toLowerCase())}</p>
+        <div class="priority-reading-metrics">
+          <span>Dominio <strong>${Math.round(item.latestAccuracy * 100)}%</strong></span>
+          <span>Prioridad <strong>${item.score}/100</strong></span>
+          <span>Cobertura <strong>${item.seenQuestions}/${item.totalQuestions}</strong></span>
+        </div>
+        <div class="priority-reading-focus">
+          <strong>Lee primero:</strong>
+          ${focus}
+        </div>
+      </div>
+      <div class="priority-reading-actions">
+        <button id="${prefix}-copy" class="btn primary">📋 Copiar pedido de repaso</button>
+        <button id="${prefix}-practice" class="btn">🔥 Practicar este tema</button>
+      </div>
+    </section>`;
+  }
+
+  function attachPriorityReadingAlert(item, prefix = 'priority-reading') {
+    if (!item) return;
+
+    const copyBtn = document.getElementById(`${prefix}-copy`);
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        const prompt = priorityReadingPrompt(item);
+        try {
+          await navigator.clipboard.writeText(prompt);
+        } catch {
+          const box = document.createElement('textarea');
+          box.value = prompt;
+          box.style.position = 'fixed';
+          box.style.left = '-9999px';
+          document.body.appendChild(box);
+          box.select();
+          document.execCommand('copy');
+          box.remove();
+        }
+        const original = copyBtn.textContent;
+        copyBtn.textContent = '✓ Pedido copiado';
+        setTimeout(() => { copyBtn.textContent = original; }, 1800);
+      };
+    }
+
+    const practiceBtn = document.getElementById(`${prefix}-practice`);
+    if (practiceBtn) practiceBtn.onclick = () => launchWeakTopicPractice(item, 10);
+  }
+
   function weaknessLevelClass(level) {
     if (level === 'Crítica' || level === 'Alta') return 'bad';
     if (level === 'Moderada') return 'warn';
@@ -1278,6 +1434,7 @@
       historicalYear:item.year,
       historicalTest:item.test,
       historicalKind:item.kind,
+      shuffleOptions:false,
     });
   }
 
@@ -1512,8 +1669,10 @@
   function renderRoadmap() {
     clearTimer();
     const road = topicRoadmap();
+    const readingAlert = priorityReadingAlertData();
     const list = items => items.length ? items.map(x=>`<li>${esc(x)}</li>`).join('') : '<li>Se completará al clasificar el banco completo.</li>';
     app.innerHTML = `<main class="shell">${topbar('Qué viene después', true)}
+      ${priorityReadingAlertMarkup(readingAlert, 'roadmap-reading')}
       <section class="roadmap-grid">
         <div class="panel roadmap-card"><span class="roadmap-kicker">HOY</span><h2>Prioridad actual</h2><ul>${list(road.today)}</ul></div>
         <div class="panel roadmap-card highlighted"><span class="roadmap-kicker">MAÑANA</span><h2>Prelectura recomendada</h2><ul>${list(road.tomorrow)}</ul></div>
@@ -1522,6 +1681,7 @@
       <section class="panel preread"><h2>📖 Qué leer antes</h2>${road.preRead ? `<p><strong>${esc(road.preRead)}</strong> · 20–30 minutos de prelectura ligera.</p><p class="muted">Enfócate en:</p><ul>${road.focus.map(x=>`<li>${esc(x)}</li>`).join('') || '<li>diagnóstico, criterios, manejo y trampas frecuentes</li>'}</ul>` : '<p>Aún no hay suficiente clasificación temática.</p>'}<p class="muted">La finalidad es activar el esquema mental, no dominar el tema antes de banquearlo.</p></section>
     </main>`;
     attachTopbar();
+    attachPriorityReadingAlert(readingAlert, 'roadmap-reading');
   }
 
   function renderDashboard() {
@@ -1534,6 +1694,7 @@
     const status = pressureStatus(plan);
     const ready = readinessIndicator();
     const road = topicRoadmap();
+    const readingAlert = priorityReadingAlertData();
     const dueCount = smartPool('due').length;
     const slowCount = smartPool('speed').length;
     const daysExam = daysUntil(profile?.exam_date || DEFAULT_PROFILE.exam_date);
@@ -1556,6 +1717,8 @@
         <div class="meter"><div style="width:${completion}%"></div></div>
         <div class="plan-meta"><span>Deuda acumulada: <strong>${plan.debt}</strong></span><span>Ritmo 7 días: <strong>${pace7.toFixed(0)}/día</strong></span><span>Repasos vencidos: <strong>${dueCount}</strong></span><span>Lentas: <strong>${slowCount}</strong></span></div>
       </section>
+
+      ${priorityReadingAlertMarkup(readingAlert, 'dashboard-reading')}
 
       ${plan.next ? `<button id="next-task-btn" class="next-task"><span><small>SIGUIENTE TAREA</small><strong>${esc(plan.next.label)}</strong><em>${plan.next.remaining} pendientes de este bloque</em></span><b>▶</b></button>` : `<div class="banner"><strong>Checklist principal completa.</strong> Usa Practicar para adelantar trabajo de mañana.</div>`}
 
@@ -1585,6 +1748,7 @@
     </main>`;
 
     attachTopbar();
+    attachPriorityReadingAlert(readingAlert, 'dashboard-reading');
     if (plan.next) document.getElementById('next-task-btn').onclick = () => launchAutoTask(plan.next);
     document.querySelectorAll('[data-task]').forEach(btn => {
       const task = plan.tasks.find(t => t.id === btn.dataset.task);
@@ -1659,7 +1823,8 @@
 
             <fieldset><legend>Cantidad</legend>
               <label>Número de preguntas<input id="question-count" class="input" type="number" min="1" max="2000" value="${isExam ? 80 : 15}" required></label>
-              <label class="inline-check"><input id="randomize" type="checkbox" checked> <span>Orden aleatorio</span></label>
+              <label class="inline-check"><input id="randomize" type="checkbox" checked> <span>Orden aleatorio de preguntas</span></label>
+              <label class="inline-check"><input id="shuffle-options" type="checkbox" checked> <span>Mezclar alternativas</span></label>
             </fieldset>
 
             <fieldset><legend>Áreas</legend><div class="check-list" id="areas-list">${areas.map(a => `<label><input type="checkbox" name="area" value="${esc(a)}" checked> ${esc(a)}</label>`).join('')}</div></fieldset>
@@ -1741,6 +1906,7 @@
       mode,
       count: Number(document.getElementById('question-count').value),
       randomize: document.getElementById('randomize').checked,
+      shuffleOptions: document.getElementById('shuffle-options').checked,
       poolType: document.getElementById('pool-type').value,
       rentability: document.getElementById('rentability').value,
       areas: checked('area'),
@@ -1788,6 +1954,7 @@
 
   function launchStudy(selected, config) {
     clearTimer();
+    config = { shuffleOptions: true, ...config };
     currentStudy = {
       config,
       questions: selected,
@@ -1795,6 +1962,7 @@
       responses: {},
       scratch: {},
       durations: {},
+      optionOrders: createOptionOrders(selected, config.shuffleOptions !== false),
       totalRemaining: config.timeMode === 'total' ? config.totalSeconds : null,
     };
     renderStudyQuestion();
@@ -1825,7 +1993,7 @@
     const selected = currentStudy.responses[q.id]?.selected || null;
     currentStudy.scratch ||= {};
     const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
-    const opts = optionList(q);
+    const opts = displayOptionList(q, currentStudy.optionOrders, currentStudy.config.shuffleOptions !== false);
     const baseTargetSeconds = Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25);
     const adaptiveTargetSeconds = effectiveTargetSeconds(q, baseTargetSeconds);
     const timerHtml = currentStudy.config.timeMode === 'per_question'
@@ -1843,7 +2011,7 @@
         <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${targetTag}${timerHtml}</div>
         <div class="q-body"><p class="q-text">${esc(q.question)}</p>
           <div class="uncertainty-hint">Marca <strong>?</strong> en cualquier alternativa que no domines del todo. No cambia tu respuesta; sí hace que el concepto vuelva antes al repaso.</div>
-          <div class="options">${opts.map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.letter))).join('')}</div>
+          <div class="options">${opts.map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.sourceLetter || o.letter))).join('')}</div>
           ${currentStudy.config.timeMode === 'none' ? `<div class="dont-know-row"><button id="dont-know-study" class="btn ghost dont-know-btn" type="button">🤷 No sé · mostrar respuesta</button><span class="muted">Cuenta como respuesta incorrecta explícita; no como pregunta en blanco.</span></div>` : ''}
         </div>
         <div id="feedback"></div>
@@ -2072,6 +2240,8 @@
       questions: currentStudy.questions,
       responses: currentStudy.responses,
       scratch: currentStudy.scratch || {},
+      optionOrders: currentStudy.optionOrders || {},
+      shuffleOptions: currentStudy.config.shuffleOptions !== false,
       index: 0
     };
 
@@ -2082,12 +2252,17 @@
 
   async function launchExam(selected, config) {
     clearTimer();
+    config = { shuffleOptions: true, ...config };
     const state = {
       currentIndex: 0,
       responses: {},
       marked: {},
       scratch: {},
       timeSpent: {},
+      optionOrders: createOptionOrders(
+        selected,
+        config.shuffleOptions !== false && config.examLayout !== 'paper'
+      ),
       remainingSeconds: config.totalSeconds,
       breakTaken: false,
     };
@@ -2128,6 +2303,10 @@
     currentExam.state.marked ||= {};
     currentExam.state.scratch ||= {};
     currentExam.state.timeSpent ||= {};
+    currentExam.state.optionOrders ||= createOptionOrders(
+      selected,
+      currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper'
+    );
     currentExam.state.currentIndex ||= 0;
     currentExam.state.remainingSeconds ??= currentExam.config.totalSeconds || 0;
     if (currentExam.config.examLayout === 'paper') renderHistoricalExamPaper();
@@ -2215,7 +2394,11 @@
           <div class="q-head"><span class="tag">${currentExam.state.currentIndex+1}/${currentExam.questions.length}</span><span class="tag">${esc(q.year)} · ${esc(q.area)}</span><div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
           <div class="q-body"><p class="q-text">${esc(q.question)}</p>
             <div class="uncertainty-hint">Puedes marcar <strong>?</strong> en una o varias alternativas sin cambiar tu respuesta definitiva.</div>
-            <div class="options">${optionList(q).map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.letter))).join('')}</div>
+            <div class="options">${displayOptionList(
+              q,
+              currentExam.state.optionOrders,
+              currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper'
+            ).map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.sourceLetter || o.letter))).join('')}</div>
           </div>
         </div>
         <aside class="panel exam-nav"><div class="exam-nav-head"><strong>Navegación</strong><button id="mark-btn" class="btn small ${marked?'warn-btn':''}">${marked?'⚑ Marcada':'⚐ Marcar'}</button></div><div class="question-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="legend"><span>● respondida</span><span>⚑ revisar</span></div></aside>
@@ -2386,7 +2569,16 @@
     });
     const correct = result.filter(r => r.correct).length;
     const answered = result.filter(r => r.selected != null).length;
-    reviewContext = { type:'exam', questions:currentExam.questions, responses:currentExam.state.responses, scratch:currentExam.state.scratch || {}, marked:currentExam.state.marked || {}, index:0 };
+    reviewContext = {
+      type:'exam',
+      questions:currentExam.questions,
+      responses:currentExam.state.responses,
+      scratch:currentExam.state.scratch || {},
+      marked:currentExam.state.marked || {},
+      optionOrders: currentExam.state.optionOrders || {},
+      shuffleOptions: currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper',
+      index:0
+    };
 
     app.innerHTML = `<main class="shell">${topbar('Resultado del simulacro', true)}<section class="panel empty"><h2>${timeExpired?'Tiempo agotado':'Simulacro entregado'}</h2><p class="score-big">${correct}/${result.length}</p><p>${pct(correct,result.length)} · ${answered} respondidas · ${result.length-answered} omitidas</p><div class="actions"><button id="review-btn" class="btn">Revisar pregunta por pregunta</button><button class="btn primary" data-home>Volver al inicio</button></div></section></main>`;
     attachTopbar();
@@ -2404,7 +2596,11 @@
     const uncertainOptions = Object.entries(reviewContext.scratch?.[q.id] || {})
       .filter(([,state]) => state === 'tentative')
       .map(([letter]) => letter);
-    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${optionList(q).map(o => `<div class="option ${o.letter===q.official_answer?'correct':o.letter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${reviewContext.index===0?'disabled':''}>← Anterior</button><button id="next-review" class="btn primary">${reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →'}</button></div></main>`;
+    const reviewOptions = displayOptionList(q, reviewContext.optionOrders || {}, reviewContext.shuffleOptions !== false);
+    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${reviewOptions.map(o => {
+      const sourceLetter = o.sourceLetter || o.letter;
+      return `<div class="option ${sourceLetter===q.official_answer?'correct':sourceLetter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`;
+    }).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${reviewContext.index===0?'disabled':''}>← Anterior</button><button id="next-review" class="btn primary">${reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →'}</button></div></main>`;
     attachTopbar();
     const latestAttempt = attemptsForQuestion(q.id)
       .slice()
@@ -2445,9 +2641,10 @@
   }
 
   function optionWithUncertaintyButton(o, selected, uncertain = false) {
+    const sourceLetter = o.sourceLetter || o.letter;
     return `<div class="option-with-uncertainty">
       ${optionButton(o, selected)}
-      <button class="uncertainty-toggle ${uncertain?'active':''}" data-uncertain-letter="${o.letter}"
+      <button class="uncertainty-toggle ${uncertain?'active':''}" data-uncertain-letter="${sourceLetter}"
         type="button" aria-pressed="${uncertain?'true':'false'}"
         title="${uncertain?'Quitar marca de duda':'Marcar esta alternativa con ?'}">?</button>
     </div>`;
@@ -2458,7 +2655,8 @@
   }
 
   function optionButton(o, selected) {
-    return `<button class="option ${selected===o.letter?'selected':''}" data-letter="${o.letter}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></button>`;
+    const sourceLetter = o.sourceLetter || o.letter;
+    return `<button class="option ${selected===sourceLetter?'selected':''}" data-letter="${sourceLetter}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></button>`;
   }
 
   function auditBadge(q) {
@@ -2486,6 +2684,25 @@
   function renderFeedback(q, selected, isCorrect, onNext, timedOut = false, reviewOnly = false, uncertainOptions = [], feedbackMeta = {}) {
     const target = document.getElementById('feedback');
     if (!target) return;
+
+    const optionOrderStore = reviewOnly
+      ? (reviewContext?.optionOrders || {})
+      : currentStudy
+        ? (currentStudy.optionOrders || {})
+        : (currentExam?.state?.optionOrders || {});
+    const shouldShuffleOptions = reviewOnly
+      ? reviewContext?.shuffleOptions !== false
+      : currentStudy
+        ? currentStudy.config.shuffleOptions !== false
+        : currentExam
+          ? currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper'
+          : false;
+    const feedbackOptions = displayOptionList(q, optionOrderStore, shouldShuffleOptions);
+    const displayLetterFor = sourceLetter =>
+      feedbackOptions.find(o => (o.sourceLetter || o.letter) === sourceLetter)?.letter || sourceLetter;
+    const selectedDisplayLetter = selected ? displayLetterFor(selected) : null;
+    const officialDisplayLetter = displayLetterFor(q.official_answer);
+
     const targetSeconds = Number(feedbackMeta.targetSeconds || effectiveTargetSeconds(q));
     const responseTimeMs = Number(feedbackMeta.responseTimeMs || 0);
     const responseSeconds = responseTimeMs > 0 ? responseTimeMs / 1000 : null;
@@ -2501,15 +2718,18 @@
       : `${responseSeconds < 10 ? responseSeconds.toFixed(1) : Math.round(responseSeconds)} s`;
     const postMarkAvailable = Boolean(feedbackMeta.attemptId) && selected != null && (!reviewOnly || feedbackMeta.allowPostMark);
     const alreadyUncertain = Boolean(feedbackMeta.wasUncertainAtAnswer) || uncertainOptions.length > 0;
-    const distractors = optionList(q).filter(o => o.letter !== q.official_answer).map(o => {
-      const reason = q[`why_not_${o.letter.toLowerCase()}`];
-      return reason ? `<p><strong>${o.letter}. ${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
-    }).join('');
+    const distractors = feedbackOptions
+      .filter(o => (o.sourceLetter || o.letter) !== q.official_answer)
+      .map(o => {
+        const sourceLetter = o.sourceLetter || o.letter;
+        const reason = q[`why_not_${sourceLetter.toLowerCase()}`];
+        return reason ? `<p><strong>${o.letter}. ${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
+      }).join('');
 
     target.innerHTML = `<div class="feedback">
       <h3>${feedbackMeta.didNotKnow ? '🤷 No sabía' : timedOut ? '⏱ Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
-      ${selected ? `<p>Tu respuesta: <strong>${esc(selected)}. ${esc(q[`option_${selected.toLowerCase()}`])}</strong></p>` : ''}
-      <p class="answer-line">Clave oficial: ${esc(q.official_answer)}. ${esc(q.official_answer_text)}</p>
+      ${selected ? `<p>Tu respuesta: <strong>${esc(selectedDisplayLetter)}. ${esc(q[`option_${selected.toLowerCase()}`])}</strong></p>` : ''}
+      <p class="answer-line">Respuesta correcta: ${esc(officialDisplayLetter)}. ${esc(q.official_answer_text)}</p>
       ${responseSeconds != null ? `<div class="feedback-time ${timeState}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
 
       ${observed(q) ? `<div class="explain-block audit-box"><h4>⚠ Auditoría médica</h4><p><strong>Pregunta histórica observada: se conserva la clave oficial, pero no cuenta en dominio por defecto.</strong></p><p>${esc(q.audit_current_assessment || q.update_alert || '')}</p><p><strong>Criterio actual:</strong> ${esc(q.audit_current_answer || '')}</p></div>` : caveat(q) ? `<div class="explain-block"><h4>⚠ Precisión clínica</h4><p>${esc(q.audit_current_assessment || q.update_alert || '')}</p></div>` : ''}
@@ -2517,7 +2737,8 @@
       ${uncertainOptions.length ? `<div class="explain-block uncertainty-box"><h4>❓ Alternativas que marcaste como dudosas</h4><p>Esta pregunta se programará antes en tu repaso aunque la hayas acertado.</p>${uncertainOptions.map(letter => {
         const text = q[`option_${letter.toLowerCase()}`] || '';
         const reason = letter === q.official_answer ? (q.correct_explanation || '') : (q[`why_not_${letter.toLowerCase()}`] || '');
-        return `<p><strong>${esc(letter)}. ${esc(text)}</strong>${reason ? ` — ${esc(reason)}` : ''}</p>`;
+        const displayLetter = displayLetterFor(letter);
+        return `<p><strong>${esc(displayLetter)}. ${esc(text)}</strong>${reason ? ` — ${esc(reason)}` : ''}</p>`;
       }).join('')}</div>` : ''}
       ${q.exam_logic ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(q.exam_logic)}</p></div>` : ''}
       ${q.comparison_framework ? `<div class="explain-block"><h4>📊 ${esc(q.comparison_title || 'Comparación clave')}</h4>${frameworkHtml(q.comparison_framework)}</div>` : ''}

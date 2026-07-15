@@ -469,11 +469,60 @@ details.explain-block summary { cursor: pointer; }
 .preread { margin-top:14px; }
 .preread h2 { margin-top:0; }
 
+.priority-reading-alert {
+  margin: 14px 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  align-items: start;
+  border-color: color-mix(in srgb, var(--bad) 38%, var(--border));
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--bad-bg) 72%, var(--panel)),
+      var(--panel) 58%);
+}
+.priority-reading-copy h2 {
+  margin: 6px 0 6px;
+  font-size: clamp(1.2rem, 2.6vw, 1.55rem);
+}
+.priority-reading-copy > p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.priority-reading-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.priority-reading-metrics span {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: .84rem;
+}
+.priority-reading-focus {
+  margin-top: 10px;
+}
+.priority-reading-focus ul {
+  margin: 7px 0 0;
+  padding-left: 20px;
+}
+.priority-reading-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 205px;
+}
+
 @media (max-width:760px) {
   .briefing { grid-template-columns:1fr; }
   .compact-goal { min-height:125px; }
   .v05-actions, .practice-grid, .roadmap-grid { grid-template-columns:1fr; }
   .next-roadmap { align-items:flex-start; flex-direction:column; }
+  .priority-reading-alert { grid-template-columns:1fr; }
+  .priority-reading-actions { min-width:0; }
   .check-item { grid-template-columns:30px 1fr; }
   .check-item .btn { grid-column:2; justify-self:start; }
 }
