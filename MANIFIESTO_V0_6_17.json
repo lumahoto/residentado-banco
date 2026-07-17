@@ -1,0 +1,163 @@
+{
+  "app_version": "0.6.17",
+  "package": "residentado-banco-v0.6.17-flags-auditoria",
+  "generated_at": "2026-07-17",
+  "database_migration_required": "supabase_migration_v0_6_17_review_flags.sql",
+  "features": [
+    "flags_statement_explanation_general",
+    "persistent_supabase_rls",
+    "copy_review_list",
+    "export_review_csv",
+    "metadata_protected"
+  ],
+  "files": {
+    "QA_FLAGS_AUDITORIA_V0_6_17.md": {
+      "bytes": 628,
+      "sha256": "60c8ae76b641bc451c39d19e02ab995caaabce100b712574d74fe7f9b6b785e4"
+    },
+    "QA_METADATA_PROTEGIDA_V0_6_16.md": {
+      "bytes": 376,
+      "sha256": "88c8a7751caa9bb5ba6cceee1ea8f85ced18ac1ce934616c54a56b4325cbc70e"
+    },
+    "QA_TAXONOMIA_GLOBAL_V2.md": {
+      "bytes": 426,
+      "sha256": "7256decbd95eabdaac77517893c4b0f0766773b94575929e0bcbdb3973768702"
+    },
+    "README_PASO_A_PASO.md": {
+      "bytes": 4526,
+      "sha256": "4c876fe9bfd5c1c6f5271ef29088812d948f9e3186af2fad8e4bb07303aaae99"
+    },
+    "README_V0_5.md": {
+      "bytes": 1927,
+      "sha256": "9cc975de9dc2b61966f8b4384ddc42bf2e50632866811930df9858ea8101903b"
+    },
+    "README_V0_6.md": {
+      "bytes": 819,
+      "sha256": "7199dcf62a6a3b56604e61ebcc3f9e5eee0cd9533988c66b866eba72ffff88e2"
+    },
+    "README_V0_6_10.md": {
+      "bytes": 1157,
+      "sha256": "7b54527b115d7482d58cadbeedbec70735004e02cae6f7ecbd83a1dec682cc12"
+    },
+    "README_V0_6_11.md": {
+      "bytes": 1121,
+      "sha256": "52e039cc1f1a7ed44722300a0bc366476241d43bc2d5b52b359a006c40dfe3fd"
+    },
+    "README_V0_6_12.md": {
+      "bytes": 1317,
+      "sha256": "da870f1b520c96c86123d704dfb2c4d5a917a88122fe86b079c0d9351947daf8"
+    },
+    "README_V0_6_13.md": {
+      "bytes": 951,
+      "sha256": "145ede1a0c38e776a6647e8fd24f7b8f2398653204809c801fbc84f0b3cd2037"
+    },
+    "README_V0_6_14.md": {
+      "bytes": 785,
+      "sha256": "cd59cd4b273f848ccd0b43a3e870afe6be696314cc61790f5fdf11afe41a0da2"
+    },
+    "README_V0_6_15.md": {
+      "bytes": 1143,
+      "sha256": "d96b2178f62e33aa5ce7b43d00e3ec07c3cf3c094fe624c17c29ba53cab37228"
+    },
+    "README_V0_6_16.md": {
+      "bytes": 1071,
+      "sha256": "4a177508a61a43577444be3d01388c090e8541c453a24d26f02324a82506d9a7"
+    },
+    "README_V0_6_17.md": {
+      "bytes": 1434,
+      "sha256": "1b8d0f8749a3de306c35e527d66300adb6867415a807bab8ef4309bd688fa7f6"
+    },
+    "README_V0_6_2.md": {
+      "bytes": 1705,
+      "sha256": "5bde03023628f5bccae53c41ea488ddb17a1f9d8cbdc1c2464878b41bea4a132"
+    },
+    "README_V0_6_4.md": {
+      "bytes": 1302,
+      "sha256": "03ffcce22c206611786dfa3b0478ba6c37140502c7682b39f41e841db562efec"
+    },
+    "README_V0_6_5.md": {
+      "bytes": 3492,
+      "sha256": "8ce8a42beb0d58ce3aec6a1b52ac39b3d2d90f9936ab0ac180caaaeb2f296312"
+    },
+    "README_V0_6_6.md": {
+      "bytes": 1745,
+      "sha256": "73259dd3f3d35bb23b617de96bbf2edb2b7424f38f505c1c2bf36b83b4490079"
+    },
+    "README_V0_6_7.md": {
+      "bytes": 1539,
+      "sha256": "5b9702bb3a2719656ef7804bbdc4dcd4254d9474d488b70dd304a3109d9545f7"
+    },
+    "README_V0_6_8.md": {
+      "bytes": 2398,
+      "sha256": "90582cb7c38b3d6217fae0e2e4dca9f8cc7fef08ad7dd5ab9332120edc555d39"
+    },
+    "README_V0_6_9.md": {
+      "bytes": 1128,
+      "sha256": "4dac28f13749036aa6f8a97d69f1a3b9a0afb53d69877fa273ead3ccbced554e"
+    },
+    "app.js": {
+      "bytes": 201931,
+      "sha256": "89a6c44e31c992f2c2d2a95ae8880c76b2fa39ced8e6876932bed5a16d50628e"
+    },
+    "banco_piloto_residentado_v0_3_comentado.csv": {
+      "bytes": 48919,
+      "sha256": "9d8d772a9d53f019d038029218839b47426ad5646f3ddb5c0499007e2102861a"
+    },
+    "banco_piloto_residentado_v0_3_comentado.xlsx": {
+      "bytes": 33289,
+      "sha256": "c859f489da46f0c1dc9d56c889b107f3b14f1838534fcaf7e2b05938781b3739"
+    },
+    "config.js": {
+      "bytes": 185,
+      "sha256": "6659f3ed8fc2162ba9388e7159f9376a1b1b60922acb6847edce954ffdeab554"
+    },
+    "icons/icon-192.png": {
+      "bytes": 2175,
+      "sha256": "a45e4c04bf12a3d5e10505767310c4399419041c792535627a0c1e43eaaaf512"
+    },
+    "icons/icon-512.png": {
+      "bytes": 6530,
+      "sha256": "35576937a30b61fd0158da7fa4462b524e5a01eee27b3eb5043c1139232fd4da"
+    },
+    "index.html": {
+      "bytes": 918,
+      "sha256": "e67b6857bf2e19182441db8a422a6457ec71a67ea0d8c59f035bdf5eeada2266"
+    },
+    "manifest.webmanifest": {
+      "bytes": 603,
+      "sha256": "afbdec0e35d5965d5f0b4364b7a19840aed6edbb66155ef2b55837695eac0428"
+    },
+    "pilot-data.js": {
+      "bytes": 88964,
+      "sha256": "2f838ea00a41ce471f4be432cac80e0c53d8f70e9cd019b9bf251f69878f4c39"
+    },
+    "service-worker.js": {
+      "bytes": 1068,
+      "sha256": "5bd9eadf80b1fb6e3e8fb71b5035b9530f683e46ec3ea926f1ff5e5951a88526"
+    },
+    "styles.css": {
+      "bytes": 41279,
+      "sha256": "a54acea9b4bea43a9243cb4877c37dd36d5e584f5dd418be9829e300f5e9cb07"
+    },
+    "supabase_migration_v0_5.sql": {
+      "bytes": 29773,
+      "sha256": "5fde4882e16d0f58eee630460aaa8ce8a240cb1b95bddec9e8134193a0fdbfdf"
+    },
+    "supabase_migration_v0_6_17_review_flags.sql": {
+      "bytes": 2425,
+      "sha256": "8a48863c3e342cef647c9481fc46f9ce1d1f0ad67b02d5c83f7e3fab61c1ab9f"
+    },
+    "supabase_schema.sql": {
+      "bytes": 3403,
+      "sha256": "534eec93aaff639d3579ad7ad7cfdf862153aaf3e78e4ff05f811f6b2915f151"
+    },
+    "supabase_seed.sql": {
+      "bytes": 53494,
+      "sha256": "5ab5776014b7723c6c943d549f8c87e8e1c8eaf0538906ef41f93bfb725cda01"
+    },
+    "supabase_setup.sql": {
+      "bytes": 56899,
+      "sha256": "fa62bb2cae11899dd2304a9b40858c877db5fae21cbed7acb61a0158a833f94f"
+    }
+  }
+}
