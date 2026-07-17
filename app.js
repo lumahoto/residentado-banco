@@ -1,12 +1,13 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = '0.6.14';
+  const APP_VERSION = '0.6.17';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
   const DEMO_MEMORY_KEY = 'residentado_memory_state_v1';
   const DEMO_PROFILE_KEY = 'residentado_learning_profile_v1';
+  const DEMO_REVIEW_FLAGS_KEY = 'residentado_question_review_flags_v1';
 
   let supa = null;
   let user = null;
@@ -25,6 +26,8 @@
   let currentExam = null;
   let examQuestionEnteredAt = 0;
   let reviewContext = null;
+  let reviewFlags = [];
+  let reviewFlagByQuestion = new Map();
 
   const observed = q => String(q.audit_status || '').startsWith('OBSERVADA');
   const caveat = q => q.audit_status === 'VALIDADA_CON_CAVEAT';
@@ -84,16 +87,46 @@
   }
 
   function normalizedTaxonomyParts(q) {
-    const area = canonicalArea(q?.area);
-    const specialty = cleanTaxonomyLabel(q?.specialty) || 'General';
-    const subtopic = cleanTaxonomyLabel(q?.subtopic);
-    const topic = cleanTaxonomyLabel(q?.topic) || subtopic || 'Sin tema clasificado';
+    // v0.6.16: usa la taxonomía global V2 cuando está disponible y conserva
+    // compatibilidad automática con la estructura histórica.
+    const area = canonicalArea(q?.canonical_area || q?.area);
+    const specialty = cleanTaxonomyLabel(q?.canonical_specialty || q?.specialty) || 'General';
+    const entity = cleanTaxonomyLabel(q?.canonical_entity || q?.subtopic);
+    const topic = cleanTaxonomyLabel(q?.rentability_topic_label || q?.topic) || entity || 'Sin tema clasificado';
+    const subtopic = entity || cleanTaxonomyLabel(q?.subtopic);
     return { area, specialty, topic, subtopic };
   }
 
   function normalizeQuestionTaxonomy(q) {
     const { area, specialty, topic, subtopic } = normalizedTaxonomyParts(q);
-    return { ...q, area, specialty, topic, subtopic: subtopic || q?.subtopic || null };
+    return {
+      ...q,
+      area,
+      specialty,
+      topic,
+      subtopic: subtopic || q?.subtopic || null,
+      taxonomy_runtime_source: q?.rentability_topic_label ? 'GLOBAL_V2' : 'LEGACY_FALLBACK',
+    };
+  }
+
+  function taxonomyEntityTag(q) {
+    const entity = cleanTaxonomyLabel(q?.canonical_entity || q?.subtopic);
+    const topic = cleanTaxonomyLabel(q?.rentability_topic_label || q?.topic);
+    if (!entity || taxonomyKey(entity) === taxonomyKey(topic)) return '';
+    return `<span class="tag">${esc(entity)}</span>`;
+  }
+
+
+  function studyQuestionMetadataTags(q) {
+    return `${questionSourceTag(q)}<span class="tag">${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}`;
+  }
+
+  function revealStudyQuestionMetadata(q) {
+    const metadata = document.getElementById('study-question-metadata');
+    if (!metadata) return;
+    metadata.innerHTML = studyQuestionMetadataTags(q);
+    metadata.hidden = false;
+    metadata.setAttribute('aria-hidden', 'false');
   }
 
   function normalizeQuestionCorpus(list = []) {
@@ -295,6 +328,169 @@
     catch { return { ...DEFAULT_PROFILE }; }
   }
   function saveLocalProfile() { localStorage.setItem(DEMO_PROFILE_KEY, JSON.stringify(profile)); }
+  function localReviewFlags() {
+    try { return JSON.parse(localStorage.getItem(DEMO_REVIEW_FLAGS_KEY) || '[]'); }
+    catch { return []; }
+  }
+  function saveLocalReviewFlags() { localStorage.setItem(DEMO_REVIEW_FLAGS_KEY, JSON.stringify(reviewFlags)); }
+
+  const REVIEW_FLAG_TYPES = {
+    statement: { label:'Revisar enunciado', icon:'📝' },
+    explanation: { label:'Revisar explicación', icon:'💬' },
+    general: { label:'Revisar', icon:'⚑' },
+  };
+
+  function reviewFlagMeta(type) {
+    return REVIEW_FLAG_TYPES[type] || REVIEW_FLAG_TYPES.general;
+  }
+
+  function rebuildReviewFlagMap() {
+    reviewFlagByQuestion = new Map(reviewFlags.map(row => [row.question_id, row]));
+  }
+
+  function reviewFlagFor(questionId) {
+    return reviewFlagByQuestion.get(questionId) || null;
+  }
+
+  function reviewFlagButton(q) {
+    const existing = reviewFlagFor(q?.id);
+    const meta = existing ? reviewFlagMeta(existing.flag_type) : null;
+    return `<button class="btn small ghost content-review-flag-btn ${existing?'active':''}" type="button" data-question-review-flag="${esc(q?.id || '')}" aria-haspopup="dialog">${existing ? `${meta.icon} ${esc(meta.label)}` : '⚐ Marcar para revisar'}</button>`;
+  }
+
+  function refreshReviewFlagButtons(questionId) {
+    const existing = reviewFlagFor(questionId);
+    const meta = existing ? reviewFlagMeta(existing.flag_type) : null;
+    document.querySelectorAll('[data-question-review-flag]').forEach(btn => {
+      if (btn.dataset.questionReviewFlag !== questionId) return;
+      btn.classList.toggle('active', Boolean(existing));
+      btn.textContent = existing ? `${meta.icon} ${meta.label}` : '⚐ Marcar para revisar';
+    });
+    document.querySelectorAll('[data-review-flags-count]').forEach(node => {
+      node.textContent = String(reviewFlags.length);
+    });
+  }
+
+  async function saveQuestionReviewFlag(questionId, flagType) {
+    if (!REVIEW_FLAG_TYPES[flagType]) return null;
+    const now = new Date().toISOString();
+    let row = null;
+    if (cloudConfigured) {
+      const payload = { user_id:user.id, question_id:questionId, flag_type:flagType, updated_at:now };
+      const { data, error } = await supa.from('question_review_flags')
+        .upsert(payload, { onConflict:'user_id,question_id' })
+        .select('*')
+        .single();
+      if (error) {
+        alert(`No se pudo guardar el flag de revisión: ${error.message}`);
+        return null;
+      }
+      row = data;
+    } else {
+      const previous = reviewFlagFor(questionId);
+      row = {
+        id: previous?.id || crypto.randomUUID(),
+        user_id: 'demo',
+        question_id: questionId,
+        flag_type: flagType,
+        created_at: previous?.created_at || now,
+        updated_at: now,
+      };
+    }
+
+    reviewFlagByQuestion.set(questionId, row);
+    reviewFlags = [...reviewFlagByQuestion.values()]
+      .sort((a,b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+    if (!cloudConfigured) saveLocalReviewFlags();
+    refreshReviewFlagButtons(questionId);
+    return row;
+  }
+
+  async function removeQuestionReviewFlag(questionId) {
+    if (cloudConfigured) {
+      const { error } = await supa.from('question_review_flags')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('question_id', questionId);
+      if (error) {
+        alert(`No se pudo quitar el flag de revisión: ${error.message}`);
+        return false;
+      }
+    }
+    reviewFlagByQuestion.delete(questionId);
+    reviewFlags = [...reviewFlagByQuestion.values()]
+      .sort((a,b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+    if (!cloudConfigured) saveLocalReviewFlags();
+    refreshReviewFlagButtons(questionId);
+    return true;
+  }
+
+  function closeReviewFlagDialog() {
+    const modal = document.getElementById('question-review-flag-modal');
+    if (!modal) return;
+    if (modal._escapeHandler) document.removeEventListener('keydown', modal._escapeHandler);
+    modal.remove();
+  }
+
+  function showReviewFlagDialog(questionId) {
+    closeReviewFlagDialog();
+    const q = questions.find(item => item.id === questionId);
+    if (!q) return;
+    const existing = reviewFlagFor(questionId);
+    const modal = document.createElement('div');
+    modal.id = 'question-review-flag-modal';
+    modal.className = 'review-flag-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'review-flag-modal-title');
+    modal.innerHTML = `<div class="review-flag-dialog">
+      <div class="review-flag-dialog-head">
+        <div><h2 id="review-flag-modal-title">Marcar para auditoría</h2><p class="muted">${esc(q.id)} · ${esc(questionSourceLabel(q))}</p></div>
+        <button class="btn small ghost" type="button" data-close-review-flag aria-label="Cerrar">✕</button>
+      </div>
+      <p>Elige un solo motivo. Puedes cambiarlo o quitarlo después.</p>
+      <div class="review-flag-choice-grid">
+        <button class="review-flag-choice ${existing?.flag_type==='statement'?'selected':''}" type="button" data-set-review-flag="statement"><strong>📝 Revisar enunciado</strong><span>Redacción, datos clínicos, alternativas o ambigüedad.</span></button>
+        <button class="review-flag-choice ${existing?.flag_type==='explanation'?'selected':''}" type="button" data-set-review-flag="explanation"><strong>💬 Revisar explicación</strong><span>Explicación insuficiente, confusa, desactualizada o tautológica.</span></button>
+        <button class="review-flag-choice ${existing?.flag_type==='general'?'selected':''}" type="button" data-set-review-flag="general"><strong>⚑ Revisar</strong><span>Observación general o motivo todavía no definido.</span></button>
+      </div>
+      ${existing ? '<button class="btn danger ghost-danger review-flag-remove" type="button" data-remove-review-flag-dialog>Quitar flag</button>' : ''}
+    </div>`;
+    document.body.appendChild(modal);
+
+    const close = () => closeReviewFlagDialog();
+    modal.querySelector('[data-close-review-flag]').onclick = close;
+    modal.onclick = ev => { if (ev.target === modal) close(); };
+    const escapeHandler = ev => {
+      if (ev.key === 'Escape') {
+        close();
+        document.removeEventListener('keydown', escapeHandler);
+      }
+    };
+    modal._escapeHandler = escapeHandler;
+    document.addEventListener('keydown', escapeHandler);
+
+    modal.querySelectorAll('[data-set-review-flag]').forEach(btn => {
+      btn.onclick = async () => {
+        modal.querySelectorAll('button').forEach(node => node.disabled = true);
+        const saved = await saveQuestionReviewFlag(questionId, btn.dataset.setReviewFlag);
+        if (saved) close();
+        else modal.querySelectorAll('button').forEach(node => node.disabled = false);
+      };
+    });
+    const removeBtn = modal.querySelector('[data-remove-review-flag-dialog]');
+    if (removeBtn) removeBtn.onclick = async () => {
+      modal.querySelectorAll('button').forEach(node => node.disabled = true);
+      if (await removeQuestionReviewFlag(questionId)) close();
+      else modal.querySelectorAll('button').forEach(node => node.disabled = false);
+    };
+  }
+
+  function bindReviewFlagButtons(root = document) {
+    root.querySelectorAll('[data-question-review-flag]').forEach(btn => {
+      btn.onclick = () => showReviewFlagDialog(btn.dataset.questionReviewFlag);
+    });
+  }
 
   function rebuildMemoryMap() { memoryByQuestion = new Map(memoryStates.map(s => [s.question_id, s])); }
 
@@ -505,6 +701,8 @@
       activeSessions = localSessions().filter(s => s.status === 'active');
       profile = localProfile();
       memoryStates = localMemory();
+      reviewFlags = localReviewFlags();
+      rebuildReviewFlagMap();
       rebuildMemoryMap();
       await reconcileMemoryFromAttempts();
       renderDashboard();
@@ -614,26 +812,46 @@
     return { data: all, error: null };
   }
 
+  async function fetchAllReviewFlags() {
+    const pageSize = 1000;
+    const all = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supa.from('question_review_flags')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending:false })
+        .range(from, from + pageSize - 1);
+      if (error) return { data:null, error };
+      all.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return { data:all, error:null };
+  }
+
   async function loadCloudData() {
     clearTimer();
     app.innerHTML = `<div class="splash"><div class="logo-mark">R</div><p>Sincronizando…</p></div>`;
 
-    const [qRes, aRes, pRes, mRes] = await Promise.all([
+    const [qRes, aRes, pRes, mRes, fRes] = await Promise.all([
       fetchAllQuestions(),
       fetchAllAttempts(),
       supa.from('user_learning_profile').select('*').eq('user_id', user.id).maybeSingle(),
       fetchAllMemoryStates(),
+      fetchAllReviewFlags(),
     ]);
 
     if (qRes.error) { renderLogin(`Error al cargar preguntas: ${qRes.error.message}`); return; }
     if (aRes.error) { renderLogin(`Error al cargar progreso: ${aRes.error.message}`); return; }
     if (pRes.error) { renderFatal(`Falta aplicar la migración v0.5 en Supabase: ${pRes.error.message}`); return; }
     if (mRes.error) { renderFatal(`Falta aplicar la migración v0.5 en Supabase: ${mRes.error.message}`); return; }
+    if (fRes.error) { renderFatal(`Falta aplicar la migración v0.6.17 de flags de auditoría en Supabase: ${fRes.error.message}`); return; }
 
     questions = normalizeQuestionCorpus(qRes.data || []);
     rebuildCorpusRentability();
     attempts = aRes.data || [];
     memoryStates = mRes.data || [];
+    reviewFlags = fRes.data || [];
+    rebuildReviewFlagMap();
     rebuildMemoryMap();
 
     if (pRes.data) profile = { ...DEFAULT_PROFILE, ...pRes.data };
@@ -654,12 +872,13 @@
     return `<div class="topbar">
       <div class="logo-mark">R</div><div class="topbar-title-wrap"><h1>${esc(title)}</h1><small class="app-version">v${APP_VERSION}</small></div><div class="spacer"></div>
       ${showHome ? `<button class="btn small ghost" data-home>Inicio</button>` : ''}
-      ${cloudConfigured ? `<div class="topbar-menu-wrap">
+      <div class="topbar-menu-wrap">
         <button id="account-menu-btn" class="btn small ghost icon-menu-btn" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="account-menu">⋮</button>
         <div id="account-menu" class="topbar-menu-popover" hidden>
-          <button id="logout-btn" class="topbar-menu-item danger-menu-item" type="button">Salir de la cuenta</button>
+          <button id="review-flags-menu-btn" class="topbar-menu-item" type="button">⚑ Preguntas para revisar <span class="menu-count" data-review-flags-count>${reviewFlags.length}</span></button>
+          ${cloudConfigured ? '<button id="logout-btn" class="topbar-menu-item danger-menu-item" type="button">Salir de la cuenta</button>' : ''}
         </div>
-      </div>` : ''}
+      </div>
     </div>`;
   }
 
@@ -685,6 +904,9 @@
       };
       menu.onclick = ev => ev.stopPropagation();
     }
+
+    const reviewFlagsMenu = document.getElementById('review-flags-menu-btn');
+    if (reviewFlagsMenu) reviewFlagsMenu.onclick = () => renderReviewFlagsPage();
 
     const logout = document.getElementById('logout-btn');
     if (logout) logout.onclick = async () => {
@@ -894,6 +1116,9 @@
   }
 
   function rentabilityWeight(q) {
+    if (Number.isFinite(Number(q.exam_rentability_score))) {
+      return clamp(Number(q.exam_rentability_score) / 100, 0, 1);
+    }
     if (Number.isFinite(Number(q.rentability_score))) return clamp(Number(q.rentability_score), 0, 1);
     const tier = explicitRentabilityTier(q);
     if (tier.includes('MUY_ALTA') || tier.includes('MUY ALTA')) return 1;
@@ -2022,7 +2247,7 @@
             <fieldset><legend>Contenido</legend>
               <label>Estado previo<select id="pool-type" class="input"><option value="all">Todas</option><option value="unseen">Nunca vistas</option><option value="errors">Solo errores</option><option value="correct">Ya acertadas</option></select></label>
               <label>Rentabilidad<select id="rentability" class="input"><option value="all">Todas</option><option value="high" ${highCount ? '' : 'disabled'}>Alta rentabilidad${highCount ? ` · ${highCount} preguntas` : ' — requiere al menos corpus suficiente y temas clasificados'}</option></select></label>
-              <small class="muted">La rentabilidad se estima automáticamente por frecuencia y recurrencia histórica de tema, especialidad y área en el corpus cargado (${corpusRentabilityMeta.yearsCount} años). No depende de cuántas preguntas hayas respondido.</small>
+              <small class="muted">La rentabilidad usa el puntaje histórico auditado de la taxonomía global V2 cuando está disponible. Si la base aún no fue migrada, la app conserva temporalmente el cálculo automático por corpus. No depende de cuántas preguntas hayas respondido.</small>
             </fieldset>
 
             <fieldset><legend>Cantidad</legend>
@@ -2039,7 +2264,7 @@
                 <input id="topic-search" class="input topic-search" type="search" placeholder="Buscar tema o especialidad: exantemas, cardiología, sepsis…" autocomplete="off">
                 <div class="topic-tools"><button type="button" id="topics-all" class="btn small">Todos</button><button type="button" id="topics-none" class="btn small ghost">Ninguno</button></div>
               </div>
-              <div class="topic-browser-help">Navega por Área → Especialidad → Tema o usa el buscador. Puedes dejar solo el tema que quieras practicar.</div>
+              <div class="topic-browser-help">Navega por Área → Especialidad → Tema de rentabilidad o usa el buscador. La entidad clínica se conserva como nivel fino dentro de cada pregunta.</div>
               <div id="topic-search-status" class="topic-search-status muted"></div>
               <div class="topic-browser" id="topic-browser">${topicHierarchyHtml(topicHierarchy)}</div>
             </fieldset>
@@ -2285,12 +2510,13 @@
     const targetTag = currentStudy.config.timeMode === 'none'
       ? `<span class="tag target-tag">🎯 ${adaptiveTargetSeconds} s objetivo</span>`
       : '';
+    const metadataVisible = Boolean(responseState.metadataRevealed);
 
     app.innerHTML = `<main class="shell">
       ${topbar(currentStudy.config.title, false)}
       <section class="panel question-card">
         <div class="progress"><div style="width:${(currentStudy.index/currentStudy.questions.length)*100}%"></div></div>
-        <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.area)}</span><span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${targetTag}${timerHtml}</div>
+        <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span id="study-question-metadata" class="question-meta-tags" ${metadataVisible?'':'hidden'} aria-hidden="${metadataVisible?'false':'true'}">${metadataVisible?studyQuestionMetadataTags(q):''}</span>${targetTag}${timerHtml}</div>
         <div class="q-body"><p class="q-text">${esc(q.question)}</p>
           ${locked ? `<div class="banner compact"><strong>⏱ Pregunta cerrada.</strong> ${responseState.timedOut ? 'El tiempo terminó sin respuesta; contará como un único intento fallido por tiempo.' : 'El tiempo terminó después de que respondiste; se conserva esa respuesta y ya no puede modificarse.'}</div>` : ''}
           <div class="uncertainty-hint">Marca <strong>?</strong> en cualquier alternativa que no domines del todo. No cambia tu respuesta; sí hace que el concepto vuelva antes al repaso.</div>
@@ -2410,7 +2636,9 @@
           baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
         }
       );
+      currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
       disableOptionsAndPaint(q, letter);
+      revealStudyQuestionMetadata(q);
       document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
       renderFeedback(q, letter, isCorrect, () => {
         currentStudy.index++;
@@ -2445,7 +2673,9 @@
           baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
         }
       );
+      currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
       disableOptionsAndPaint(q, null);
+      revealStudyQuestionMetadata(q);
       document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
       const dontKnowBtn = document.getElementById('dont-know-study');
       if (dontKnowBtn) dontKnowBtn.disabled = true;
@@ -2488,7 +2718,9 @@
           baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
         }
       ).then((savedAttempt) => {
+        currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
         disableOptionsAndPaint(q, null);
+        revealStudyQuestionMetadata(q);
         document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
         renderFeedback(
           q, null, false,
@@ -2730,7 +2962,7 @@
       <section class="exam-layout">
         <div class="panel question-card">
           <div class="progress"><div style="width:${(currentExam.state.currentIndex/currentExam.questions.length)*100}%"></div></div>
-          <div class="q-head"><span class="tag">${currentExam.state.currentIndex+1}/${currentExam.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.area)}</span><div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
+          <div class="q-head"><span class="tag">${currentExam.state.currentIndex+1}/${currentExam.questions.length}</span><div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
           <div class="q-body"><p class="q-text">${esc(q.question)}</p>
             <div class="uncertainty-hint">Puedes marcar <strong>?</strong> en una o varias alternativas sin cambiar tu respuesta definitiva.</div>
             <div class="options">${displayOptionList(
@@ -2940,7 +3172,7 @@
       .filter(([,state]) => state === 'tentative')
       .map(([letter]) => letter);
     const reviewOptions = displayOptionList(q, reviewContext.optionOrders || {}, reviewContext.shuffleOptions !== false);
-    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${reviewOptions.map(o => {
+    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${reviewOptions.map(o => {
       const sourceLetter = o.sourceLetter || o.letter;
       return `<div class="option ${sourceLetter===q.official_answer?'correct':sourceLetter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`;
     }).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${historyReview?'style="visibility:hidden"':(reviewContext.index===0?'disabled':'')}>← Anterior</button><button id="next-review" class="btn primary">${historyReview?'Volver al historial':(reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →')}</button></div></main>`;
@@ -3116,6 +3348,7 @@
       ${q?.abbreviations ? `<div class="explain-block"><h4>🔤 Siglas y términos</h4><p>${esc(q.abbreviations)}</p></div>` : ''}
       ${q?.exam_pearl ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(q.exam_pearl)}</p></div>` : ''}
       ${q?.memory_hook ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(q.memory_hook)}</p></div>` : ''}
+      <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
         <div>
           <strong>¿Acertaste sin dominar realmente el razonamiento?</strong>
@@ -3129,6 +3362,7 @@
     </div>`;
 
     bindPostAnswerUncertainButton(feedbackMeta, q, selected);
+    bindReviewFlagButtons(target);
   }
 
   function renderFeedback(q, selected, isCorrect, onNext, timedOut = false, reviewOnly = false, uncertainOptions = [], feedbackMeta = {}) {
@@ -3198,6 +3432,7 @@
       ${q.abbreviations ? `<div class="explain-block"><h4>🔤 Siglas y términos</h4><p>${esc(q.abbreviations)}</p></div>` : ''}
       ${q.exam_pearl ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(q.exam_pearl)}</p></div>` : ''}
       ${q.memory_hook ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(q.memory_hook)}</p></div>` : ''}
+      <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
         <div>
           <strong>¿Acertaste sin dominar realmente el razonamiento?</strong>
@@ -3212,6 +3447,7 @@
     </div>`;
 
     bindPostAnswerUncertainButton(feedbackMeta, q, selected);
+    bindReviewFlagButtons(target);
     if (!reviewOnly && onNext) document.getElementById('next-feedback').onclick = onNext;
   }
 
@@ -3574,6 +3810,131 @@
     document.getElementById('history-date').onchange = ev => renderHistory(ev.target.value);
     document.querySelectorAll('[data-history-date]').forEach(btn => btn.onclick = () => renderHistory(btn.dataset.historyDate));
     document.querySelectorAll('[data-history-attempt]').forEach(btn => btn.onclick = () => openHistoryAttempt(btn.dataset.historyAttempt,dateIso));
+  }
+
+  function reviewFlagEntries(type = 'all') {
+    return reviewFlags
+      .map(flag => ({ flag, q:questions.find(item => item.id === flag.question_id) }))
+      .filter(item => item.q && (type === 'all' || item.flag.flag_type === type))
+      .sort((a,b) => new Date(b.flag.updated_at || 0) - new Date(a.flag.updated_at || 0));
+  }
+
+  function reviewFlagsReportText(type = 'all') {
+    const entries = reviewFlagEntries(type);
+    const lines = [
+      '# Preguntas marcadas para revisión',
+      `Total: ${entries.length}`,
+      '',
+    ];
+    entries.forEach(({ flag, q }, index) => {
+      const meta = reviewFlagMeta(flag.flag_type);
+      const taxonomy = [q.area, q.specialty, q.topic, q.subtopic]
+        .filter(Boolean)
+        .filter((value, idx, arr) => idx === 0 || taxonomyKey(value) !== taxonomyKey(arr[idx-1]))
+        .join(' → ');
+      lines.push(`${index + 1}. ${meta.label} — ${q.id}`);
+      lines.push(`   Fuente: ${questionSourceLabel(q)}`);
+      lines.push(`   Taxonomía: ${taxonomy || 'Sin taxonomía'}`);
+      lines.push(`   Enunciado: ${String(q.question || '').replace(/\s+/g, ' ').trim()}`);
+      lines.push('');
+    });
+    return lines.join('\n').trim();
+  }
+
+  async function copyReviewFlagsReport(type = 'all') {
+    const text = reviewFlagsReportText(type);
+    if (!text || !reviewFlagEntries(type).length) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      alert('Lista copiada. Ya puedes pegarla directamente en el chat.');
+    } catch {
+      const area = document.createElement('textarea');
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      area.remove();
+      alert('Lista copiada. Ya puedes pegarla directamente en el chat.');
+    }
+  }
+
+  function csvCell(value) {
+    const text = String(value ?? '').replace(/\r?\n/g, ' ').trim();
+    return `"${text.replaceAll('"', '""')}"`;
+  }
+
+  function downloadReviewFlagsCsv(type = 'all') {
+    const entries = reviewFlagEntries(type);
+    if (!entries.length) return;
+    const rows = [
+      ['flag','id','año','prueba','numero_pregunta','area','especialidad','tema','entidad','enunciado','actualizado_en'],
+      ...entries.map(({ flag, q }) => [
+        reviewFlagMeta(flag.flag_type).label,
+        q.id,
+        q.year,
+        q.test,
+        q.question_number,
+        q.area,
+        q.specialty,
+        q.topic,
+        q.subtopic,
+        q.question,
+        flag.updated_at,
+      ]),
+    ];
+    const csv = '\ufeff' + rows.map(row => row.map(csvCell).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `preguntas_marcadas_revision_${isoDateLocal()}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function renderReviewFlagsPage(type = 'all') {
+    clearTimer();
+    scrollPageTop();
+    const entries = reviewFlagEntries(type);
+    const counts = Object.fromEntries(Object.keys(REVIEW_FLAG_TYPES).map(key => [key, reviewFlags.filter(row => row.flag_type === key).length]));
+    app.innerHTML = `<main class="shell">${topbar('Preguntas para revisar', true)}
+      <section class="panel review-flags-hero">
+        <div><h2>Auditoría personal del banco</h2><p class="muted">Estos flags son independientes de tus respuestas, dudas y memoria adaptativa. Copia la lista para enviarla al chat o expórtala como archivo CSV.</p></div>
+        <div class="review-flags-actions"><button id="copy-review-flags" class="btn primary" type="button" ${entries.length?'':'disabled'}>Copiar lista</button><button id="download-review-flags" class="btn" type="button" ${entries.length?'':'disabled'}>Descargar CSV</button></div>
+      </section>
+      <section class="kpis review-flags-kpis">
+        <div class="kpi"><div class="value">${reviewFlags.length}</div><div class="label">Total</div></div>
+        <div class="kpi"><div class="value">${counts.statement || 0}</div><div class="label">Enunciado</div></div>
+        <div class="kpi"><div class="value">${counts.explanation || 0}</div><div class="label">Explicación</div></div>
+        <div class="kpi"><div class="value">${counts.general || 0}</div><div class="label">General</div></div>
+      </section>
+      <section class="panel review-flags-list-panel">
+        <div class="section-head review-flags-filter-head"><div><h2>Lista marcada</h2><p class="muted">Una pregunta conserva un solo motivo activo; puedes cambiarlo desde la corrección.</p></div>
+          <label class="review-flags-filter"><span>Mostrar</span><select id="review-flags-type" class="input"><option value="all" ${type==='all'?'selected':''}>Todos</option><option value="statement" ${type==='statement'?'selected':''}>Revisar enunciado</option><option value="explanation" ${type==='explanation'?'selected':''}>Revisar explicación</option><option value="general" ${type==='general'?'selected':''}>Revisar</option></select></label>
+        </div>
+        <div class="review-flag-card-list">${entries.length ? entries.map(({ flag, q }) => {
+          const meta = reviewFlagMeta(flag.flag_type);
+          const entity = cleanTaxonomyLabel(q.canonical_entity || q.subtopic);
+          return `<article class="review-flag-card">
+            <div class="review-flag-card-head"><div class="meta-line"><span class="tag warn">${meta.icon} ${esc(meta.label)}</span>${questionSourceTag(q)}<span class="tag">${esc(q.id)}</span></div><button class="btn small danger ghost-danger" type="button" data-remove-review-flag-list="${esc(q.id)}">Quitar</button></div>
+            <p class="review-flag-question">${esc(q.question)}</p>
+            <p class="muted review-flag-taxonomy">${esc([q.area, q.specialty, q.topic, entity].filter(Boolean).join(' → '))}</p>
+          </article>`;
+        }).join('') : '<div class="empty">No hay preguntas marcadas con este filtro.</div>'}</div>
+      </section>
+    </main>`;
+    attachTopbar();
+    document.getElementById('review-flags-type').onchange = ev => renderReviewFlagsPage(ev.target.value);
+    document.getElementById('copy-review-flags').onclick = () => copyReviewFlagsReport(type);
+    document.getElementById('download-review-flags').onclick = () => downloadReviewFlagsCsv(type);
+    document.querySelectorAll('[data-remove-review-flag-list]').forEach(btn => {
+      btn.onclick = async () => {
+        const questionId = btn.dataset.removeReviewFlagList;
+        if (!confirm(`¿Quitar el flag de ${questionId}?`)) return;
+        if (await removeQuestionReviewFlag(questionId)) renderReviewFlagsPage(type);
+      };
+    });
   }
 
   function renderStats() {
