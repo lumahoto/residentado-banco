@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = '0.6.17';
+  const APP_VERSION = '0.6.18';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
@@ -38,6 +38,17 @@
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+
+  function questionMediaHtml(q, className = 'question-media') {
+    const src = String(q?.image_url || '').trim();
+    if (!src) return '';
+    const alt = String(q?.image_alt || 'Imagen clínica asociada a la pregunta').trim();
+    const caption = String(q?.image_caption || '').trim();
+    return `<figure class="${esc(className)}">
+      <img src="${esc(src)}" alt="${esc(alt)}" loading="lazy" decoding="async">
+      ${caption ? `<figcaption>${esc(caption)}</figcaption>` : ''}
+    </figure>`;
+  }
 
   const shuffle = arr => {
     const a = [...arr];
@@ -1924,6 +1935,7 @@
           <button class="paper-flag ${flagged?'active':''}" data-paper-flag-index="${index}">${flagged?'⚑ Revisar':'⚐ Marcar para revisar'}</button>
         </div>
         <p class="paper-question-text">${esc(q.question)}</p>
+        ${questionMediaHtml(q, 'question-media paper-question-media')}
         <div class="paper-options">
           ${optionList(q).map(o => paperOptionHtml(q, index, o)).join('')}
         </div>
@@ -2518,6 +2530,7 @@
         <div class="progress"><div style="width:${(currentStudy.index/currentStudy.questions.length)*100}%"></div></div>
         <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span id="study-question-metadata" class="question-meta-tags" ${metadataVisible?'':'hidden'} aria-hidden="${metadataVisible?'false':'true'}">${metadataVisible?studyQuestionMetadataTags(q):''}</span>${targetTag}${timerHtml}</div>
         <div class="q-body"><p class="q-text">${esc(q.question)}</p>
+          ${questionMediaHtml(q)}
           ${locked ? `<div class="banner compact"><strong>⏱ Pregunta cerrada.</strong> ${responseState.timedOut ? 'El tiempo terminó sin respuesta; contará como un único intento fallido por tiempo.' : 'El tiempo terminó después de que respondiste; se conserva esa respuesta y ya no puede modificarse.'}</div>` : ''}
           <div class="uncertainty-hint">Marca <strong>?</strong> en cualquier alternativa que no domines del todo. No cambia tu respuesta; sí hace que el concepto vuelva antes al repaso.</div>
           <div class="options">${opts.map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.sourceLetter || o.letter))).join('')}</div>
@@ -2964,6 +2977,7 @@
           <div class="progress"><div style="width:${(currentExam.state.currentIndex/currentExam.questions.length)*100}%"></div></div>
           <div class="q-head"><span class="tag">${currentExam.state.currentIndex+1}/${currentExam.questions.length}</span><div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
           <div class="q-body"><p class="q-text">${esc(q.question)}</p>
+            ${questionMediaHtml(q)}
             <div class="uncertainty-hint">Puedes marcar <strong>?</strong> en una o varias alternativas sin cambiar tu respuesta definitiva.</div>
             <div class="options">${displayOptionList(
               q,
@@ -3172,7 +3186,7 @@
       .filter(([,state]) => state === 'tentative')
       .map(([letter]) => letter);
     const reviewOptions = displayOptionList(q, reviewContext.optionOrders || {}, reviewContext.shuffleOptions !== false);
-    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p><div class="options">${reviewOptions.map(o => {
+    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p>${questionMediaHtml(q)}<div class="options">${reviewOptions.map(o => {
       const sourceLetter = o.sourceLetter || o.letter;
       return `<div class="option ${sourceLetter===q.official_answer?'correct':sourceLetter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`;
     }).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${historyReview?'style="visibility:hidden"':(reviewContext.index===0?'disabled':'')}>← Anterior</button><button id="next-review" class="btn primary">${historyReview?'Volver al historial':(reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →')}</button></div></main>`;
