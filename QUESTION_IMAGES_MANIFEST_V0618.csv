@@ -1,0 +1,2 @@
+id,year,test,question_number,image_required,image_url,image_alt,image_caption,source_pdf,source_page,unified_pdf_page,image_source_bbox,audit_method
+RM-2022-A-038,2022,A,38,true,assets/questions/RM-2022-A-038.jpg,"Tira de electrocardiograma con intervalos R-R irregulares y ausencia de ondas P organizadas.","Electrocardiograma adjunto del examen oficial 2022, Prueba A, pregunta 38.",Especialidad Prueba A.pdf,5,187,"154.35,619.51,440.95,712.56","Búsqueda textual de referencias visuales en 2180 preguntas + inventario de imágenes embebidas del PDF unificado"

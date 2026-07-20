@@ -1502,3 +1502,41 @@ details.explain-block summary { cursor: pointer; }
   .review-flags-filter { width: 100%; align-items: stretch; flex-direction: column; }
   .review-flags-filter .input { min-width: 0; width: 100%; }
 }
+
+
+/* ===== v0.6.18 · imágenes asociadas a preguntas ===== */
+.question-media {
+  margin: 16px auto 20px;
+  width: min(100%, 720px);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+.question-media img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #fff;
+}
+.question-media figcaption {
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.4;
+  text-align: center;
+}
+.paper-question-media {
+  width: min(100%, 560px);
+  margin: 10px auto 14px;
+}
+.paper-question-media img {
+  max-height: 260px;
+  border-radius: 8px;
+}
+@media (max-width: 640px) {
+  .question-media { margin: 12px auto 16px; }
+  .question-media img { max-height: 300px; }
+}

@@ -1,4 +1,4 @@
-const CACHE = "residentado-v0-6-17";
+const CACHE = "residentado-v0-6-18";
 const ASSETS = [
   "./",
   "./index.html",
@@ -8,7 +8,8 @@ const ASSETS = [
   "./pilot-data.js",
   "./manifest.webmanifest",
   "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./icons/icon-512.png",
+  "./assets/questions/RM-2022-A-038.jpg",
 ];
 
 self.addEventListener("install", event => {
