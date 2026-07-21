@@ -1475,7 +1475,7 @@ details.explain-block summary { cursor: pointer; }
 .review-flags-hero { margin-bottom: 14px; }
 .review-flags-hero h2 { margin: 0 0 6px; }
 .review-flags-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.review-flags-kpis { grid-template-columns: repeat(4, 1fr); }
+/* superseded by v1.0.0 */
 .review-flags-filter { display: flex; gap: 8px; align-items: center; }
 .review-flags-filter .input { min-width: 200px; }
 .review-flag-card-list { display: grid; gap: 12px; margin-top: 14px; }
@@ -1539,4 +1539,119 @@ details.explain-block summary { cursor: pointer; }
 @media (max-width: 640px) {
   .question-media { margin: 12px auto 16px; }
   .question-media img { max-height: 300px; }
+}
+
+/* ===== v1.0.0 · cierre editorial y trazabilidad de auditoría ===== */
+.quick-reference {
+  padding: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--brand) 5%, var(--panel));
+}
+.quick-reference > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+  list-style: none;
+}
+.quick-reference > summary::-webkit-details-marker { display: none; }
+.quick-reference > summary::after {
+  content: '⌄';
+  font-size: 1.1rem;
+  transition: transform .16s ease;
+}
+.quick-reference[open] > summary::after { transform: rotate(180deg); }
+.quick-reference > summary span {
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 500;
+  text-align: right;
+}
+.quick-reference-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 14px 14px;
+  border-top: 1px solid var(--border);
+}
+.reference-section {
+  padding-top: 12px;
+}
+.reference-section + .reference-section {
+  border-top: 1px dashed var(--border);
+}
+.reference-section h4 { margin: 0 0 9px; }
+.reference-section p { white-space: pre-line; }
+.pharm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.pharm-aspect {
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.pharm-aspect h5 {
+  margin: 0 0 7px;
+  color: var(--brand-2);
+  font-size: .84rem;
+}
+.pharm-aspect p { margin: 5px 0; font-size: .92rem; }
+
+.review-flag-close-actions,
+.review-flag-card-actions,
+.review-flags-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.review-flag-close-actions { margin-top: 14px; }
+.review-flag-close-actions .btn { flex: 1 1 180px; }
+.review-resolution-textarea { resize: vertical; min-height: 96px; }
+.review-flags-tabs { margin: 0 0 14px; }
+.review-flags-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.review-flag-card.closed { opacity: .92; }
+.review-flag-resolution {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 13px;
+  padding-top: 13px;
+  border-top: 1px dashed var(--border);
+}
+.review-flag-resolution > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.review-flag-resolution span {
+  color: var(--muted);
+  font-size: .76rem;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.review-flag-resolution strong {
+  overflow-wrap: anywhere;
+  font-size: .88rem;
+}
+.review-flag-resolution > p {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  line-height: 1.5;
+}
+
+@media (max-width: 760px) {
+  .pharm-grid { grid-template-columns: 1fr; }
+  .quick-reference > summary { align-items: flex-start; flex-direction: column; }
+  .quick-reference > summary span { text-align: left; }
+  .review-flags-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .review-flag-card-actions,
+  .review-flags-tabs { width: 100%; }
+  .review-flag-card-actions .btn,
+  .review-flags-tabs .btn { flex: 1 1 auto; }
+  .review-flag-resolution { grid-template-columns: 1fr; }
+  .review-flag-resolution > p { grid-column: 1; }
 }

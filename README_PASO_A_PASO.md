@@ -1,3 +1,9 @@
+# Actualización vigente — v1.0.0
+
+Para actualizar desde v0.6.18, lee primero `README_V1_0_0_FINAL.md` y ejecuta `supabase_migration_v1_0_0_review_history.sql`. El resto de este documento conserva instrucciones históricas de instalación inicial.
+
+---
+
 # Residentado — banco piloto
 
 Esta carpeta contiene una PWA funcional con las 20 preguntas del piloto.

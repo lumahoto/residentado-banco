@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = '0.6.18';
+  const APP_VERSION = '1.0.0';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
@@ -27,6 +27,7 @@
   let examQuestionEnteredAt = 0;
   let reviewContext = null;
   let reviewFlags = [];
+  let reviewFlagHistory = [];
   let reviewFlagByQuestion = new Map();
 
   const observed = q => String(q.audit_status || '').startsWith('OBSERVADA');
@@ -38,6 +39,116 @@
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+
+
+  const EMPTY_EDITORIAL_PATTERNS = [
+    /^no (?:se )?(?:requiere|requieren|hay|usar) (?:siglas|abreviaturas|términos)(?: indispensables| necesarias)?(?: en (?:esta|la) pregunta)?[.!]?$/i,
+    /^(?:no aplica|n\/?a|ninguno|ninguna|sin contenido|sin datos)[.!]?$/i,
+  ];
+
+  function cleanEditorialText(value = '') {
+    const text = String(value ?? '').replace(/\r/g, '').trim();
+    if (!text) return '';
+    return text
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .filter(line => !EMPTY_EDITORIAL_PATTERNS.some(rx => rx.test(line.replace(/\s+/g, ' ').trim())))
+      .join('\n')
+      .trim();
+  }
+
+  const hasEditorialText = value => Boolean(cleanEditorialText(value));
+
+  function makeUuid() {
+    if (globalThis.crypto?.randomUUID) return globalThis.makeUuid();
+    const bytes = new Uint8Array(16);
+    if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+    else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+  }
+
+  function cleanOptionText(value = '') {
+    return String(value ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  const PHARMACOLOGY_HINT = /\b(?:f[aá]rmaco|medicamento|antibi[oó]tico|antiviral|antif[uú]ngico|antiparasitario|antihipertensivo|antiarr[ií]tmico|anticoagulante|ant[ií]doto|toxicidad|neurotoxicidad|reacci[oó]n adversa|contraindicaci[oó]n|dosis|receptor|agonista|antagonista|inhibe|inhibidor|bloquea|mecanismo de acci[oó]n|espectro|cobertura|primera l[ií]nea|betalact[aá]mico|cefalosporina|carbapen[eé]mico|macr[oó]lido|aminogluc[oó]sido|fluoroquinolona|corticoide|insulina|heparina)\b/i;
+
+  function pharmacologyRelevant(q = {}) {
+    const options = ['a','b','c','d','e'].map(letter => cleanOptionText(q[`option_${letter}`])).filter(Boolean).join(' ');
+    const text = [q.question, options, q.comparison_title, q.comparison_framework, q.correct_explanation]
+      .map(cleanEditorialText).filter(Boolean).join(' ');
+    return PHARMACOLOGY_HINT.test(text);
+  }
+
+  function splitReferenceSentences(value = '') {
+    const text = cleanEditorialText(value);
+    if (!text) return [];
+    return text
+      .split(/\n+|(?:[.;])\s+(?=[A-ZÁÉÍÓÚÜÑ])/)
+      .map(item => item.trim().replace(/[.;]+$/, ''))
+      .filter(Boolean)
+      .filter((item, index, arr) => arr.findIndex(other => other.toLocaleLowerCase('es') === item.toLocaleLowerCase('es')) === index);
+  }
+
+  const PHARM_CATEGORY_RULES = [
+    ['Clase', /\b(?:clase|cefalosporina|carbapen[eé]mico|betalact[aá]mico|macr[oó]lido|aminogluc[oó]sido|fluoroquinolona|antagonista|agonista|inhibidor)\b/i],
+    ['Mecanismo y diana', /\b(?:mecanismo|inhibe|bloquea|activa|receptor|diana|polimerasa|subunidad|s[ií]ntesis de pared|canal|enzima)\b/i],
+    ['Espectro o cobertura', /\b(?:espectro|cubre|cobertura|grampositivo|gramnegativo|pseudomonas|anaerobio|meticilina|resistencia|susceptibilidad)\b/i],
+    ['Indicación', /\b(?:indicado|indicaci[oó]n|tratamiento|elecci[oó]n|preferente|se usa|utiliza|[uú]til)\b/i],
+    ['Toxicidad o reacción adversa', /\b(?:toxicidad|t[oó]xico|advers[ao]|nefrotoxic|ototoxic|hepatotoxic|prolonga el qt|hiperpotasemia|hipopotasemia)\b/i],
+    ['Contraindicación o precaución', /\b(?:contraindicado|contraindicaci[oó]n|evitar|precauci[oó]n|no usar|riesgo de)\b/i],
+    ['Antídoto o reversión', /\b(?:ant[ií]doto|reversi[oó]n|revierte|neutraliza|n-acetilciste[ií]na|pralidoxima|naloxona|flumazenil)\b/i],
+  ];
+
+  function pharmacologyFrameworkHtml(value = '') {
+    const sentences = splitReferenceSentences(value);
+    if (!sentences.length) return '';
+    const groups = new Map(PHARM_CATEGORY_RULES.map(([label]) => [label, []]));
+    groups.set('Diferencias clave', []);
+    for (const sentence of sentences) {
+      const match = PHARM_CATEGORY_RULES.find(([, rx]) => rx.test(sentence));
+      groups.get(match ? match[0] : 'Diferencias clave').push(sentence);
+    }
+    const cards = [...groups.entries()]
+      .filter(([, items]) => items.length)
+      .map(([label, items]) => `<section class="pharm-aspect"><h5>${esc(label)}</h5>${items.map(item => `<p>${esc(item)}</p>`).join('')}</section>`)
+      .join('');
+    return cards ? `<div class="pharm-grid">${cards}</div>` : '';
+  }
+
+  function referenceQuickHtml(q = {}) {
+    const comparison = cleanEditorialText(q.comparison_framework);
+    const abbreviations = cleanEditorialText(q.abbreviations);
+    const sections = [];
+
+    if (comparison) {
+      if (pharmacologyRelevant(q)) {
+        const structured = pharmacologyFrameworkHtml(comparison);
+        if (structured) sections.push(`<div class="reference-section pharmacology-section"><h4>💊 Fármacos y antibióticos</h4>${structured}</div>`);
+      } else {
+        sections.push(`<div class="reference-section"><h4>📊 ${esc(cleanEditorialText(q.comparison_title) || 'Comparación y criterios')}</h4>${frameworkHtml(comparison)}</div>`);
+      }
+    }
+    if (abbreviations) {
+      sections.push(`<div class="reference-section"><h4>🔤 Siglas, epónimos y términos</h4><p>${esc(abbreviations)}</p></div>`);
+    }
+    if (!sections.length) return '';
+    return `<details class="explain-block quick-reference"><summary><strong>📚 Referencia rápida</strong><span>criterios, escalas, valores, dosis y comparaciones</span></summary><div class="quick-reference-body">${sections.join('')}</div></details>`;
+  }
+
+  function auditEditorialHtml(q = {}) {
+    const assessment = cleanEditorialText(q.audit_current_assessment || q.update_alert);
+    const currentAnswer = cleanEditorialText(q.audit_current_answer);
+    if (observed(q)) {
+      return `<div class="explain-block audit-box"><h4>⚠ Auditoría médica</h4><p><strong>Pregunta histórica observada: se conserva la clave oficial, pero no cuenta en dominio por defecto.</strong></p>${assessment ? `<p>${esc(assessment)}</p>` : ''}${currentAnswer ? `<p><strong>Criterio actual:</strong> ${esc(currentAnswer)}</p>` : ''}</div>`;
+    }
+    if (caveat(q) && assessment) return `<div class="explain-block"><h4>⚠ Precisión clínica</h4><p>${esc(assessment)}</p></div>`;
+    return '';
+  }
 
   function questionMediaHtml(q, className = 'question-media') {
     const src = String(q?.image_url || '').trim();
@@ -343,7 +454,7 @@
     try { return JSON.parse(localStorage.getItem(DEMO_REVIEW_FLAGS_KEY) || '[]'); }
     catch { return []; }
   }
-  function saveLocalReviewFlags() { localStorage.setItem(DEMO_REVIEW_FLAGS_KEY, JSON.stringify(reviewFlags)); }
+  function saveLocalReviewFlags() { localStorage.setItem(DEMO_REVIEW_FLAGS_KEY, JSON.stringify(reviewFlagHistory)); }
 
   const REVIEW_FLAG_TYPES = {
     statement: { label:'Revisar enunciado', icon:'📝' },
@@ -355,12 +466,42 @@
     return REVIEW_FLAG_TYPES[type] || REVIEW_FLAG_TYPES.general;
   }
 
+  function reviewFlagStatus(row = {}) {
+    return String(row.status || 'OPEN').toUpperCase();
+  }
+
+  function activeReviewFlagRows(rows = []) {
+    return (rows || []).filter(row => reviewFlagStatus(row) === 'OPEN');
+  }
+
   function rebuildReviewFlagMap() {
+    reviewFlags = activeReviewFlagRows(reviewFlagHistory.length ? reviewFlagHistory : reviewFlags)
+      .sort((a,b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
     reviewFlagByQuestion = new Map(reviewFlags.map(row => [row.question_id, row]));
   }
 
   function reviewFlagFor(questionId) {
     return reviewFlagByQuestion.get(questionId) || null;
+  }
+
+  function mergeReviewFlagHistoryRow(row) {
+    const byId = new Map(reviewFlagHistory.map(item => [item.id, item]));
+    byId.set(row.id, row);
+    reviewFlagHistory = [...byId.values()]
+      .sort((a,b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
+    rebuildReviewFlagMap();
+    if (!cloudConfigured) saveLocalReviewFlags();
+  }
+
+  function latestClosedFlagFor(questionId) {
+    return reviewFlagHistory
+      .filter(row => row.question_id === questionId && reviewFlagStatus(row) !== 'OPEN')
+      .sort((a,b) => new Date(b.resolved_at || b.updated_at || 0) - new Date(a.resolved_at || a.updated_at || 0))[0] || null;
+  }
+
+  function questionContentRevision(questionId) {
+    const q = questions.find(item => item.id === questionId) || {};
+    return cleanEditorialText(q.content_snapshot_version || q.record_version || q.app_reference_version) || APP_VERSION;
   }
 
   function reviewFlagButton(q) {
@@ -385,55 +526,111 @@
   async function saveQuestionReviewFlag(questionId, flagType) {
     if (!REVIEW_FLAG_TYPES[flagType]) return null;
     const now = new Date().toISOString();
+    const previous = reviewFlagFor(questionId);
+    const previousClosed = latestClosedFlagFor(questionId);
     let row = null;
+
     if (cloudConfigured) {
-      const payload = { user_id:user.id, question_id:questionId, flag_type:flagType, updated_at:now };
-      const { data, error } = await supa.from('question_review_flags')
-        .upsert(payload, { onConflict:'user_id,question_id' })
-        .select('*')
-        .single();
-      if (error) {
-        alert(`No se pudo guardar el flag de revisión: ${error.message}`);
-        return null;
+      if (previous) {
+        const { data, error } = await supa.from('question_review_flags')
+          .update({ flag_type:flagType, status:'OPEN', updated_at:now })
+          .eq('id', previous.id)
+          .eq('user_id', user.id)
+          .select('*')
+          .single();
+        if (error) {
+          alert(`No se pudo actualizar el flag de revisión: ${error.message}`);
+          return null;
+        }
+        row = data;
+      } else {
+        const payload = {
+          user_id:user.id,
+          question_id:questionId,
+          flag_type:flagType,
+          status:'OPEN',
+          content_revision:questionContentRevision(questionId),
+          previous_flag_id:previousClosed?.id || null,
+          updated_at:now,
+        };
+        const { data, error } = await supa.from('question_review_flags')
+          .insert(payload)
+          .select('*')
+          .single();
+        if (error) {
+          alert(`No se pudo guardar el flag de revisión: ${error.message}`);
+          return null;
+        }
+        row = data;
       }
-      row = data;
     } else {
-      const previous = reviewFlagFor(questionId);
-      row = {
-        id: previous?.id || crypto.randomUUID(),
+      row = previous ? {
+        ...previous,
+        flag_type:flagType,
+        status:'OPEN',
+        updated_at:now,
+      } : {
+        id: makeUuid(),
         user_id: 'demo',
         question_id: questionId,
         flag_type: flagType,
-        created_at: previous?.created_at || now,
+        status:'OPEN',
+        content_revision:questionContentRevision(questionId),
+        previous_flag_id:previousClosed?.id || null,
+        created_at: now,
         updated_at: now,
       };
     }
 
-    reviewFlagByQuestion.set(questionId, row);
-    reviewFlags = [...reviewFlagByQuestion.values()]
-      .sort((a,b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
-    if (!cloudConfigured) saveLocalReviewFlags();
+    mergeReviewFlagHistoryRow(row);
     refreshReviewFlagButtons(questionId);
     return row;
   }
 
-  async function removeQuestionReviewFlag(questionId) {
+  async function closeQuestionReviewFlag(questionId, status, details = {}) {
+    const existing = reviewFlagFor(questionId);
+    if (!existing) return false;
+    const now = new Date().toISOString();
+    const normalizedStatus = status === 'RESOLVED' ? 'RESOLVED' : 'DISMISSED';
+    const patchId = normalizedStatus === 'RESOLVED' ? cleanEditorialText(details.patchId) : '';
+    const summary = cleanEditorialText(details.summary) || (normalizedStatus === 'RESOLVED'
+      ? 'Pregunta corregida y asumida como válida hasta una nueva observación.'
+      : 'Flag retirado por el usuario sin parche asociado.');
+    if (normalizedStatus === 'RESOLVED' && !patchId) return false;
+
+    const changes = {
+      status:normalizedStatus,
+      resolved_at:now,
+      resolved_by_patch_id:patchId || null,
+      resolution_summary:summary,
+      updated_at:now,
+    };
+    let row = null;
     if (cloudConfigured) {
-      const { error } = await supa.from('question_review_flags')
-        .delete()
+      const { data, error } = await supa.from('question_review_flags')
+        .update(changes)
+        .eq('id', existing.id)
         .eq('user_id', user.id)
-        .eq('question_id', questionId);
+        .select('*')
+        .single();
       if (error) {
-        alert(`No se pudo quitar el flag de revisión: ${error.message}`);
+        alert(`No se pudo cerrar el flag de revisión: ${error.message}`);
         return false;
       }
-    }
-    reviewFlagByQuestion.delete(questionId);
-    reviewFlags = [...reviewFlagByQuestion.values()]
-      .sort((a,b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
-    if (!cloudConfigured) saveLocalReviewFlags();
+      row = data;
+    } else row = { ...existing, ...changes };
+
+    mergeReviewFlagHistoryRow(row);
     refreshReviewFlagButtons(questionId);
     return true;
+  }
+
+  async function removeQuestionReviewFlag(questionId) {
+    return closeQuestionReviewFlag(questionId, 'DISMISSED');
+  }
+
+  async function resolveQuestionReviewFlag(questionId, patchId, summary = '') {
+    return closeQuestionReviewFlag(questionId, 'RESOLVED', { patchId, summary });
   }
 
   function closeReviewFlagDialog() {
@@ -465,7 +662,7 @@
         <button class="review-flag-choice ${existing?.flag_type==='explanation'?'selected':''}" type="button" data-set-review-flag="explanation"><strong>💬 Revisar explicación</strong><span>Explicación insuficiente, confusa, desactualizada o tautológica.</span></button>
         <button class="review-flag-choice ${existing?.flag_type==='general'?'selected':''}" type="button" data-set-review-flag="general"><strong>⚑ Revisar</strong><span>Observación general o motivo todavía no definido.</span></button>
       </div>
-      ${existing ? '<button class="btn danger ghost-danger review-flag-remove" type="button" data-remove-review-flag-dialog>Quitar flag</button>' : ''}
+      ${existing ? `<div class="review-flag-close-actions"><button class="btn primary" type="button" data-resolve-review-flag-dialog>✓ Registrar parche</button><button class="btn danger ghost-danger" type="button" data-remove-review-flag-dialog>Quitar sin parche</button></div>` : ''}
     </div>`;
     document.body.appendChild(modal);
 
@@ -489,12 +686,66 @@
         else modal.querySelectorAll('button').forEach(node => node.disabled = false);
       };
     });
+    const resolveBtn = modal.querySelector('[data-resolve-review-flag-dialog]');
+    if (resolveBtn) resolveBtn.onclick = () => {
+      close();
+      showResolveReviewFlagDialog(questionId);
+    };
     const removeBtn = modal.querySelector('[data-remove-review-flag-dialog]');
     if (removeBtn) removeBtn.onclick = async () => {
+      if (!confirm(`¿Quitar el flag de ${questionId} sin registrarlo como parche? El retiro quedará en el historial.`)) return;
       modal.querySelectorAll('button').forEach(node => node.disabled = true);
       if (await removeQuestionReviewFlag(questionId)) close();
       else modal.querySelectorAll('button').forEach(node => node.disabled = false);
     };
+  }
+
+  function showResolveReviewFlagDialog(questionId, onResolved = null) {
+    closeReviewFlagDialog();
+    const q = questions.find(item => item.id === questionId);
+    const existing = reviewFlagFor(questionId);
+    if (!q || !existing) return;
+    const modal = document.createElement('div');
+    modal.id = 'question-review-flag-modal';
+    modal.className = 'review-flag-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'review-flag-modal-title');
+    modal.innerHTML = `<form class="review-flag-dialog" id="resolve-review-flag-form">
+      <div class="review-flag-dialog-head">
+        <div><h2 id="review-flag-modal-title">Registrar pregunta parchada</h2><p class="muted">${esc(q.id)} · ${esc(questionSourceLabel(q))}</p></div>
+        <button class="btn small ghost" type="button" data-close-review-flag aria-label="Cerrar">✕</button>
+      </div>
+      <p>La observación saldrá de la cola activa, pero se conservará en el historial. Si vuelves a encontrar un problema, se creará un nuevo registro enlazado.</p>
+      <label class="form-row"><span>Identificador del parche</span><input id="review-patch-id" class="input" required maxlength="80" placeholder="DBPATCH-2026-07-24-01"></label>
+      <label class="form-row"><span>Resumen de la corrección</span><textarea id="review-resolution-summary" class="input review-resolution-textarea" rows="4" maxlength="1000" placeholder="Qué se corrigió o verificó"></textarea></label>
+      <div class="review-flag-close-actions"><button class="btn primary" type="submit">Guardar como parchada</button><button class="btn ghost" type="button" data-close-review-flag>Cancelar</button></div>
+      <div id="resolve-review-flag-error" class="error-msg"></div>
+    </form>`;
+    document.body.appendChild(modal);
+    const close = () => closeReviewFlagDialog();
+    modal.querySelectorAll('[data-close-review-flag]').forEach(btn => btn.onclick = close);
+    modal.onclick = ev => { if (ev.target === modal) close(); };
+    const escapeHandler = ev => { if (ev.key === 'Escape') close(); };
+    modal._escapeHandler = escapeHandler;
+    document.addEventListener('keydown', escapeHandler);
+    modal.querySelector('#resolve-review-flag-form').onsubmit = async ev => {
+      ev.preventDefault();
+      const patchId = modal.querySelector('#review-patch-id').value.trim();
+      const summary = modal.querySelector('#review-resolution-summary').value.trim();
+      const errorNode = modal.querySelector('#resolve-review-flag-error');
+      if (!patchId) { errorNode.textContent = 'Escribe el identificador del parche.'; return; }
+      modal.querySelectorAll('button,input,textarea').forEach(node => node.disabled = true);
+      const ok = await resolveQuestionReviewFlag(questionId, patchId, summary);
+      if (!ok) {
+        modal.querySelectorAll('button,input,textarea').forEach(node => node.disabled = false);
+        errorNode.textContent = 'No se pudo registrar el parche.';
+        return;
+      }
+      close();
+      if (typeof onResolved === 'function') onResolved();
+    };
+    setTimeout(() => modal.querySelector('#review-patch-id')?.focus(), 0);
   }
 
   function bindReviewFlagButtons(root = document) {
@@ -712,7 +963,8 @@
       activeSessions = localSessions().filter(s => s.status === 'active');
       profile = localProfile();
       memoryStates = localMemory();
-      reviewFlags = localReviewFlags();
+      reviewFlagHistory = localReviewFlags();
+      reviewFlags = activeReviewFlagRows(reviewFlagHistory);
       rebuildReviewFlagMap();
       rebuildMemoryMap();
       await reconcileMemoryFromAttempts();
@@ -855,13 +1107,14 @@
     if (aRes.error) { renderLogin(`Error al cargar progreso: ${aRes.error.message}`); return; }
     if (pRes.error) { renderFatal(`Falta aplicar la migración v0.5 en Supabase: ${pRes.error.message}`); return; }
     if (mRes.error) { renderFatal(`Falta aplicar la migración v0.5 en Supabase: ${mRes.error.message}`); return; }
-    if (fRes.error) { renderFatal(`Falta aplicar la migración v0.6.17 de flags de auditoría en Supabase: ${fRes.error.message}`); return; }
+    if (fRes.error) { renderFatal(`Falta aplicar la migración v1.0.0 de trazabilidad de flags en Supabase: ${fRes.error.message}`); return; }
 
     questions = normalizeQuestionCorpus(qRes.data || []);
     rebuildCorpusRentability();
     attempts = aRes.data || [];
     memoryStates = mRes.data || [];
-    reviewFlags = fRes.data || [];
+    reviewFlagHistory = fRes.data || [];
+    reviewFlags = activeReviewFlagRows(reviewFlagHistory);
     rebuildReviewFlagMap();
     rebuildMemoryMap();
 
@@ -2870,7 +3123,7 @@
       sessionRow = data;
       activeSessions.unshift(data);
     } else {
-      sessionRow = { id: crypto.randomUUID(), mode: 'exam', title: config.title, config, question_ids: selected.map(q=>q.id), state, status:'active', updated_at:new Date().toISOString() };
+      sessionRow = { id: makeUuid(), mode: 'exam', title: config.title, config, question_ids: selected.map(q=>q.id), state, status:'active', updated_at:new Date().toISOString() };
       activeSessions.unshift(sessionRow); saveLocalSessions();
     }
 
@@ -3266,7 +3519,9 @@
   }
 
   function optionList(q) {
-    return ['A','B','C','D','E'].filter(l => q[`option_${l.toLowerCase()}`]).map(l => ({ letter:l, text:q[`option_${l.toLowerCase()}`] }));
+    return ['A','B','C','D','E']
+      .map(letter => ({ letter, text:cleanOptionText(q?.[`option_${letter.toLowerCase()}`]) }))
+      .filter(option => option.text);
   }
 
   function optionButton(o, selected) {
@@ -3292,8 +3547,10 @@
   }
 
   function frameworkHtml(text) {
-    if (!text) return '';
-    return `<div class="framework">${esc(text).split('\n').map(line => `<div>${line}</div>`).join('')}</div>`;
+    const content = cleanEditorialText(text);
+    if (!content) return '';
+    const lines = content.split('\n').map(line => line.trim()).filter(Boolean);
+    return lines.length ? `<div class="framework">${lines.map(line => `<div>${esc(line)}</div>`).join('')}</div>` : '';
   }
 
   function bindPostAnswerUncertainButton(feedbackMeta, q, selected) {
@@ -3332,15 +3589,16 @@
 
     const selectedDisplayLetter = selected ? displayLetterFor(selected) : null;
     const officialDisplayLetter = displayLetterFor(q?.official_answer);
-    const correctText = q?.correct_explanation || 'La explicación detallada de esta clave aún no está disponible en el registro cargado.';
+    const correctText = cleanEditorialText(q?.correct_explanation);
     const distractors = feedbackOptions
       .filter(o => (o.sourceLetter || o.letter) !== q?.official_answer)
       .map(o => {
         const sourceLetter = o.sourceLetter || o.letter;
         const key = typeof sourceLetter === 'string' ? sourceLetter.toLowerCase() : '';
-        const reason = key ? q?.[`why_not_${key}`] : '';
-        return `<p><strong>${esc(o.letter)}. ${esc(o.text)}:</strong> ${esc(reason || 'Sin explicación específica cargada para esta alternativa.')}</p>`;
-      }).join('');
+        const reason = cleanEditorialText(key ? q?.[`why_not_${key}`] : '');
+        return reason ? `<p><strong>${esc(o.letter)}. ${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
+      }).filter(Boolean).join('');
+    const quickReference = referenceQuickHtml(q);
 
     const postMarkAvailable = Boolean(feedbackMeta.attemptId) && selected != null && feedbackMeta.allowPostMark !== false;
     const alreadyUncertain = Boolean(feedbackMeta.wasUncertainAtAnswer) || uncertainOptions.length > 0;
@@ -3354,14 +3612,14 @@
       ${selected ? `<p>Tu respuesta: <strong>${esc(selectedDisplayLetter)}. ${esc(optionTextFor(selected))}</strong></p>` : ''}
       <p class="answer-line">Respuesta correcta: ${esc(officialDisplayLetter)}. ${esc(q?.official_answer_text || optionTextFor(q?.official_answer))}</p>
       ${responseSeconds != null ? `<div class="feedback-time ${responseSeconds <= targetSeconds ? 'ok' : responseSeconds <= targetSeconds * 1.6 ? 'warn' : 'bad'}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
-      ${q?.exam_logic ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(q.exam_logic)}</p></div>` : ''}
-      ${q?.comparison_framework ? `<div class="explain-block"><h4>📊 ${esc(q.comparison_title || 'Comparación clave')}</h4>${frameworkHtml(q.comparison_framework)}</div>` : ''}
-      <details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>
-      <details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>
-      ${q?.common_trap ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(q.common_trap)}</p></div>` : ''}
-      ${q?.abbreviations ? `<div class="explain-block"><h4>🔤 Siglas y términos</h4><p>${esc(q.abbreviations)}</p></div>` : ''}
-      ${q?.exam_pearl ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(q.exam_pearl)}</p></div>` : ''}
-      ${q?.memory_hook ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(q.memory_hook)}</p></div>` : ''}
+      ${auditEditorialHtml(q)}
+      ${hasEditorialText(q?.exam_logic) ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(cleanEditorialText(q.exam_logic))}</p></div>` : ''}
+      ${correctText ? `<details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>` : ''}
+      ${distractors ? `<details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>` : ''}
+      ${hasEditorialText(q?.common_trap) ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(cleanEditorialText(q.common_trap))}</p></div>` : ''}
+      ${hasEditorialText(q?.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(cleanEditorialText(q.exam_pearl))}</p></div>` : ''}
+      ${hasEditorialText(q?.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(cleanEditorialText(q.memory_hook))}</p></div>` : ''}
+      ${quickReference}
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
         <div>
@@ -3416,13 +3674,15 @@
       : `${responseSeconds < 10 ? responseSeconds.toFixed(1) : Math.round(responseSeconds)} s`;
     const postMarkAvailable = Boolean(feedbackMeta.attemptId) && selected != null && (!reviewOnly || feedbackMeta.allowPostMark);
     const alreadyUncertain = Boolean(feedbackMeta.wasUncertainAtAnswer) || uncertainOptions.length > 0;
+    const correctText = cleanEditorialText(q.correct_explanation);
     const distractors = feedbackOptions
       .filter(o => (o.sourceLetter || o.letter) !== q.official_answer)
       .map(o => {
         const sourceLetter = o.sourceLetter || o.letter;
-        const reason = q[`why_not_${sourceLetter.toLowerCase()}`];
-        return reason ? `<p><strong>${o.letter}. ${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
-      }).join('');
+        const reason = cleanEditorialText(q[`why_not_${sourceLetter.toLowerCase()}`]);
+        return reason ? `<p><strong>${esc(o.letter)}. ${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
+      }).filter(Boolean).join('');
+    const quickReference = referenceQuickHtml(q);
 
     target.innerHTML = `<div class="feedback">
       <h3>${feedbackMeta.didNotKnow ? '🤷 No sabía' : timedOut ? '⏱ Tiempo agotado' : feedbackMeta.omitted ? '— Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
@@ -3430,22 +3690,21 @@
       <p class="answer-line">Respuesta correcta: ${esc(officialDisplayLetter)}. ${esc(q.official_answer_text)}</p>
       ${responseSeconds != null ? `<div class="feedback-time ${timeState}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
 
-      ${observed(q) ? `<div class="explain-block audit-box"><h4>⚠ Auditoría médica</h4><p><strong>Pregunta histórica observada: se conserva la clave oficial, pero no cuenta en dominio por defecto.</strong></p><p>${esc(q.audit_current_assessment || q.update_alert || '')}</p><p><strong>Criterio actual:</strong> ${esc(q.audit_current_answer || '')}</p></div>` : caveat(q) ? `<div class="explain-block"><h4>⚠ Precisión clínica</h4><p>${esc(q.audit_current_assessment || q.update_alert || '')}</p></div>` : ''}
+      ${auditEditorialHtml(q)}
 
       ${uncertainOptions.length ? `<div class="explain-block uncertainty-box"><h4>❓ Alternativas que marcaste como dudosas</h4><p>Esta pregunta se programará antes en tu repaso aunque la hayas acertado.</p>${uncertainOptions.map(letter => {
         const text = q[`option_${letter.toLowerCase()}`] || '';
-        const reason = letter === q.official_answer ? (q.correct_explanation || '') : (q[`why_not_${letter.toLowerCase()}`] || '');
+        const reason = cleanEditorialText(letter === q.official_answer ? q.correct_explanation : q[`why_not_${letter.toLowerCase()}`]);
         const displayLetter = displayLetterFor(letter);
         return `<p><strong>${esc(displayLetter)}. ${esc(text)}</strong>${reason ? ` — ${esc(reason)}` : ''}</p>`;
       }).join('')}</div>` : ''}
-      ${q.exam_logic ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(q.exam_logic)}</p></div>` : ''}
-      ${q.comparison_framework ? `<div class="explain-block"><h4>📊 ${esc(q.comparison_title || 'Comparación clave')}</h4>${frameworkHtml(q.comparison_framework)}</div>` : ''}
-      <details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(q.correct_explanation || '')}</p></details>
-      <details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>
-      ${q.common_trap ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(q.common_trap)}</p></div>` : ''}
-      ${q.abbreviations ? `<div class="explain-block"><h4>🔤 Siglas y términos</h4><p>${esc(q.abbreviations)}</p></div>` : ''}
-      ${q.exam_pearl ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(q.exam_pearl)}</p></div>` : ''}
-      ${q.memory_hook ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(q.memory_hook)}</p></div>` : ''}
+      ${hasEditorialText(q.exam_logic) ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(cleanEditorialText(q.exam_logic))}</p></div>` : ''}
+      ${correctText ? `<details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>` : ''}
+      ${distractors ? `<details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>` : ''}
+      ${hasEditorialText(q.common_trap) ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(cleanEditorialText(q.common_trap))}</p></div>` : ''}
+      ${hasEditorialText(q.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(cleanEditorialText(q.exam_pearl))}</p></div>` : ''}
+      ${hasEditorialText(q.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(cleanEditorialText(q.memory_hook))}</p></div>` : ''}
+      ${quickReference}
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
         <div>
@@ -3587,7 +3846,7 @@
       if (error) { alert(`No se pudo guardar el intento: ${error.message}`); return null; }
       saved = data; attempts.push(data);
     } else {
-      saved = { id: crypto.randomUUID(), ...attempt };
+      saved = { id: makeUuid(), ...attempt };
       attempts.push(saved); saveLocalAttempts();
     }
     await applyAttemptsToMemory([saved]);
@@ -3603,7 +3862,7 @@
       if (error) { alert(`No se pudieron guardar todos los intentos: ${error.message}`); return []; }
       saved = data || []; attempts.push(...saved);
     } else {
-      saved = payload.map(a => ({ id:crypto.randomUUID(), ...a }));
+      saved = payload.map(a => ({ id:makeUuid(), ...a }));
       attempts.push(...saved); saveLocalAttempts();
     }
     await applyAttemptsToMemory(saved);
@@ -3826,41 +4085,61 @@
     document.querySelectorAll('[data-history-attempt]').forEach(btn => btn.onclick = () => openHistoryAttempt(btn.dataset.historyAttempt,dateIso));
   }
 
-  function reviewFlagEntries(type = 'all') {
-    return reviewFlags
+  function reviewFlagEntries(type = 'all', view = 'open') {
+    const source = view === 'history'
+      ? reviewFlagHistory.filter(flag => reviewFlagStatus(flag) !== 'OPEN')
+      : reviewFlags;
+    return source
       .map(flag => ({ flag, q:questions.find(item => item.id === flag.question_id) }))
       .filter(item => item.q && (type === 'all' || item.flag.flag_type === type))
-      .sort((a,b) => new Date(b.flag.updated_at || 0) - new Date(a.flag.updated_at || 0));
+      .sort((a,b) => new Date(b.flag.resolved_at || b.flag.updated_at || 0) - new Date(a.flag.resolved_at || a.flag.updated_at || 0));
   }
 
-  function reviewFlagsReportText(type = 'all') {
-    const entries = reviewFlagEntries(type);
+  function reviewFlagStateMeta(flag = {}) {
+    const status = reviewFlagStatus(flag);
+    if (status === 'RESOLVED') return { label:'Parchada', icon:'✓', className:'ok' };
+    if (status === 'DISMISSED') return { label:'Retirada sin parche', icon:'—', className:'' };
+    return { label:'Pendiente', icon:'⚑', className:'warn' };
+  }
+
+  function reviewFlagsReportText(type = 'all', view = 'open') {
+    const entries = reviewFlagEntries(type, view);
     const lines = [
-      '# Preguntas marcadas para revisión',
+      view === 'history' ? '# Historial de observaciones cerradas' : '# Preguntas marcadas para revisión',
       `Total: ${entries.length}`,
+      `Versión de la app: ${APP_VERSION}`,
       '',
     ];
     entries.forEach(({ flag, q }, index) => {
       const meta = reviewFlagMeta(flag.flag_type);
+      const state = reviewFlagStateMeta(flag);
       const taxonomy = [q.area, q.specialty, q.topic, q.subtopic]
         .filter(Boolean)
         .filter((value, idx, arr) => idx === 0 || taxonomyKey(value) !== taxonomyKey(arr[idx-1]))
         .join(' → ');
       lines.push(`${index + 1}. ${meta.label} — ${q.id}`);
+      lines.push(`   Estado: ${state.label}`);
       lines.push(`   Fuente: ${questionSourceLabel(q)}`);
       lines.push(`   Taxonomía: ${taxonomy || 'Sin taxonomía'}`);
+      lines.push(`   Revisión de contenido al marcar: ${flag.content_revision || 'No registrada'}`);
+      lines.push(`   Marcada: ${flag.created_at || flag.updated_at || 'No registrado'}`);
+      if (reviewFlagStatus(flag) === 'RESOLVED') {
+        lines.push(`   Parche: ${flag.resolved_by_patch_id || 'No registrado'}`);
+        lines.push(`   Resolución: ${flag.resolution_summary || 'Sin resumen'}`);
+        lines.push(`   Cerrada: ${flag.resolved_at || flag.updated_at || 'No registrado'}`);
+      }
       lines.push(`   Enunciado: ${String(q.question || '').replace(/\s+/g, ' ').trim()}`);
       lines.push('');
     });
     return lines.join('\n').trim();
   }
 
-  async function copyReviewFlagsReport(type = 'all') {
-    const text = reviewFlagsReportText(type);
-    if (!text || !reviewFlagEntries(type).length) return;
+  async function copyReviewFlagsReport(type = 'all', view = 'open') {
+    const text = reviewFlagsReportText(type, view);
+    if (!text || !reviewFlagEntries(type, view).length) return;
     try {
       await navigator.clipboard.writeText(text);
-      alert('Lista copiada. Ya puedes pegarla directamente en el chat.');
+      alert(view === 'history' ? 'Historial copiado.' : 'Lista copiada. Ya puedes pegarla directamente en el chat.');
     } catch {
       const area = document.createElement('textarea');
       area.value = text;
@@ -3868,7 +4147,7 @@
       area.select();
       document.execCommand('copy');
       area.remove();
-      alert('Lista copiada. Ya puedes pegarla directamente en el chat.');
+      alert(view === 'history' ? 'Historial copiado.' : 'Lista copiada. Ya puedes pegarla directamente en el chat.');
     }
   }
 
@@ -3877,12 +4156,13 @@
     return `"${text.replaceAll('"', '""')}"`;
   }
 
-  function downloadReviewFlagsCsv(type = 'all') {
-    const entries = reviewFlagEntries(type);
+  function downloadReviewFlagsCsv(type = 'all', view = 'open') {
+    const entries = reviewFlagEntries(type, view);
     if (!entries.length) return;
     const rows = [
-      ['flag','id','año','prueba','numero_pregunta','area','especialidad','tema','entidad','enunciado','actualizado_en'],
+      ['estado','flag','id','año','prueba','numero_pregunta','area','especialidad','tema','entidad','enunciado','content_revision','creado_en','actualizado_en','resuelto_en','patch_id','resumen_resolucion','registro_anterior'],
       ...entries.map(({ flag, q }) => [
+        reviewFlagStateMeta(flag).label,
         reviewFlagMeta(flag.flag_type).label,
         q.id,
         q.year,
@@ -3893,60 +4173,87 @@
         q.topic,
         q.subtopic,
         q.question,
+        flag.content_revision,
+        flag.created_at,
         flag.updated_at,
+        flag.resolved_at,
+        flag.resolved_by_patch_id,
+        flag.resolution_summary,
+        flag.previous_flag_id,
       ]),
     ];
     const csv = '\ufeff' + rows.map(row => row.map(csvCell).join(',')).join('\r\n');
     const url = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = `preguntas_marcadas_revision_${isoDateLocal()}.csv`;
+    link.download = `${view === 'history' ? 'historial_observaciones' : 'preguntas_marcadas_revision'}_${isoDateLocal()}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
   }
 
-  function renderReviewFlagsPage(type = 'all') {
+  function renderReviewFlagsPage(type = 'all', view = 'open') {
     clearTimer();
     scrollPageTop();
-    const entries = reviewFlagEntries(type);
+    const entries = reviewFlagEntries(type, view);
     const counts = Object.fromEntries(Object.keys(REVIEW_FLAG_TYPES).map(key => [key, reviewFlags.filter(row => row.flag_type === key).length]));
+    const closedCount = reviewFlagHistory.filter(row => reviewFlagStatus(row) !== 'OPEN').length;
+    const isHistory = view === 'history';
+
     app.innerHTML = `<main class="shell">${topbar('Preguntas para revisar', true)}
       <section class="panel review-flags-hero">
-        <div><h2>Auditoría personal del banco</h2><p class="muted">Estos flags son independientes de tus respuestas, dudas y memoria adaptativa. Copia la lista para enviarla al chat o expórtala como archivo CSV.</p></div>
-        <div class="review-flags-actions"><button id="copy-review-flags" class="btn primary" type="button" ${entries.length?'':'disabled'}>Copiar lista</button><button id="download-review-flags" class="btn" type="button" ${entries.length?'':'disabled'}>Descargar CSV</button></div>
+        <div><h2>${isHistory ? 'Historial de auditoría' : 'Auditoría personal del banco'}</h2><p class="muted">${isHistory ? 'Las observaciones cerradas se conservan para saber qué se parchó, cuándo y con qué identificador.' : 'Los flags son independientes de tus respuestas y memoria. Al registrar un parche salen de esta cola, pero no se borran.'}</p></div>
+        <div class="review-flags-actions"><button id="copy-review-flags" class="btn primary" type="button" ${entries.length?'':'disabled'}>Copiar ${isHistory ? 'historial' : 'lista'}</button><button id="download-review-flags" class="btn" type="button" ${entries.length?'':'disabled'}>Descargar CSV</button></div>
       </section>
+      <div class="review-flags-tabs" role="tablist" aria-label="Estado de observaciones">
+        <button class="btn ${isHistory ? 'ghost' : 'primary'}" type="button" data-review-view="open">Pendientes (${reviewFlags.length})</button>
+        <button class="btn ${isHistory ? 'primary' : 'ghost'}" type="button" data-review-view="history">Historial (${closedCount})</button>
+      </div>
       <section class="kpis review-flags-kpis">
-        <div class="kpi"><div class="value">${reviewFlags.length}</div><div class="label">Total</div></div>
+        <div class="kpi"><div class="value">${reviewFlags.length}</div><div class="label">Pendientes</div></div>
         <div class="kpi"><div class="value">${counts.statement || 0}</div><div class="label">Enunciado</div></div>
         <div class="kpi"><div class="value">${counts.explanation || 0}</div><div class="label">Explicación</div></div>
         <div class="kpi"><div class="value">${counts.general || 0}</div><div class="label">General</div></div>
+        <div class="kpi"><div class="value">${closedCount}</div><div class="label">Historial</div></div>
       </section>
       <section class="panel review-flags-list-panel">
-        <div class="section-head review-flags-filter-head"><div><h2>Lista marcada</h2><p class="muted">Una pregunta conserva un solo motivo activo; puedes cambiarlo desde la corrección.</p></div>
+        <div class="section-head review-flags-filter-head"><div><h2>${isHistory ? 'Observaciones cerradas' : 'Lista marcada'}</h2><p class="muted">${isHistory ? 'Una nueva marca sobre la misma pregunta crea otro registro enlazado.' : 'Una pregunta conserva un solo motivo activo; puedes cambiarlo desde la corrección.'}</p></div>
           <label class="review-flags-filter"><span>Mostrar</span><select id="review-flags-type" class="input"><option value="all" ${type==='all'?'selected':''}>Todos</option><option value="statement" ${type==='statement'?'selected':''}>Revisar enunciado</option><option value="explanation" ${type==='explanation'?'selected':''}>Revisar explicación</option><option value="general" ${type==='general'?'selected':''}>Revisar</option></select></label>
         </div>
         <div class="review-flag-card-list">${entries.length ? entries.map(({ flag, q }) => {
           const meta = reviewFlagMeta(flag.flag_type);
+          const state = reviewFlagStateMeta(flag);
           const entity = cleanTaxonomyLabel(q.canonical_entity || q.subtopic);
-          return `<article class="review-flag-card">
-            <div class="review-flag-card-head"><div class="meta-line"><span class="tag warn">${meta.icon} ${esc(meta.label)}</span>${questionSourceTag(q)}<span class="tag">${esc(q.id)}</span></div><button class="btn small danger ghost-danger" type="button" data-remove-review-flag-list="${esc(q.id)}">Quitar</button></div>
+          const historyHtml = isHistory ? `<div class="review-flag-resolution">
+            <div><span>Estado</span><strong>${state.icon} ${esc(state.label)}</strong></div>
+            ${flag.resolved_by_patch_id ? `<div><span>Parche</span><strong>${esc(flag.resolved_by_patch_id)}</strong></div>` : ''}
+            ${flag.content_revision ? `<div><span>Revisión marcada</span><strong>${esc(flag.content_revision)}</strong></div>` : ''}
+            <div><span>Cierre</span><strong>${esc(flag.resolved_at ? new Date(flag.resolved_at).toLocaleString('es-PE') : 'Sin fecha')}</strong></div>
+            ${flag.resolution_summary ? `<p>${esc(flag.resolution_summary)}</p>` : ''}
+          </div>` : '';
+          return `<article class="review-flag-card ${isHistory ? 'closed' : ''}">
+            <div class="review-flag-card-head"><div class="meta-line"><span class="tag ${state.className}">${state.icon} ${esc(state.label)}</span><span class="tag warn">${meta.icon} ${esc(meta.label)}</span>${questionSourceTag(q)}<span class="tag">${esc(q.id)}</span></div>${isHistory ? '' : `<div class="review-flag-card-actions"><button class="btn small primary" type="button" data-resolve-review-flag-list="${esc(q.id)}">Registrar parche</button><button class="btn small danger ghost-danger" type="button" data-remove-review-flag-list="${esc(q.id)}">Quitar</button></div>`}</div>
             <p class="review-flag-question">${esc(q.question)}</p>
             <p class="muted review-flag-taxonomy">${esc([q.area, q.specialty, q.topic, entity].filter(Boolean).join(' → '))}</p>
+            ${historyHtml}
           </article>`;
-        }).join('') : '<div class="empty">No hay preguntas marcadas con este filtro.</div>'}</div>
+        }).join('') : `<div class="empty">${isHistory ? 'Todavía no hay observaciones cerradas con este filtro.' : 'No hay preguntas pendientes con este filtro.'}</div>`}</div>
       </section>
     </main>`;
     attachTopbar();
-    document.getElementById('review-flags-type').onchange = ev => renderReviewFlagsPage(ev.target.value);
-    document.getElementById('copy-review-flags').onclick = () => copyReviewFlagsReport(type);
-    document.getElementById('download-review-flags').onclick = () => downloadReviewFlagsCsv(type);
+    document.querySelectorAll('[data-review-view]').forEach(btn => btn.onclick = () => renderReviewFlagsPage(type, btn.dataset.reviewView));
+    document.getElementById('review-flags-type').onchange = ev => renderReviewFlagsPage(ev.target.value, view);
+    document.getElementById('copy-review-flags').onclick = () => copyReviewFlagsReport(type, view);
+    document.getElementById('download-review-flags').onclick = () => downloadReviewFlagsCsv(type, view);
+    document.querySelectorAll('[data-resolve-review-flag-list]').forEach(btn => {
+      btn.onclick = () => showResolveReviewFlagDialog(btn.dataset.resolveReviewFlagList, () => renderReviewFlagsPage(type, view));
+    });
     document.querySelectorAll('[data-remove-review-flag-list]').forEach(btn => {
       btn.onclick = async () => {
         const questionId = btn.dataset.removeReviewFlagList;
-        if (!confirm(`¿Quitar el flag de ${questionId}?`)) return;
-        if (await removeQuestionReviewFlag(questionId)) renderReviewFlagsPage(type);
+        if (!confirm(`¿Quitar el flag de ${questionId} sin parche? El retiro quedará en el historial.`)) return;
+        if (await removeQuestionReviewFlag(questionId)) renderReviewFlagsPage(type, view);
       };
     });
   }
