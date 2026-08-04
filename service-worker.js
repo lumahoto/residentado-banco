@@ -1,9 +1,15 @@
-const CACHE = "residentado-v1-0-0";
+const CACHE = "residentado-v1-1-0-rc2";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
+  "./session-core.js",
+  "./session-storage.js",
+  "./question-parser.js",
+  "./w3-tools.js",
+  "./w4-data.js",
+  "./tts_catalog.json",
   "./config.js",
   "./pilot-data.js",
   "./manifest.webmanifest",

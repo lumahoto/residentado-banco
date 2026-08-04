@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = '1.0.0';
+  const APP_VERSION = '1.1.0-rc2';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
@@ -14,6 +14,7 @@
   let questions = [];
   let attempts = [];
   let activeSessions = [];
+  let completedSessions = [];
   let profile = null;
   let memoryStates = [];
   let memoryByQuestion = new Map();
@@ -26,9 +27,29 @@
   let currentExam = null;
   let examQuestionEnteredAt = 0;
   let reviewContext = null;
+  let specificQueryDraft = null;
   let reviewFlags = [];
   let reviewFlagHistory = [];
   let reviewFlagByQuestion = new Map();
+
+  const SessionCore = window.ResidentadoSessionCore || {};
+  const QuestionParser = window.ResidentadoQuestionParser || {};
+  const W3Tools = window.ResidentadoW3Tools || {};
+  const W4Data = window.ResidentadoW4Data || {};
+  let ttsCatalog = { catalogVersion:'unloaded', topics:[] };
+  let ttsCatalogByTopic = new Map();
+  let datasetManifest = null;
+  let historyPage = 0;
+  let historyHasMore = true;
+  const HISTORY_PAGE_SIZE = 50;
+  let sessionStore = null;
+  let sessionActivityStartedAt = 0;
+  let sessionHiddenStartedAt = 0;
+  let sessionSaveTimer = null;
+  let sessionSaveChain = Promise.resolve();
+  let sessionActionInProgress = false;
+  let sessionNavigationGuardActive = false;
+  let deviceInstanceId = null;
 
   const observed = q => String(q.audit_status || '').startsWith('OBSERVADA');
   const caveat = q => q.audit_status === 'VALIDADA_CON_CAVEAT';
@@ -61,7 +82,7 @@
   const hasEditorialText = value => Boolean(cleanEditorialText(value));
 
   function makeUuid() {
-    if (globalThis.crypto?.randomUUID) return globalThis.makeUuid();
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
     const bytes = new Uint8Array(16);
     if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
     else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
@@ -69,6 +90,492 @@
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     const hex = [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
     return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+  }
+
+
+  function sessionNowIso() { return new Date().toISOString(); }
+
+  async function initializeSessionStorage() {
+    try {
+      sessionStore = window.ResidentadoSessionStorage?.createStore?.() || null;
+      if (sessionStore) {
+        await sessionStore.open();
+        await sessionStore.migrateLegacyLocalStorage();
+        const existing = await sessionStore.getMetadata('deviceInstanceId');
+        deviceInstanceId = existing?.value || makeUuid();
+        if (!existing?.value) await sessionStore.setMetadata('deviceInstanceId', deviceInstanceId);
+      }
+    } catch (error) {
+      console.warn('Session storage unavailable; using legacy fallback.', error);
+      sessionStore = null;
+      deviceInstanceId = makeUuid();
+    }
+  }
+
+  function normalizeSessionState(state = {}) {
+    return SessionCore.normalizeState ? SessionCore.normalizeState(state) : state;
+  }
+
+  function sessionResponse(state, questionId) {
+    const value = state?.responses?.[questionId];
+    if (typeof value === 'string') return { selected:value, didNotKnow:false, timedOut:false };
+    return value && typeof value === 'object' ? value : { selected:null, didNotKnow:false, timedOut:false };
+  }
+
+  function sessionSelected(state, questionId) {
+    return SessionCore.responseSelected
+      ? SessionCore.responseSelected(state, questionId)
+      : (sessionResponse(state, questionId).selected ?? null);
+  }
+
+  function responseCountsAsAnswered(value) {
+    if (SessionCore.responseAnswered) return SessionCore.responseAnswered(value);
+    const row = typeof value === 'string' ? { selected:value } : (value || {});
+    return row.selected != null || Boolean(row.didNotKnow) || Boolean(row.timedOut);
+  }
+
+  function answeredIdsFor(row, state) {
+    if (SessionCore.answeredQuestionIds) return SessionCore.answeredQuestionIds(row?.question_ids || [], state || {});
+    return (row?.question_ids || []).filter(id => responseCountsAsAnswered(state?.responses?.[id]));
+  }
+
+  function ensureClientAttemptId(holder, questionId) {
+    if (!holder) return makeUuid();
+    const container = holder.state && holder === currentExam ? holder.state : holder;
+    container.clientAttemptIdsByQuestion ||= {};
+    if (!container.clientAttemptIdsByQuestion[questionId]) container.clientAttemptIdsByQuestion[questionId] = makeUuid();
+    return container.clientAttemptIdsByQuestion[questionId];
+  }
+
+  function sessionAttemptMeta(holder, questionId) {
+    const index = Math.max(0, (holder?.questions || []).findIndex(question => question.id === questionId));
+    return {
+      sessionId:holder?.row?.id || null,
+      sessionQuestionIndex:index,
+      clientAttemptId:ensureClientAttemptId(holder, questionId),
+    };
+  }
+
+  function currentSessionOwner() {
+    if (currentStudy?.row) return { kind:'study', holder:currentStudy, row:currentStudy.row, state:studyStateSnapshot() };
+    if (currentExam?.row) return { kind:'exam', holder:currentExam, row:currentExam.row, state:normalizeSessionState(currentExam.state) };
+    return null;
+  }
+
+  function studyStateSnapshot() {
+    if (!currentStudy) return normalizeSessionState({});
+    if (SessionCore.studyToState) return SessionCore.studyToState(currentStudy, deviceInstanceId);
+    return normalizeSessionState({
+      schemaVersion:1,
+      currentIndex:currentStudy.index || 0,
+      responses:currentStudy.responses || {},
+      scratch:currentStudy.scratch || {},
+      marked:currentStudy.marked || {},
+      optionOrders:currentStudy.optionOrders || {},
+      durations:currentStudy.durations || {},
+      answerTimes:currentStudy.answerTimes || {},
+      timeSpent:currentStudy.timeSpent || {},
+      attemptIdsByQuestion:currentStudy.attemptIdsByQuestion || {},
+      clientAttemptIdsByQuestion:currentStudy.clientAttemptIdsByQuestion || {},
+      totalRemaining:currentStudy.totalRemaining ?? null,
+      activeTimeMs:currentStudy.activeTimeMs || 0,
+      pausedTimeMs:currentStudy.pausedTimeMs || 0,
+      lastVisibleAt:currentStudy.lastVisibleAt || null,
+      lastSavedAt:sessionNowIso(),
+      deviceInstanceId,
+    });
+  }
+
+  function applyStateToStudy(study, state) {
+    const normalized = normalizeSessionState(state);
+    study.index = Math.min(Math.max(0, normalized.currentIndex || 0), Math.max(0, study.questions.length - 1));
+    study.responses = normalized.responses || {};
+    study.scratch = normalized.scratch || {};
+    study.marked = normalized.marked || {};
+    study.durations = normalized.durations || {};
+    study.answerTimes = normalized.answerTimes || {};
+    study.timeSpent = normalized.timeSpent || {};
+    study.optionOrders = Object.keys(normalized.optionOrders || {}).length
+      ? normalized.optionOrders
+      : createOptionOrders(study.questions, study.config.shuffleOptions !== false);
+    study.totalRemaining = normalized.totalRemaining ?? (study.config.timeMode === 'total' ? study.config.totalSeconds : null);
+    study.attemptIdsByQuestion = normalized.attemptIdsByQuestion || {};
+    study.clientAttemptIdsByQuestion = normalized.clientAttemptIdsByQuestion || {};
+    study.activeTimeMs = normalized.activeTimeMs || 0;
+    study.pausedTimeMs = normalized.pausedTimeMs || 0;
+    study.lastVisibleAt = normalized.lastVisibleAt || null;
+    study.deviceInstanceId = normalized.deviceInstanceId || deviceInstanceId;
+    return study;
+  }
+
+  function upsertSessionInMemory(row) {
+    if (!row?.id) return;
+    const target = row.status === 'completed' ? completedSessions : activeSessions;
+    const other = row.status === 'completed' ? activeSessions : completedSessions;
+    const index = target.findIndex(item => item.id === row.id);
+    if (index >= 0) target[index] = row;
+    else target.unshift(row);
+    const otherIndex = other.findIndex(item => item.id === row.id);
+    if (otherIndex >= 0) other.splice(otherIndex, 1);
+  }
+
+  function removeActiveSessionInMemory(sessionId) {
+    activeSessions = activeSessions.filter(row => row.id !== sessionId);
+  }
+
+  async function saveSessionShadow(row, syncStatus = 'pending') {
+    if (!row?.id) return row;
+    upsertSessionInMemory(row);
+    if (sessionStore) {
+      try { await sessionStore.putSession(row, syncStatus); }
+      catch (error) { console.warn('Could not save local session shadow.', error); }
+    } else if (!cloudConfigured) saveLocalSessions();
+    return row;
+  }
+
+  function buildNewSessionRow(mode, selected, config, state) {
+    const now = sessionNowIso();
+    return {
+      id: makeUuid(),
+      user_id: user?.id || 'local-user',
+      mode,
+      title: config.title || (mode === 'exam' ? 'Simulacro' : 'Práctica'),
+      config,
+      question_ids: selected.map(question => question.id),
+      state: normalizeSessionState(state),
+      status:'active',
+      is_partial:false,
+      closed_reason:null,
+      answered_count:0,
+      planned_count:selected.length,
+      active_time_ms:0,
+      paused_time_ms:0,
+      last_synced_at:null,
+      state_schema_version:1,
+      state_revision:0,
+      client_app_version:APP_VERSION,
+      created_at:now,
+      updated_at:now,
+      completed_at:null,
+    };
+  }
+
+  async function createPersistentSession(mode, selected, config, state) {
+    let row = buildNewSessionRow(mode, selected, config, state);
+    await saveSessionShadow(row, cloudConfigured ? 'pending' : 'local');
+    if (!cloudConfigured) return row;
+
+    const insertRow = {
+      id:row.id,
+      user_id:user.id,
+      mode:row.mode,
+      title:row.title,
+      config:row.config,
+      question_ids:row.question_ids,
+      state:row.state,
+      status:'active',
+      is_partial:false,
+      closed_reason:null,
+      answered_count:0,
+      planned_count:row.planned_count,
+      active_time_ms:0,
+      paused_time_ms:0,
+      state_schema_version:1,
+      state_revision:0,
+      client_app_version:APP_VERSION,
+      updated_at:row.updated_at,
+    };
+    const { data, error } = await supa.from('practice_sessions').insert(insertRow).select().single();
+    if (error) {
+      await sessionStore?.queueOperation('CREATE_SESSION', insertRow, `CREATE_SESSION:${row.id}`);
+      row = { ...row, syncStatus:'offline', syncError:error.message };
+      await saveSessionShadow(row, 'offline');
+      alert(`La sesión quedó guardada en este dispositivo, pero no se sincronizó con Supabase: ${error.message}`);
+      return row;
+    }
+    row = { ...data, syncStatus:'synced' };
+    await saveSessionShadow(row, 'synced');
+    return row;
+  }
+
+  async function processSessionOutbox() {
+    if (!cloudConfigured || !user || !sessionStore || !navigator.onLine) return { processed:0, remaining:0 };
+    const rows = (await sessionStore.listOutbox()).slice().sort((a,b) => Number(a.id || 0) - Number(b.id || 0));
+    let processed = 0;
+    for (const item of rows) {
+      let ok = false;
+      try {
+        if (item.type === 'CREATE_SESSION') {
+          const payload = { ...item.payload, user_id:user.id };
+          const { data, error } = await supa.from('practice_sessions').upsert(payload, { onConflict:'id' }).select().single();
+          if (!error && data) {
+            await saveSessionShadow({ ...data, syncStatus:'synced' }, 'synced');
+            ok = true;
+          }
+        } else if (item.type === 'UPSERT_SESSION') {
+          const p = item.payload || {};
+          const { data, error } = await supa.rpc('save_practice_session_state', {
+            p_session_id:p.sessionId,
+            p_expected_revision:Number(p.expectedRevision || 0),
+            p_state:p.state || {},
+            p_config:p.config || {},
+            p_answered_count:Number(p.answeredCount || 0),
+            p_active_time_ms:Number(p.activeTimeMs || 0),
+            p_paused_time_ms:Number(p.pausedTimeMs || 0),
+            p_client_app_version:APP_VERSION,
+            p_state_schema_version:1,
+          });
+          if (!error) {
+            const saved = Array.isArray(data) ? data[0] : data;
+            if (saved) await saveSessionShadow({ ...saved, syncStatus:'synced' }, 'synced');
+            ok = true;
+          }
+        } else if (item.type === 'INSERT_ATTEMPT') {
+          const payload = { ...item.payload, user_id:user.id };
+          const { data, error } = await supa.from('attempts')
+            .upsert(payload, { onConflict:'user_id,client_attempt_id' })
+            .select()
+            .single();
+          if (!error && data) {
+            const saved = { ...data, syncStatus:'synced' };
+            await saveAttemptShadow(saved, 'synced');
+            upsertAttemptInMemory(saved);
+            ok = true;
+          }
+        } else if (item.type === 'CLOSE_SESSION') {
+          const p = item.payload || {};
+          const { data, error } = await supa.from('practice_sessions')
+            .update(p.updatePayload || {})
+            .eq('id', p.sessionId)
+            .select()
+            .maybeSingle();
+          if (!error && data) {
+            await saveSessionShadow({ ...data, syncStatus:'synced' }, 'synced');
+            ok = true;
+          }
+        }
+      } catch (error) {
+        console.warn('Outbox operation failed.', item.type, error);
+      }
+      if (!ok) break;
+      await sessionStore.deleteOutbox(item.id);
+      processed += 1;
+    }
+    const remaining = (await sessionStore.listOutbox()).length;
+    return { processed, remaining };
+  }
+
+  function updateHolderFromSavedRow(owner, savedRow) {
+    if (!owner || !savedRow) return;
+    owner.holder.row = savedRow;
+    if (owner.kind === 'exam') owner.holder.state = normalizeSessionState(savedRow.state || owner.holder.state);
+  }
+
+  async function syncSessionOwner(owner) {
+    if (!owner?.row?.id) return owner?.row || null;
+    const state = normalizeSessionState(owner.kind === 'study' ? studyStateSnapshot() : owner.holder.state);
+    const now = sessionNowIso();
+    const answeredCount = answeredIdsFor(owner.row, state).length;
+    const row = {
+      ...owner.row,
+      state,
+      answered_count:answeredCount,
+      active_time_ms:state.activeTimeMs || 0,
+      paused_time_ms:state.pausedTimeMs || 0,
+      client_app_version:APP_VERSION,
+      state_schema_version:1,
+      updated_at:now,
+    };
+    owner.holder.row = row;
+    await saveSessionShadow(row, cloudConfigured ? 'pending' : 'local');
+    if (!cloudConfigured) return row;
+
+    const expectedRevision = Number(row.state_revision || 0);
+    const { data, error } = await supa.rpc('save_practice_session_state', {
+      p_session_id:row.id,
+      p_expected_revision:expectedRevision,
+      p_state:state,
+      p_config:row.config || {},
+      p_answered_count:answeredCount,
+      p_active_time_ms:state.activeTimeMs || 0,
+      p_paused_time_ms:state.pausedTimeMs || 0,
+      p_client_app_version:APP_VERSION,
+      p_state_schema_version:1,
+    });
+    if (error) {
+      const conflict = String(error.message || '').includes('SESSION_REVISION_CONFLICT_OR_NOT_ACTIVE') || String(error.code || '') === '40001';
+      const status = conflict ? 'conflict' : 'offline';
+      const pending = { ...row, syncStatus:status, syncError:error.message };
+      await saveSessionShadow(pending, status);
+      await sessionStore?.queueOperation('UPSERT_SESSION', {
+        sessionId:row.id,
+        expectedRevision,
+        state,
+        config:row.config || {},
+        answeredCount,
+        activeTimeMs:state.activeTimeMs || 0,
+        pausedTimeMs:state.pausedTimeMs || 0,
+      }, `UPSERT_SESSION:${row.id}`);
+      if (conflict) alert('Esta sesión cambió en otro dispositivo. Se conservó una copia local para evitar pérdida de respuestas.');
+      return pending;
+    }
+    const saved = Array.isArray(data) ? data[0] : data;
+    const synced = { ...(saved || row), syncStatus:'synced' };
+    updateHolderFromSavedRow(owner, synced);
+    await saveSessionShadow(synced, 'synced');
+    return synced;
+  }
+
+  function scheduleCurrentSessionSave({ immediate = false } = {}) {
+    const owner = currentSessionOwner();
+    if (!owner) return Promise.resolve(null);
+    clearTimeout(sessionSaveTimer);
+    const run = () => {
+      sessionSaveChain = sessionSaveChain
+        .catch(() => null)
+        .then(() => syncSessionOwner(currentSessionOwner() || owner));
+      return sessionSaveChain;
+    };
+    if (immediate) return run();
+    sessionSaveTimer = setTimeout(run, 650);
+    return Promise.resolve(owner.row);
+  }
+
+  async function flushCurrentSessionSave() {
+    clearTimeout(sessionSaveTimer);
+    sessionSaveTimer = null;
+    const owner = currentSessionOwner();
+    if (!owner) return null;
+    sessionSaveChain = sessionSaveChain.catch(() => null).then(() => syncSessionOwner(currentSessionOwner() || owner));
+    return sessionSaveChain;
+  }
+
+  function beginSessionActivity() {
+    if (document.visibilityState === 'hidden') {
+      sessionHiddenStartedAt = performance.now();
+      sessionActivityStartedAt = 0;
+      return;
+    }
+    sessionActivityStartedAt = performance.now();
+    sessionHiddenStartedAt = 0;
+  }
+
+  function accumulateSessionActivity() {
+    const owner = currentSessionOwner();
+    if (!owner) return;
+    const state = owner.kind === 'study' ? studyStateSnapshot() : normalizeSessionState(owner.holder.state);
+    const now = performance.now();
+    if (sessionActivityStartedAt) {
+      state.activeTimeMs += Math.max(0, Math.round(now - sessionActivityStartedAt));
+      sessionActivityStartedAt = now;
+    }
+    if (sessionHiddenStartedAt) {
+      state.pausedTimeMs += Math.max(0, Math.round(now - sessionHiddenStartedAt));
+      sessionHiddenStartedAt = now;
+    }
+    state.lastVisibleAt = document.visibilityState === 'hidden' ? null : sessionNowIso();
+    if (owner.kind === 'study') applyStateToStudy(owner.holder, state);
+    else owner.holder.state = state;
+  }
+
+  function endSessionActivity() {
+    accumulateSessionActivity();
+    sessionActivityStartedAt = 0;
+    sessionHiddenStartedAt = 0;
+  }
+
+  function installSessionLifecycleHooks() {
+    window.addEventListener('online', () => { processSessionOutbox().catch(() => {}); });
+    document.addEventListener('visibilitychange', () => {
+      const owner = currentSessionOwner();
+      if (!owner) return;
+      accumulateSessionActivity();
+      if (document.visibilityState === 'hidden') {
+        sessionActivityStartedAt = 0;
+        sessionHiddenStartedAt = performance.now();
+        scheduleCurrentSessionSave({ immediate:true });
+      } else {
+        sessionHiddenStartedAt = 0;
+        sessionActivityStartedAt = performance.now();
+      }
+    });
+    window.addEventListener('pagehide', () => {
+      accumulateSessionActivity();
+      scheduleCurrentSessionSave({ immediate:true });
+    });
+    window.addEventListener('beforeunload', event => {
+      if (!currentSessionOwner()) return;
+      accumulateSessionActivity();
+      scheduleCurrentSessionSave({ immediate:true });
+      event.preventDefault();
+      event.returnValue = '';
+    });
+    window.addEventListener('popstate', () => {
+      if (!sessionNavigationGuardActive || !currentSessionOwner()) return;
+      history.pushState({ residentadoSessionGuard:true }, '', location.href);
+      requestCurrentSessionExit();
+    });
+  }
+
+  function activateSessionNavigationGuard() {
+    if (sessionNavigationGuardActive) return;
+    sessionNavigationGuardActive = true;
+    history.pushState({ residentadoSessionGuard:true }, '', location.href);
+  }
+
+  function deactivateSessionNavigationGuard() {
+    sessionNavigationGuardActive = false;
+  }
+
+  function closeExitDialog() {
+    document.getElementById('session-exit-overlay')?.remove();
+  }
+
+  function showSessionExitDialog(answeredCount, handlers) {
+    closeExitDialog();
+    const overlay = document.createElement('div');
+    overlay.id = 'session-exit-overlay';
+    overlay.className = 'session-exit-overlay';
+    overlay.innerHTML = `<section class="session-exit-dialog" role="dialog" aria-modal="true" aria-labelledby="session-exit-title">
+      <button class="session-exit-close" type="button" aria-label="Volver a la sesión">×</button>
+      <h2 id="session-exit-title">¿Qué deseas hacer con esta sesión?</h2>
+      <p>Tu progreso se guarda antes de salir.</p>
+      <div class="session-exit-actions">
+        <button id="session-continue-later" class="btn primary" type="button">Continuar después</button>
+        <button id="session-close-partial" class="btn" type="button" ${answeredCount ? '' : 'disabled'}>Cerrar sesión parcial y revisar respondidas</button>
+      </div>
+      ${answeredCount ? `<small>${answeredCount} pregunta${answeredCount===1?'':'s'} respondida${answeredCount===1?'':'s'} se incluirá${answeredCount===1?'':'n'} en la revisión.</small>` : '<small>Aún no hay preguntas respondidas. Continúa después y ciérrala cuando exista al menos una respuesta.</small>'}
+    </section>`;
+    document.body.appendChild(overlay);
+    const keyHandler = event => { if (event.key === 'Escape') dismiss(); };
+    const dismiss = () => {
+      document.removeEventListener('keydown', keyHandler);
+      overlay.remove();
+    };
+    overlay.querySelector('.session-exit-close').onclick = dismiss;
+    overlay.onclick = event => { if (event.target === overlay) dismiss(); };
+    document.addEventListener('keydown', keyHandler);
+    document.getElementById('session-continue-later').onclick = async () => {
+      dismiss();
+      await handlers.continueLater();
+    };
+    const closePartial = document.getElementById('session-close-partial');
+    if (closePartial && answeredCount) closePartial.onclick = async () => {
+      dismiss();
+      await handlers.closePartial();
+    };
+    overlay.querySelector('#session-continue-later')?.focus();
+  }
+
+  function requestCurrentSessionExit() {
+    const owner = currentSessionOwner();
+    if (!owner || sessionActionInProgress) return;
+    const state = owner.kind === 'study' ? studyStateSnapshot() : normalizeSessionState(owner.holder.state);
+    const answeredCount = answeredIdsFor(owner.row, state).length;
+    showSessionExitDialog(answeredCount, {
+      continueLater: owner.kind === 'study' ? continueStudyLater : continueExamLater,
+      closePartial: owner.kind === 'study' ? closeStudyPartial : closeExamPartial,
+    });
   }
 
   function cleanOptionText(value = '') {
@@ -412,7 +919,7 @@
     try { return JSON.parse(localStorage.getItem(DEMO_SESSIONS_KEY) || '[]'); }
     catch { return []; }
   }
-  function saveLocalSessions() { localStorage.setItem(DEMO_SESSIONS_KEY, JSON.stringify(activeSessions)); }
+  function saveLocalSessions() { localStorage.setItem(DEMO_SESSIONS_KEY, JSON.stringify([...activeSessions, ...completedSessions])); }
 
 
   const DEFAULT_PROFILE = {
@@ -523,9 +1030,10 @@
     });
   }
 
-  async function saveQuestionReviewFlag(questionId, flagType) {
+  async function saveQuestionReviewFlag(questionId, flagType, userNote = '') {
     if (!REVIEW_FLAG_TYPES[flagType]) return null;
     const now = new Date().toISOString();
+    const note = String(userNote ?? '').replace(/\r/g, '').trim().slice(0, 2000) || null;
     const previous = reviewFlagFor(questionId);
     const previousClosed = latestClosedFlagFor(questionId);
     let row = null;
@@ -533,7 +1041,7 @@
     if (cloudConfigured) {
       if (previous) {
         const { data, error } = await supa.from('question_review_flags')
-          .update({ flag_type:flagType, status:'OPEN', updated_at:now })
+          .update({ flag_type:flagType, user_note:note, client_app_version:APP_VERSION, status:'OPEN', updated_at:now })
           .eq('id', previous.id)
           .eq('user_id', user.id)
           .select('*')
@@ -548,6 +1056,8 @@
           user_id:user.id,
           question_id:questionId,
           flag_type:flagType,
+          user_note:note,
+          client_app_version:APP_VERSION,
           status:'OPEN',
           content_revision:questionContentRevision(questionId),
           previous_flag_id:previousClosed?.id || null,
@@ -567,6 +1077,8 @@
       row = previous ? {
         ...previous,
         flag_type:flagType,
+        user_note:note,
+        client_app_version:APP_VERSION,
         status:'OPEN',
         updated_at:now,
       } : {
@@ -574,6 +1086,8 @@
         user_id: 'demo',
         question_id: questionId,
         flag_type: flagType,
+        user_note:note,
+        client_app_version:APP_VERSION,
         status:'OPEN',
         content_revision:questionContentRevision(questionId),
         previous_flag_id:previousClosed?.id || null,
@@ -645,29 +1159,34 @@
     const q = questions.find(item => item.id === questionId);
     if (!q) return;
     const existing = reviewFlagFor(questionId);
+    let selectedType = existing?.flag_type || 'general';
     const modal = document.createElement('div');
     modal.id = 'question-review-flag-modal';
     modal.className = 'review-flag-modal';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
     modal.setAttribute('aria-labelledby', 'review-flag-modal-title');
-    modal.innerHTML = `<div class="review-flag-dialog">
+    modal.innerHTML = `<form class="review-flag-dialog" id="review-flag-form">
       <div class="review-flag-dialog-head">
         <div><h2 id="review-flag-modal-title">Marcar para auditoría</h2><p class="muted">${esc(q.id)} · ${esc(questionSourceLabel(q))}</p></div>
         <button class="btn small ghost" type="button" data-close-review-flag aria-label="Cerrar">✕</button>
       </div>
-      <p>Elige un solo motivo. Puedes cambiarlo o quitarlo después.</p>
-      <div class="review-flag-choice-grid">
-        <button class="review-flag-choice ${existing?.flag_type==='statement'?'selected':''}" type="button" data-set-review-flag="statement"><strong>📝 Revisar enunciado</strong><span>Redacción, datos clínicos, alternativas o ambigüedad.</span></button>
-        <button class="review-flag-choice ${existing?.flag_type==='explanation'?'selected':''}" type="button" data-set-review-flag="explanation"><strong>💬 Revisar explicación</strong><span>Explicación insuficiente, confusa, desactualizada o tautológica.</span></button>
-        <button class="review-flag-choice ${existing?.flag_type==='general'?'selected':''}" type="button" data-set-review-flag="general"><strong>⚑ Revisar</strong><span>Observación general o motivo todavía no definido.</span></button>
+      <p>Selecciona el tipo y describe, si lo deseas, qué debe revisarse. La nota no modifica tu respuesta ni tu memoria.</p>
+      <div class="review-flag-choice-grid" role="radiogroup" aria-label="Tipo de observación">
+        <button class="review-flag-choice ${selectedType==='statement'?'selected':''}" type="button" data-set-review-flag="statement" role="radio" aria-checked="${selectedType==='statement'}"><strong>📝 Revisar enunciado</strong><span>Redacción, datos clínicos, alternativas o ambigüedad.</span></button>
+        <button class="review-flag-choice ${selectedType==='explanation'?'selected':''}" type="button" data-set-review-flag="explanation" role="radio" aria-checked="${selectedType==='explanation'}"><strong>💬 Revisar explicación</strong><span>Explicación insuficiente, confusa, desactualizada o tautológica.</span></button>
+        <button class="review-flag-choice ${selectedType==='general'?'selected':''}" type="button" data-set-review-flag="general" role="radio" aria-checked="${selectedType==='general'}"><strong>⚑ Revisar</strong><span>Observación general o motivo todavía no definido.</span></button>
       </div>
-      ${existing ? `<div class="review-flag-close-actions"><button class="btn primary" type="button" data-resolve-review-flag-dialog>✓ Registrar parche</button><button class="btn danger ghost-danger" type="button" data-remove-review-flag-dialog>Quitar sin parche</button></div>` : ''}
-    </div>`;
+      <label class="review-flag-note-label" for="review-flag-note"><strong>Describe el problema</strong><span class="muted">Opcional · máximo 2000 caracteres</span></label>
+      <textarea id="review-flag-note" class="input review-flag-note" maxlength="2000" rows="5" placeholder="Ejemplo: la explicación no diferencia este diagnóstico de la alternativa C.">${esc(existing?.user_note || '')}</textarea>
+      <div id="review-flag-save-error" class="error-msg"></div>
+      <div class="review-flag-close-actions"><button class="btn primary" type="submit">Guardar observación</button><button class="btn ghost" type="button" data-close-review-flag>Cancelar</button></div>
+      ${existing ? `<div class="review-flag-existing-actions"><button class="btn small" type="button" data-resolve-review-flag-dialog>✓ Registrar parche</button><button class="btn small danger ghost-danger" type="button" data-remove-review-flag-dialog>Quitar sin parche</button></div>` : ''}
+    </form>`;
     document.body.appendChild(modal);
 
     const close = () => closeReviewFlagDialog();
-    modal.querySelector('[data-close-review-flag]').onclick = close;
+    modal.querySelectorAll('[data-close-review-flag]').forEach(btn => btn.onclick = close);
     modal.onclick = ev => { if (ev.target === modal) close(); };
     const escapeHandler = ev => {
       if (ev.key === 'Escape') {
@@ -679,13 +1198,28 @@
     document.addEventListener('keydown', escapeHandler);
 
     modal.querySelectorAll('[data-set-review-flag]').forEach(btn => {
-      btn.onclick = async () => {
-        modal.querySelectorAll('button').forEach(node => node.disabled = true);
-        const saved = await saveQuestionReviewFlag(questionId, btn.dataset.setReviewFlag);
-        if (saved) close();
-        else modal.querySelectorAll('button').forEach(node => node.disabled = false);
+      btn.onclick = () => {
+        selectedType = btn.dataset.setReviewFlag;
+        modal.querySelectorAll('[data-set-review-flag]').forEach(node => {
+          const active = node.dataset.setReviewFlag === selectedType;
+          node.classList.toggle('selected', active);
+          node.setAttribute('aria-checked', active ? 'true' : 'false');
+        });
       };
     });
+    modal.querySelector('#review-flag-form').onsubmit = async ev => {
+      ev.preventDefault();
+      const errorNode = modal.querySelector('#review-flag-save-error');
+      const note = modal.querySelector('#review-flag-note').value;
+      errorNode.textContent = 'Guardando…';
+      modal.querySelectorAll('button, textarea').forEach(node => node.disabled = true);
+      const saved = await saveQuestionReviewFlag(questionId, selectedType, note);
+      if (saved) close();
+      else {
+        errorNode.textContent = 'No se pudo guardar. Revisa la conexión e inténtalo nuevamente.';
+        modal.querySelectorAll('button, textarea').forEach(node => node.disabled = false);
+      }
+    };
     const resolveBtn = modal.querySelector('[data-resolve-review-flag-dialog]');
     if (resolveBtn) resolveBtn.onclick = () => {
       close();
@@ -694,9 +1228,9 @@
     const removeBtn = modal.querySelector('[data-remove-review-flag-dialog]');
     if (removeBtn) removeBtn.onclick = async () => {
       if (!confirm(`¿Quitar el flag de ${questionId} sin registrarlo como parche? El retiro quedará en el historial.`)) return;
-      modal.querySelectorAll('button').forEach(node => node.disabled = true);
+      modal.querySelectorAll('button, textarea').forEach(node => node.disabled = true);
       if (await removeQuestionReviewFlag(questionId)) close();
-      else modal.querySelectorAll('button').forEach(node => node.disabled = false);
+      else modal.querySelectorAll('button, textarea').forEach(node => node.disabled = false);
     };
   }
 
@@ -954,13 +1488,236 @@
     await upsertMemoryRows(rebuilt);
   }
 
+  async function loadStaticTtsCatalog() {
+    try {
+      const response = await fetch('./tts_catalog.json', { cache:'no-cache' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const raw = await response.json();
+      ttsCatalog = W4Data.normalizeCatalog ? W4Data.normalizeCatalog(raw) : raw;
+      ttsCatalogByTopic = W4Data.catalogMap
+        ? W4Data.catalogMap(ttsCatalog)
+        : new Map((ttsCatalog.topics || []).map(item => [item.topicId, item]));
+    } catch (error) {
+      console.warn('TTS catalog unavailable.', error);
+      ttsCatalog = { catalogVersion:'unavailable', topics:[] };
+      ttsCatalogByTopic = new Map();
+    }
+  }
+
+  async function fetchDatasetManifest() {
+    const { data, error } = await supa.from('app_dataset_versions')
+      .select('*')
+      .eq('dataset_key', 'questions')
+      .maybeSingle();
+    if (error) return { data:null, error };
+    return { data:data || null, error:null };
+  }
+
+  async function loadCorpusWithCache() {
+    const cached = sessionStore?.getCachedCorpus ? await sessionStore.getCachedCorpus() : null;
+    const manifestRes = await fetchDatasetManifest();
+    const remoteManifest = manifestRes.data;
+    datasetManifest = remoteManifest || cached?.manifest || null;
+    const cachedQuestions = cached?.questions || [];
+    const cachedValid = cachedQuestions.length > 0 && (
+      remoteManifest
+        ? (W4Data.manifestMatches ? W4Data.manifestMatches(cached?.manifest || { dataset_revision:cached?.revision }, remoteManifest, cachedQuestions.length) : cached?.revision === remoteManifest.dataset_revision)
+        : cachedQuestions.length === Number(cached?.manifest?.row_count || cachedQuestions.length)
+    );
+
+    if (cachedValid) return { data:cachedQuestions, source:'indexeddb', manifest:datasetManifest, error:null };
+
+    const remote = await fetchAllQuestions();
+    if (remote.error) {
+      if (cachedQuestions.length) return { data:cachedQuestions, source:'indexeddb-stale', manifest:datasetManifest, error:null };
+      return { data:null, source:'none', manifest:datasetManifest, error:remote.error };
+    }
+
+    const normalized = normalizeQuestionCorpus(remote.data || []);
+    const topics = W4Data.topicsFromQuestions ? W4Data.topicsFromQuestions(normalized) : [];
+    const manifest = remoteManifest || {
+      dataset_key:'questions',
+      dataset_revision:`fallback-${normalized.length}-${new Date().toISOString().slice(0,10)}`,
+      row_count:normalized.length,
+      metadata:{ taxonomy_version:'unknown', source:'client-fallback' },
+      updated_at:new Date().toISOString(),
+    };
+    if (sessionStore?.replaceCorpus) await sessionStore.replaceCorpus(normalized, topics, manifest);
+    datasetManifest = manifest;
+    return { data:normalized, source:'supabase', manifest, error:null };
+  }
+
+  async function fetchAttemptsUpdatedSince(since = null) {
+    const pageSize = 1000;
+    const all = [];
+    for (let from = 0; ; from += pageSize) {
+      let query = supa.from('attempts').select('*').eq('user_id', user.id).order('updated_at', { ascending:true });
+      if (since) query = query.gt('updated_at', since);
+      const { data, error } = await query.range(from, from + pageSize - 1);
+      if (error) return { data:null, error };
+      all.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return { data:all, error:null };
+  }
+
+  async function loadAttemptsIncremental() {
+    const cached = sessionStore?.getAttemptsForUser ? await sessionStore.getAttemptsForUser(user.id) : [];
+    const markerKey = `attemptsLastSync:${user.id}`;
+    const marker = sessionStore ? await sessionStore.getMetadata(markerKey) : null;
+    const since = cached.length ? marker?.value || null : null;
+    const remote = await fetchAttemptsUpdatedSince(since);
+    if (remote.error) {
+      if (cached.length) return { data:cached, error:null, source:'indexeddb-stale' };
+      return { data:null, error:remote.error, source:'none' };
+    }
+    if (sessionStore?.bulkPutAttempts && remote.data?.length) await sessionStore.bulkPutAttempts(remote.data, 'synced');
+    const merged = W4Data.mergeRows
+      ? W4Data.mergeRows(cached, remote.data || [], W4Data.attemptKey || (row => row.client_attempt_id || row.id))
+      : [...cached, ...(remote.data || [])];
+    const last = W4Data.maxUpdatedAt ? W4Data.maxUpdatedAt(merged, ['updated_at','answered_at']) : null;
+    if (last && sessionStore) await sessionStore.setMetadata(markerKey, last);
+    return { data:merged, error:null, source:since ? 'incremental' : 'initial' };
+  }
+
+  async function fetchMemoryUpdatedSince(since = null) {
+    const pageSize = 1000;
+    const all = [];
+    for (let from = 0; ; from += pageSize) {
+      let query = supa.from('question_memory_state').select('*').eq('user_id', user.id).order('updated_at', { ascending:true });
+      if (since) query = query.gt('updated_at', since);
+      const { data, error } = await query.range(from, from + pageSize - 1);
+      if (error) return { data:null, error };
+      all.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return { data:all, error:null };
+  }
+
+  async function loadMemoryIncremental() {
+    const key = `memory:${user.id}`;
+    const snapshot = sessionStore?.getUserSnapshot ? await sessionStore.getUserSnapshot(key) : null;
+    const cached = snapshot?.rows || [];
+    const since = cached.length ? snapshot?.metadata?.lastSyncAt || null : null;
+    const remote = await fetchMemoryUpdatedSince(since);
+    if (remote.error) {
+      if (cached.length) return { data:cached, error:null, source:'indexeddb-stale' };
+      return { data:null, error:remote.error, source:'none' };
+    }
+    const merged = W4Data.mergeRows
+      ? W4Data.mergeRows(cached, remote.data || [], row => row.question_id)
+      : [...cached, ...(remote.data || [])];
+    const last = W4Data.maxUpdatedAt ? W4Data.maxUpdatedAt(merged, ['updated_at','last_attempt_at']) : null;
+    if (sessionStore?.setUserSnapshot) await sessionStore.setUserSnapshot(key, merged, { lastSyncAt:last });
+    return { data:merged, error:null, source:since ? 'incremental' : 'initial' };
+  }
+
+  async function fetchFlagsUpdatedSince(since = null) {
+    const pageSize = 1000;
+    const all = [];
+    for (let from = 0; ; from += pageSize) {
+      let query = supa.from('question_review_flags').select('*').eq('user_id', user.id).order('updated_at', { ascending:true });
+      if (since) query = query.gt('updated_at', since);
+      const { data, error } = await query.range(from, from + pageSize - 1);
+      if (error) return { data:null, error };
+      all.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return { data:all, error:null };
+  }
+
+  async function loadFlagsIncremental() {
+    const key = `flags:${user.id}`;
+    const snapshot = sessionStore?.getUserSnapshot ? await sessionStore.getUserSnapshot(key) : null;
+    const cached = snapshot?.rows || [];
+    const since = cached.length ? snapshot?.metadata?.lastSyncAt || null : null;
+    const remote = await fetchFlagsUpdatedSince(since);
+    if (remote.error) {
+      if (cached.length) return { data:cached, error:null, source:'indexeddb-stale' };
+      return { data:null, error:remote.error, source:'none' };
+    }
+    const merged = W4Data.mergeRows
+      ? W4Data.mergeRows(cached, remote.data || [], row => row.id || `${row.question_id}:${row.created_at || row.updated_at}`)
+      : [...cached, ...(remote.data || [])];
+    const last = W4Data.maxUpdatedAt ? W4Data.maxUpdatedAt(merged, ['updated_at','created_at']) : null;
+    if (sessionStore?.setUserSnapshot) await sessionStore.setUserSnapshot(key, merged, { lastSyncAt:last });
+    return { data:merged, error:null, source:since ? 'incremental' : 'initial' };
+  }
+
+  async function fetchCompletedSessionsPage(page = 0) {
+    const range = W4Data.pageRange ? W4Data.pageRange(page, HISTORY_PAGE_SIZE) : { from:page*HISTORY_PAGE_SIZE, to:(page+1)*HISTORY_PAGE_SIZE-1 };
+    const { data, error } = await supa.from('practice_sessions')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('status', 'completed')
+      .order('completed_at', { ascending:false })
+      .range(range.from, range.to);
+    return { data:data || [], error, page, hasMore:!error && (data || []).length === HISTORY_PAGE_SIZE };
+  }
+
+  async function ensureHistoryDateLoaded(dateIso) {
+    if (!cloudConfigured || !/^\d{4}-\d{2}-\d{2}$/.test(String(dateIso))) return;
+    const start = parseLocalDate(dateIso);
+    const end = new Date(start.getTime() + 86400000);
+    const { data, error } = await supa.from('practice_sessions')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('status', 'completed')
+      .gte('completed_at', start.toISOString())
+      .lt('completed_at', end.toISOString())
+      .order('completed_at', { ascending:false });
+    if (error) return;
+    completedSessions = SessionCore.mergeSessionRows
+      ? SessionCore.mergeSessionRows(completedSessions, data || []).filter(row => row.status === 'completed')
+      : [...completedSessions, ...(data || [])];
+    if (sessionStore) for (const row of data || []) await sessionStore.putSession(row, 'synced');
+  }
+
+  async function loadMoreCompletedSessions() {
+    if (!cloudConfigured || !historyHasMore) return false;
+    const nextPage = historyPage + 1;
+    const page = await fetchCompletedSessionsPage(nextPage);
+    if (page.error) return false;
+    completedSessions = SessionCore.mergeSessionRows
+      ? SessionCore.mergeSessionRows(completedSessions, page.data || []).filter(row => row.status === 'completed')
+      : [...completedSessions, ...(page.data || [])];
+    historyPage = nextPage;
+    historyHasMore = page.hasMore;
+    if (sessionStore) for (const row of page.data || []) await sessionStore.putSession(row, 'synced');
+    return true;
+  }
+
+  async function ensureHistorySessionAttempts(sessionId) {
+    if (!cloudConfigured || attemptsForSessionId(sessionId).length) return attemptsForSessionId(sessionId);
+    const { data, error } = await supa.from('attempts')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('session_id', sessionId)
+      .order('session_question_index', { ascending:true });
+    if (error) return [];
+    if (sessionStore?.bulkPutAttempts) await sessionStore.bulkPutAttempts(data || [], 'synced');
+    attempts = W4Data.mergeRows
+      ? W4Data.mergeRows(attempts, data || [], W4Data.attemptKey || (row => row.client_attempt_id || row.id))
+      : [...attempts, ...(data || [])];
+    return attemptsForSessionId(sessionId);
+  }
+
   async function init() {
     registerServiceWorker();
+    await initializeSessionStorage();
+    await loadStaticTtsCatalog();
+    installSessionLifecycleHooks();
     if (!cloudConfigured) {
       questions = normalizeQuestionCorpus((window.PILOT_QUESTIONS || []).filter(q => String(q.active).toLowerCase() !== 'false'));
       rebuildCorpusRentability();
-      attempts = localAttempts();
-      activeSessions = localSessions().filter(s => s.status === 'active');
+      const legacyAttempts = localAttempts();
+      const shadowAttempts = sessionStore ? await sessionStore.getAllAttempts() : [];
+      const attemptsByClient = new Map();
+      for (const row of [...legacyAttempts, ...shadowAttempts]) attemptsByClient.set(row.client_attempt_id || row.id, row);
+      attempts = [...attemptsByClient.values()];
+      const localSessionRows = sessionStore ? await sessionStore.getAllSessions() : localSessions();
+      activeSessions = localSessionRows.filter(s => s.status === 'active');
+      completedSessions = localSessionRows.filter(s => s.status === 'completed');
       profile = localProfile();
       memoryStates = localMemory();
       reviewFlagHistory = localReviewFlags();
@@ -1093,25 +1850,35 @@
 
   async function loadCloudData() {
     clearTimer();
-    app.innerHTML = `<div class="splash"><div class="logo-mark">R</div><p>Sincronizando…</p></div>`;
+    app.innerHTML = `<div class="splash"><div class="logo-mark">R</div><p>Sincronizando cambios…</p></div>`;
 
     const [qRes, aRes, pRes, mRes, fRes] = await Promise.all([
-      fetchAllQuestions(),
-      fetchAllAttempts(),
+      loadCorpusWithCache(),
+      loadAttemptsIncremental(),
       supa.from('user_learning_profile').select('*').eq('user_id', user.id).maybeSingle(),
-      fetchAllMemoryStates(),
-      fetchAllReviewFlags(),
+      loadMemoryIncremental(),
+      loadFlagsIncremental(),
     ]);
 
     if (qRes.error) { renderLogin(`Error al cargar preguntas: ${qRes.error.message}`); return; }
     if (aRes.error) { renderLogin(`Error al cargar progreso: ${aRes.error.message}`); return; }
     if (pRes.error) { renderFatal(`Falta aplicar la migración v0.5 en Supabase: ${pRes.error.message}`); return; }
-    if (mRes.error) { renderFatal(`Falta aplicar la migración v0.5 en Supabase: ${mRes.error.message}`); return; }
-    if (fRes.error) { renderFatal(`Falta aplicar la migración v1.0.0 de trazabilidad de flags en Supabase: ${fRes.error.message}`); return; }
+    if (mRes.error) { renderFatal(`No se pudo sincronizar la memoria: ${mRes.error.message}`); return; }
+    if (fRes.error) { renderFatal(`No se pudieron sincronizar las observaciones: ${fRes.error.message}`); return; }
 
     questions = normalizeQuestionCorpus(qRes.data || []);
     rebuildCorpusRentability();
-    attempts = aRes.data || [];
+    const remoteAttempts = aRes.data || [];
+    const shadowAttempts = sessionStore?.getAttemptsForUser
+      ? await sessionStore.getAttemptsForUser(user.id)
+      : (sessionStore ? await sessionStore.getAllAttempts() : []);
+    const attemptsByClient = new Map();
+    for (const row of remoteAttempts) attemptsByClient.set(row.client_attempt_id || row.id, row);
+    for (const row of shadowAttempts) {
+      const key = row.client_attempt_id || row.id;
+      if (!attemptsByClient.has(key) || ['pending','offline','conflict'].includes(row.syncStatus)) attemptsByClient.set(key, row);
+    }
+    attempts = [...attemptsByClient.values()].sort((a,b) => new Date(a.answered_at || 0) - new Date(b.answered_at || 0));
     memoryStates = mRes.data || [];
     reviewFlagHistory = fRes.data || [];
     reviewFlags = activeReviewFlagRows(reviewFlagHistory);
@@ -1126,8 +1893,27 @@
       profile = { ...DEFAULT_PROFILE, ...data };
     }
 
-    const sRes = await supa.from('practice_sessions').select('*').eq('status', 'active').order('updated_at', { ascending: false });
-    activeSessions = sRes.error ? [] : (sRes.data || []);
+    historyPage = 0;
+    const [sRes, firstHistoryPage] = await Promise.all([
+      supa.from('practice_sessions').select('*').eq('user_id', user.id).eq('status', 'active').order('updated_at', { ascending:false }),
+      fetchCompletedSessionsPage(0),
+    ]);
+    historyHasMore = firstHistoryPage.hasMore;
+    const localSessionRows = sessionStore?.getSessionsForUser
+      ? await sessionStore.getSessionsForUser(user.id)
+      : (sessionStore ? await sessionStore.getAllSessions() : []);
+    const localActive = localSessionRows.filter(row => row.status === 'active');
+    const localCompleted = localSessionRows.filter(row => row.status === 'completed');
+    activeSessions = SessionCore.mergeSessionRows
+      ? SessionCore.mergeSessionRows(sRes.error ? [] : (sRes.data || []), localActive).filter(row => row.status === 'active')
+      : (sRes.error ? localActive : (sRes.data || []));
+    completedSessions = SessionCore.mergeSessionRows
+      ? SessionCore.mergeSessionRows(firstHistoryPage.error ? [] : (firstHistoryPage.data || []), localCompleted).filter(row => row.status === 'completed')
+      : (firstHistoryPage.error ? localCompleted : (firstHistoryPage.data || []));
+    if (sessionStore) {
+      for (const row of [...(sRes.data || []), ...(firstHistoryPage.data || [])]) await sessionStore.putSession(row, 'synced');
+      await processSessionOutbox();
+    }
     await reconcileMemoryFromAttempts();
     renderDashboard();
   }
@@ -1470,14 +2256,17 @@
     const validQuestions = questions.filter(q => !observed(q));
 
     for (const q of validQuestions) {
-      const area = q.area || 'Sin área';
-      const specialty = q.specialty || 'Sin especialidad';
-      const topic = q.topic || q.subtopic || 'Sin clasificar';
-      const key = `${area}|||${specialty}|||${topic}`;
+      const topicId = q.rentability_topic_id || `LEGACY:${q.area || ''}:${q.specialty || ''}:${q.topic || q.subtopic || ''}`;
+      const area = q.canonical_area || q.area || 'Sin área';
+      const specialty = q.canonical_specialty || q.specialty || 'Sin especialidad';
+      const topic = q.rentability_topic_label || q.topic || q.subtopic || 'Sin clasificar';
+      const key = String(topicId);
 
       if (!groups.has(key)) {
         groups.set(key, {
-          key, area, specialty, topic,
+          key, topicId, area, specialty, topic,
+          rentabilityTier:q.rentability_tier || null,
+          rentabilityScore:q.exam_rentability_score == null ? null : Number(q.exam_rentability_score),
           totalQuestions:0, seenQuestions:0, attempts:0,
           latestWrong:0, latestUncertain:0, latestWrongUncertain:0,
           latestSlow:0, dueQuestions:0, allAttempts:[], questionIds:[],
@@ -1548,6 +2337,7 @@
         score >= 45 ? 'Alta' :
         score >= 30 ? 'Moderada' :
         score >= 15 ? 'Vigilancia' : 'Controlada';
+      const tts = ttsCatalogByTopic.get(g.topicId) || null;
 
       return {
         ...g,
@@ -1561,10 +2351,13 @@
         dueRate,
         recentErrorRate,
         coverage: g.totalQuestions ? g.seenQuestions / g.totalQuestions : 0,
+        tts,
+        ttsStatusLabel: W4Data.catalogStatusLabel ? W4Data.catalogStatusLabel(tts) : (tts?.status || 'Pendiente'),
       };
     }).sort((a,b) =>
       b.score - a.score ||
       b.latestWrongUncertainRate - a.latestWrongUncertainRate ||
+      Number(b.rentabilityScore || 0) - Number(a.rentabilityScore || 0) ||
       b.attempts - a.attempts
     );
   }
@@ -1610,6 +2403,13 @@
   }
 
   function priorityReadingPrompt(item) {
+    if (W4Data.ttsRequestForTopic) {
+      return W4Data.ttsRequestForTopic(
+        { topicId:item.topicId, label:item.topic, area:item.area, specialty:item.specialty },
+        item.tts || null,
+        item
+      );
+    }
     const focus = item.focus?.length
       ? `Enfócate especialmente en: ${item.focus.join(', ')}.`
       : 'Enfócate en diagnóstico, criterios, manejo, puntos de corte y trampas de examen.';
@@ -1620,11 +2420,9 @@
       `Motivo de prioridad: ${item.reasonText}.`,
       focus,
       'Haz un resumen de 15–25 minutos de lectura, orientado al examen.',
-      'Empieza por la lógica de banqueo, luego comparación clave, algoritmos o puntos de corte y termina con trampas frecuentes.',
-      'Define cualquier abreviatura la primera vez que aparezca y define también los epónimos.',
-      'Cuando aparezcan fármacos, resume brevemente los mecanismos de acción diferenciales relevantes para examen.',
     ].join('\n');
   }
+
 
   function priorityReadingAlertMarkup(item, prefix = 'priority-reading') {
     if (!item) return '';
@@ -1641,6 +2439,7 @@
           <span>Dominio <strong>${Math.round(item.latestAccuracy * 100)}%</strong></span>
           <span>Prioridad <strong>${item.score}/100</strong></span>
           <span>Cobertura <strong>${item.seenQuestions}/${item.totalQuestions}</strong></span>
+          <span>TTS <strong>${esc(item.ttsStatusLabel || 'Pendiente')}</strong></span>
         </div>
         <div class="priority-reading-focus">
           <strong>Lee primero:</strong>
@@ -1648,7 +2447,7 @@
         </div>
       </div>
       <div class="priority-reading-actions">
-        <button id="${prefix}-copy" class="btn primary">📋 Copiar pedido de repaso</button>
+        <button id="${prefix}-copy" class="btn primary">📋 ${item.tts && item.tts.status !== 'PENDING' ? 'Copiar pedido de suplemento' : 'Copiar pedido TTS'}</button>
         <button id="${prefix}-practice" class="btn">🔥 Practicar este tema</button>
       </div>
     </section>`;
@@ -1717,6 +2516,7 @@
         `   Área: ${x.area} | Especialidad: ${x.specialty}`,
         `   Dominio actual: ${Math.round(x.latestAccuracy*100)}% | Duda ?: ${Math.round(x.latestUncertaintyRate*100)}% | Error+?: ${Math.round(x.latestWrongUncertainRate*100)}% | Lentas: ${Math.round(x.latestSlowRate*100)}%`,
         `   Cobertura: ${x.seenQuestions}/${x.totalQuestions} | Intentos: ${x.attempts} | Repasos vencidos: ${x.dueQuestions}`,
+        `   Rentabilidad: ${x.rentabilityTier || 'sin clasificar'}${x.rentabilityScore == null ? '' : ` (${Math.round(x.rentabilityScore)})`} | TTS: ${x.ttsStatusLabel || 'Pendiente'}`,
       );
     });
 
@@ -1818,7 +2618,7 @@
             <th>Prioridad</th><th>Tema</th><th>Área</th>
             <th class="num">Dominio actual</th><th class="num">Duda ?</th>
             <th class="num">Error + ?</th><th class="num">Lentas</th>
-            <th class="num">Cobertura</th><th>Evidencia</th><th></th>
+            <th class="num">Cobertura</th><th>Rentabilidad</th><th>TTS</th><th>Evidencia</th><th></th>
           </tr></thead>
           <tbody>${top.map((x,i) => `<tr>
             <td><span class="status ${weaknessLevelClass(x.level)}">${x.level}</span><small class="weakness-score">${x.score}/100</small></td>
@@ -1829,6 +2629,8 @@
             <td class="num">${Math.round(x.latestWrongUncertainRate*100)}%</td>
             <td class="num">${Math.round(x.latestSlowRate*100)}%</td>
             <td class="num">${x.seenQuestions}/${x.totalQuestions}</td>
+            <td>${esc(String(x.rentabilityTier || '—').replaceAll('_',' '))}</td>
+            <td><button class="btn small ghost" data-weak-tts="${i}">${esc(x.ttsStatusLabel || 'Pendiente')}</button></td>
             <td>${x.evidence}</td>
             <td><button class="btn small" data-weak-practice="${i}">Practicar</button></td>
           </tr>`).join('')}</tbody>
@@ -1857,6 +2659,19 @@
       btn.onclick = () => {
         const item = top[Number(btn.dataset.weakPractice)];
         if (item) launchWeakTopicPractice(item, 10);
+      };
+    });
+    document.querySelectorAll('[data-weak-tts]').forEach(btn => {
+      btn.onclick = async () => {
+        const item = top[Number(btn.dataset.weakTts)];
+        if (!item) return;
+        const text = priorityReadingPrompt(item);
+        try { await navigator.clipboard.writeText(text); }
+        catch {
+          const box = document.createElement('textarea'); box.value = text; box.style.position='fixed'; box.style.left='-9999px';
+          document.body.appendChild(box); box.select(); document.execCommand('copy'); box.remove();
+        }
+        const original = btn.textContent; btn.textContent = '✓ Solicitud copiada'; setTimeout(() => { btn.textContent = original; }, 1800);
       };
     });
   }
@@ -1952,6 +2767,31 @@
     return { cls:'warn', label:'EN RUTA, PERO EXIGENTE' };
   }
 
+  function activeSessionUpdatedAt(row = {}) {
+    const value = new Date(row.updated_at || row.created_at || 0).valueOf();
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  function latestActiveSession(rows = activeSessions) {
+    return [...(rows || [])]
+      .filter(row => row?.status === 'active')
+      .sort((a,b) => activeSessionUpdatedAt(b) - activeSessionUpdatedAt(a))[0] || null;
+  }
+
+  function activeSessionModeKey(row = {}) {
+    return String(row?.config?.studyMode || row?.config?.examType || `${row?.mode || 'session'}:${row?.title || ''}`);
+  }
+
+  function activeSessionForTask(task) {
+    if (!task?.mode) return null;
+    return latestActiveSession(activeSessions.filter(row => row?.mode === 'study' && row?.config?.studyMode === task.mode));
+  }
+
+  function similarActiveSessionCount(row) {
+    const key = activeSessionModeKey(row);
+    return activeSessions.filter(item => activeSessionModeKey(item) === key).length;
+  }
+
   function launchAutoTask(task) {
     if (!task) return renderMessage('Plan de hoy', 'La checklist principal está completa. Puedes adelantar trabajo desde Practicar.');
     const poolKind = task.kind === 'mixed' ? 'priority' : task.kind;
@@ -1967,6 +2807,12 @@
       secondsPerQuestion:Number(profile?.target_response_seconds||25), totalSeconds:0,
       title:task.label, studyMode:task.mode,
     });
+  }
+
+  function launchOrResumeAutoTask(task) {
+    const existing = activeSessionForTask(task);
+    if (existing) return resumePersistentSession(existing);
+    return launchAutoTask(task);
   }
 
   function renderPracticeHub() {
@@ -2204,7 +3050,7 @@
         ? `<div class="answer-sheet-section">Prueba ${esc(test)}</div>`
         : '';
       lastTest = test;
-      const selected = currentExam.state.responses[q.id] ?? null;
+      const selected = sessionSelected(currentExam.state, q.id);
       const uncertain = Object.values(currentExam.state.scratch?.[q.id] || {}).includes('tentative');
       const flagged = Boolean(currentExam.state.marked?.[q.id]);
       return `${heading}<div class="answer-row ${selected?'answered':''} ${uncertain?'uncertain':''} ${flagged?'flagged':''}" data-answer-row="${index}">
@@ -2218,7 +3064,7 @@
   }
 
   function historicalAnsweredCount() {
-    return currentExam.questions.filter(q => currentExam.state.responses[q.id] != null).length;
+    return currentExam.questions.filter(q => sessionSelected(currentExam.state, q.id) != null).length;
   }
 
   function refreshHistoricalAnswerSheet() {
@@ -2227,7 +3073,7 @@
     if (countEl) countEl.textContent = String(count);
     for (let i = 0; i < currentExam.questions.length; i++) {
       const q = currentExam.questions[i];
-      const selected = currentExam.state.responses[q.id] ?? null;
+      const selected = sessionSelected(currentExam.state, q.id);
       const row = document.querySelector(`[data-answer-row="${i}"]`);
       const uncertain = Object.values(currentExam.state.scratch?.[q.id] || {}).includes('tentative');
       const flagged = Boolean(currentExam.state.marked?.[q.id]);
@@ -2259,8 +3105,7 @@
         </div>
         <div class="historical-toolbar-actions">
           <button id="jump-answer-sheet" class="btn small">📋 Hoja de respuestas</button>
-          <button id="historical-exit" class="btn small ghost">Salir y continuar después</button>
-          <button id="historical-cancel" class="btn small danger ghost-danger">Cancelar</button>
+          <button id="historical-session-exit" class="btn small ghost">Cerrar o continuar después</button>
           <div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div>
           <button id="historical-finish" class="btn danger small">Entregar</button>
         </div>
@@ -2322,8 +3167,8 @@
         const index = Number(btn.dataset.answerIndex);
         const q = currentExam.questions[index];
         const letter = btn.dataset.answerLetter;
-        if (currentExam.state.responses[q.id] === letter) delete currentExam.state.responses[q.id];
-        else currentExam.state.responses[q.id] = letter;
+        if (sessionSelected(currentExam.state, q.id) === letter) delete currentExam.state.responses[q.id];
+        else currentExam.state.responses[q.id] = { ...sessionResponse(currentExam.state, q.id), selected:letter, didNotKnow:false, timedOut:false };
         refreshHistoricalAnswerSheet();
         await persistExamState();
       };
@@ -2351,8 +3196,7 @@
       };
     }
 
-    document.getElementById('historical-exit').onclick = exitCurrentExam;
-    document.getElementById('historical-cancel').onclick = cancelCurrentExam;
+    document.getElementById('historical-session-exit').onclick = cancelCurrentExam;
 
     document.getElementById('historical-finish').onclick = renderExamOverview;
     startExamTimer();
@@ -2393,6 +3237,9 @@
     const daysReady = daysUntil(profile?.readiness_target_date || DEFAULT_PROFILE.readiness_target_date);
     const pace7 = sevenDayPace();
     const completion = plan.adjustedTarget ? Math.min(100, Math.round(plan.done/plan.adjustedTarget*100)) : 100;
+    const primaryActiveSession = latestActiveSession();
+    const primaryAnswered = primaryActiveSession ? (primaryActiveSession.answered_count || answeredIdsFor(primaryActiveSession, primaryActiveSession.state || {}).length) : 0;
+    const primaryPlanned = primaryActiveSession ? (primaryActiveSession.planned_count || primaryActiveSession.question_ids?.length || 0) : 0;
 
     app.innerHTML = `<main class="shell">
       ${topbar()}
@@ -2412,19 +3259,29 @@
 
       ${priorityReadingAlertMarkup(readingAlert, 'dashboard-reading')}
 
-      ${plan.next ? `<button id="next-task-btn" class="next-task"><span><small>SIGUIENTE TAREA</small><strong>${esc(plan.next.label)}</strong><em>${plan.next.remaining} pendientes de este bloque</em></span><b>▶</b></button>` : `<div class="banner"><strong>Checklist principal completa.</strong> Usa Practicar para adelantar trabajo de mañana.</div>`}
+      ${primaryActiveSession
+        ? `<button id="next-task-btn" class="next-task resume-task"><span><small>CONTINUAR SESIÓN</small><strong>${esc(primaryActiveSession.title || (primaryActiveSession.mode === 'exam' ? 'Simulacro' : 'Práctica'))}</strong><em>${primaryAnswered}/${primaryPlanned} respondidas · continúa exactamente donde quedaste</em></span><b>▶</b></button>`
+        : plan.next
+          ? `<button id="next-task-btn" class="next-task"><span><small>SIGUIENTE TAREA</small><strong>${esc(plan.next.label)}</strong><em>${plan.next.remaining} pendientes de este bloque</em></span><b>▶</b></button>`
+          : `<div class="banner"><strong>Checklist principal completa.</strong> Usa Practicar para adelantar trabajo de mañana.</div>`}
 
-      <section class="checklist panel"><div class="section-head"><div><h2>Checklist de hoy</h2><p class="muted">La app decide el orden. Tú solo ejecutas.</p></div></div>
-        <div class="checklist-items">${plan.tasks.map(t => `<div class="check-item ${t.remaining===0?'done':''}"><span class="checkmark">${t.remaining===0?'✓':'○'}</span><div><strong>${esc(t.label)}</strong><small>${t.completed}/${t.count} completadas</small></div><button class="btn small" data-task="${t.id}" ${t.remaining===0?'disabled':''}>${t.remaining===0?'Hecho':'Empezar'}</button></div>`).join('')}</div>
+      <section class="checklist panel"><div class="section-head"><div><h2>Checklist de hoy</h2><p class="muted">La app decide el orden. Si un bloque quedó abierto, el botón continúa esa sesión y no crea otra.</p></div></div>
+        <div class="checklist-items">${plan.tasks.map(t => {
+          const openSession = activeSessionForTask(t);
+          return `<div class="check-item ${t.remaining===0?'done':''} ${openSession?'has-active-session':''}"><span class="checkmark">${t.remaining===0?'✓':openSession?'↻':'○'}</span><div><strong>${esc(t.label)}</strong><small>${t.completed}/${t.count} completadas${openSession?' · sesión en curso':''}</small></div><button class="btn small ${openSession?'primary':''}" data-task="${t.id}" ${t.remaining===0?'disabled':''}>${t.remaining===0?'Hecho':openSession?'Continuar':'Empezar'}</button></div>`;
+        }).join('')}</div>
       </section>
 
       ${activeSessions.length ? `<section class="panel active-sessions-panel">
-        <div class="section-head"><div><h2>Sesiones en curso</h2><p class="muted">Reanuda o cancela para que no queden sesiones activas olvidadas.</p></div></div>
+        <div class="section-head"><div><h2>Sesiones en curso</h2><p class="muted">Reanuda para continuar exactamente donde quedaste. El cierre parcial se realiza dentro de la sesión para poder revisar lo respondido.</p></div></div>
         <div class="active-session-list">
-          ${activeSessions.map(s => `<div class="active-session-row">
-            <div><strong>${esc(s.title || 'Simulacro')}</strong><small>${s.question_ids?.length || 0} preguntas · guardado ${new Date(s.updated_at || s.created_at || Date.now()).toLocaleString()}</small></div>
-            <div class="active-session-actions"><button class="btn small primary" data-resume-session="${esc(s.id)}">Reanudar</button><button class="btn small danger" data-cancel-session="${esc(s.id)}">Cancelar</button></div>
-          </div>`).join('')}
+          ${activeSessions.map(s => {
+            const similarCount = similarActiveSessionCount(s);
+            return `<div class="active-session-row">
+              <div><strong>${esc(s.title || (s.mode === 'exam' ? 'Simulacro' : 'Práctica'))}${similarCount > 1 ? ` <span class="tag warn">${similarCount} sesiones similares</span>` : ''}</strong><small>${s.answered_count || answeredIdsFor(s, s.state || {}).length}/${s.planned_count || s.question_ids?.length || 0} respondidas · guardado ${new Date(s.updated_at || s.created_at || Date.now()).toLocaleString()}${s.syncStatus && s.syncStatus !== 'synced' ? ` · ${s.syncStatus === 'conflict' ? 'conflicto local' : 'pendiente de sincronizar'}` : ''}</small></div>
+              <div class="active-session-actions"><button class="btn small primary" data-resume-session="${esc(s.id)}">Reanudar</button></div>
+            </div>`;
+          }).join('')}
         </div>
       </section>` : ''}
 
@@ -2435,6 +3292,7 @@
         <button id="roadmap-btn" class="btn">📖 QUÉ VIENE DESPUÉS</button>
         <button id="stats-btn" class="btn">📊 MI ESTADO</button>
         <button id="history-btn" class="btn">🕘 HISTORIAL Y RITMO</button>
+        <button id="specific-btn" class="btn">🔎 PREGUNTAS ESPECÍFICAS</button>
       </section>
 
       <section class="panel next-roadmap"><div><span class="roadmap-kicker">PRÓXIMAMENTE</span><strong>${esc(road.preRead || 'Clasificando próximos temas')}</strong><small>Prelectura ligera sugerida antes de que entre en el banqueo.</small></div><button id="roadmap-mini" class="btn small">Ver hoja de ruta</button></section>
@@ -2442,10 +3300,13 @@
 
     attachTopbar();
     attachPriorityReadingAlert(readingAlert, 'dashboard-reading');
-    if (plan.next) document.getElementById('next-task-btn').onclick = () => launchAutoTask(plan.next);
+    const nextTaskButton = document.getElementById('next-task-btn');
+    if (nextTaskButton) nextTaskButton.onclick = () => primaryActiveSession
+      ? resumePersistentSession(primaryActiveSession)
+      : launchOrResumeAutoTask(plan.next);
     document.querySelectorAll('[data-task]').forEach(btn => {
       const task = plan.tasks.find(t => t.id === btn.dataset.task);
-      btn.onclick = () => launchAutoTask(task);
+      btn.onclick = () => launchOrResumeAutoTask(task);
     });
     document.getElementById('practice-btn').onclick = renderPracticeHub;
     document.getElementById('review-btn').onclick = () => {
@@ -2458,16 +3319,11 @@
     document.getElementById('roadmap-mini').onclick = renderRoadmap;
     document.getElementById('stats-btn').onclick = renderStats;
     document.getElementById('history-btn').onclick = () => renderHistory();
+    document.getElementById('specific-btn').onclick = renderSpecificQuestions;
     document.querySelectorAll('[data-resume-session]').forEach(btn => {
       btn.onclick = () => {
         const row = activeSessions.find(s => s.id === btn.dataset.resumeSession);
         if (row) resumePersistentSession(row);
-      };
-    });
-    document.querySelectorAll('[data-cancel-session]').forEach(btn => {
-      btn.onclick = async () => {
-        const row = activeSessions.find(s => s.id === btn.dataset.cancelSession);
-        if (row) await abandonSessionRow(row, true);
       };
     });
   }
@@ -2486,6 +3342,115 @@
       if (ra !== rb) return rb - ra;
       return a.id.localeCompare(b.id);
     });
+  }
+
+  function renderSpecificQuestions(draft = specificQueryDraft) {
+    clearTimer();
+    scrollPageTop();
+    const years = [...new Set(questions.map(q => Number(q.year)).filter(Number.isFinite))].sort((a,b) => b-a);
+    const defaultYear = Number(draft?.defaultYear || years[0] || 2025);
+    const defaultTest = String(draft?.defaultTest || 'A');
+    const defaultFeedback = String(draft?.feedback || 'end');
+    const defaultInput = String(draft?.input || '');
+    const availableIds = questions.map(q => q.id);
+
+    app.innerHTML = `<main class="shell">${topbar('Preguntas específicas', true)}
+      <section class="panel specific-question-panel">
+        <div class="section-head"><div><h2>Consultar o crear una sesión por código</h2><p class="muted">Acepta códigos como 2024A48, 2024-A-48, listas separadas por coma o rangos como 2021A1-20. Los rangos sin año usan los valores por defecto.</p></div></div>
+        <div class="specific-defaults"><label>Año por defecto<select id="specific-default-year" class="input">${years.map(year => `<option value="${year}" ${year===defaultYear?'selected':''}>${year}</option>`).join('')}</select></label><label>Prueba<select id="specific-default-test" class="input"><option value="A" ${defaultTest==='A'?'selected':''}>A</option><option value="B" ${defaultTest==='B'?'selected':''}>B</option></select></label><label>Corrección de la sesión<select id="specific-feedback" class="input"><option value="end" ${defaultFeedback==='end'?'selected':''}>Solo al terminar</option><option value="immediate" ${defaultFeedback==='immediate'?'selected':''}>Después de cada pregunta</option></select></label></div>
+        <label for="specific-question-input"><strong>Códigos o rangos</strong></label>
+        <textarea id="specific-question-input" class="input specific-question-input" rows="5" placeholder="2024A48, 2023B12, 2021A1-20">${esc(defaultInput)}</textarea>
+        <div id="specific-question-summary" class="specific-question-summary" aria-live="polite"></div>
+        <div id="specific-question-preview" class="specific-question-preview"></div>
+        <div class="footer-actions"><button id="specific-consult" class="btn" type="button" disabled>Ver para consulta</button><button id="specific-session" class="btn primary" type="button" disabled>Crear sesión</button></div>
+        <p class="muted specific-session-help"><strong>Consulta:</strong> no registra respuestas. <strong>Crear sesión:</strong> permite responder y, al salir, ofrece Continuar después o Cerrar sesión parcial y revisar respondidas.</p>
+      </section>
+    </main>`;
+    attachTopbar();
+
+    const input = document.getElementById('specific-question-input');
+    const yearNode = document.getElementById('specific-default-year');
+    const testNode = document.getElementById('specific-default-test');
+    const summary = document.getElementById('specific-question-summary');
+    const preview = document.getElementById('specific-question-preview');
+    const consult = document.getElementById('specific-consult');
+    const create = document.getElementById('specific-session');
+    const feedbackNode = document.getElementById('specific-feedback');
+    let parsed = null;
+
+    const saveDraft = () => {
+      specificQueryDraft = {
+        input:input.value,
+        defaultYear:Number(yearNode.value),
+        defaultTest:testNode.value,
+        feedback:feedbackNode.value,
+      };
+      return specificQueryDraft;
+    };
+
+    const refresh = () => {
+      saveDraft();
+      if (!QuestionParser.parseQuestionSpec) {
+        summary.innerHTML = '<div class="error-msg">No se cargó el parser de códigos. No inicies la sesión.</div>';
+        consult.disabled = true;
+        create.disabled = true;
+        return;
+      }
+      parsed = QuestionParser.parseQuestionSpec(input.value, {
+        defaultYear:Number(yearNode.value),
+        defaultTest:testNode.value,
+        availableIds,
+        minYear:Math.min(...years),
+        maxYear:Math.max(...years),
+        maxRange:500,
+      });
+      const errors = [
+        ...parsed.invalidTokens.map(item => `${item.token}: ${item.reason}`),
+        ...(parsed.notFound.length ? [`No existen: ${parsed.notFound.join(', ')}`] : []),
+      ];
+      summary.innerHTML = `<div class="specific-kpis"><span><strong>${parsed.ids.length}</strong> encontradas</span><span><strong>${parsed.duplicates.length}</strong> duplicadas retiradas</span><span class="${errors.length?'bad-text':''}"><strong>${errors.length}</strong> incidencias</span></div>${errors.length ? `<ul class="specific-errors">${errors.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : ''}`;
+      preview.innerHTML = parsed.ids.length ? `<ol>${parsed.ids.map(id => {
+        const q = questions.find(item => item.id === id);
+        return `<li><strong>${esc(id)}</strong><span>${esc(String(q?.question || '').slice(0, 150))}${String(q?.question || '').length > 150 ? '…' : ''}</span></li>`;
+      }).join('')}</ol>` : '<div class="empty compact">Escribe al menos un código válido.</div>';
+      consult.disabled = parsed.ids.length === 0 || errors.length > 0;
+      create.disabled = parsed.ids.length === 0 || errors.length > 0;
+    };
+    [input, yearNode, testNode, feedbackNode].forEach(node => node.addEventListener('input', refresh));
+    refresh();
+
+    consult.onclick = () => {
+      saveDraft();
+      const selected = parsed.ids.map(id => questions.find(q => q.id === id)).filter(Boolean);
+      if (!selected.length) return;
+      reviewContext = {
+        type:'specific_query',
+        questions:selected,
+        index:0,
+        responses:Object.fromEntries(selected.map(q => [q.id, null])),
+        scratch:{},
+        optionOrders:{},
+        shuffleOptions:false,
+      };
+      renderReviewQuestion();
+    };
+    create.onclick = () => {
+      saveDraft();
+      const selected = parsed.ids.map(id => questions.find(q => q.id === id)).filter(Boolean);
+      if (!selected.length) return;
+      launchStudy(selected, {
+        mode:'study',
+        count:selected.length,
+        randomize:false,
+        feedback:feedbackNode.value,
+        timeMode:'none',
+        secondsPerQuestion:Number(profile?.target_response_seconds || 25),
+        totalSeconds:0,
+        title:'Preguntas específicas',
+        studyMode:'specific_questions',
+        shuffleOptions:false,
+      });
+    };
   }
 
   function renderSessionBuilder(mode) {
@@ -2703,36 +3668,60 @@
     launchStudy(pool, config);
   }
 
-  function launchStudy(selected, config) {
+  async function launchStudy(selected, config) {
     clearTimer();
+    if (!selected?.length) return renderMessage('Sin preguntas', 'No se encontraron preguntas para iniciar esta sesión.');
     config = { shuffleOptions: true, ...config };
+    currentExam = null;
     currentStudy = {
+      row:null,
       config,
-      questions: selected,
-      index: 0,
-      responses: {},
-      scratch: {},
-      durations: {},
-      answerTimes: {},
-      optionOrders: createOptionOrders(selected, config.shuffleOptions !== false),
-      totalRemaining: config.timeMode === 'total' ? config.totalSeconds : null,
+      questions:selected,
+      index:0,
+      responses:{},
+      scratch:{},
+      marked:{},
+      durations:{},
+      answerTimes:{},
+      timeSpent:{},
+      optionOrders:createOptionOrders(selected, config.shuffleOptions !== false),
+      totalRemaining:config.timeMode === 'total' ? config.totalSeconds : null,
+      attemptIdsByQuestion:{},
+      clientAttemptIdsByQuestion:{},
+      activeTimeMs:0,
+      pausedTimeMs:0,
+      lastVisibleAt:sessionNowIso(),
+      deviceInstanceId,
     };
+    const state = studyStateSnapshot();
+    const row = await createPersistentSession('study', selected, config, state);
+    if (!currentStudy) return;
+    currentStudy.row = row;
+    beginSessionActivity();
+    activateSessionNavigationGuard();
     renderStudyQuestion();
   }
 
   function studyCurrentQuestion() { return currentStudy?.questions[currentStudy.index]; }
 
   function cancelCurrentStudy() {
-    if (!currentStudy) return renderDashboard();
-    const answered = Object.values(currentStudy.responses || {}).filter(x => x && x.selected != null).length;
-    const immediate = currentStudy.config.feedback === 'immediate';
-    const message = immediate
-      ? `¿Cancelar esta sesión?\n\nLas ${answered} preguntas ya respondidas y corregidas permanecerán registradas. La cola restante se descartará.`
-      : `¿Cancelar esta sesión?\n\nSe descartarán las respuestas de esta sesión porque aún no fueron entregadas. No se añadirá ningún intento nuevo.`;
-    if (!confirm(message)) return;
-    clearTimer();
-    currentStudy = null;
-    renderDashboard();
+    requestCurrentSessionExit();
+  }
+
+  async function continueStudyLater() {
+    if (!currentStudy || sessionActionInProgress) return;
+    sessionActionInProgress = true;
+    try {
+      clearTimer();
+      saveStudyDuration();
+      endSessionActivity();
+      await flushCurrentSessionSave();
+      currentStudy = null;
+      deactivateSessionNavigationGuard();
+      renderDashboard();
+    } finally {
+      sessionActionInProgress = false;
+    }
   }
 
 
@@ -2779,6 +3768,11 @@
 
     app.innerHTML = `<main class="shell">
       ${topbar(currentStudy.config.title, false)}
+      <div class="question-step-nav" aria-label="Navegación superior de la sesión">
+        <button id="prev-study-top" class="btn small ghost" ${currentStudy.config.feedback !== 'end' || currentStudy.index===0?'disabled':''}>← Anterior</button>
+        <strong>${currentStudy.index+1}/${currentStudy.questions.length}</strong>
+        <button id="next-study-top" class="btn small primary" ${currentStudy.config.feedback === 'immediate' ? 'hidden disabled' : ''}>${currentStudy.index+1===currentStudy.questions.length?'Terminar':'Siguiente →'}</button>
+      </div>
       <section class="panel question-card">
         <div class="progress"><div style="width:${(currentStudy.index/currentStudy.questions.length)*100}%"></div></div>
         <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span id="study-question-metadata" class="question-meta-tags" ${metadataVisible?'':'hidden'} aria-hidden="${metadataVisible?'false':'true'}">${metadataVisible?studyQuestionMetadataTags(q):''}</span>${targetTag}${timerHtml}</div>
@@ -2791,7 +3785,7 @@
         </div>
         <div id="feedback"></div>
       </section>
-      ${currentStudy.config.feedback === 'end' ? `<div class="footer-actions"><button id="prev-study" class="btn ghost" ${currentStudy.index===0?'disabled':''}>← Anterior</button><button id="cancel-study" class="btn danger ghost-danger">Cancelar sesión</button><button id="next-study" class="btn primary">${currentStudy.index+1===currentStudy.questions.length?'Terminar':'Siguiente →'}</button></div>` : `<div class="footer-actions"><button id="cancel-study" class="btn danger ghost-danger">Cancelar sesión</button></div>`}
+      ${currentStudy.config.feedback === 'end' ? `<div class="footer-actions"><button id="prev-study" class="btn ghost" ${currentStudy.index===0?'disabled':''}>← Anterior</button><button id="cancel-study" class="btn danger ghost-danger">Cerrar o continuar después</button><button id="next-study" class="btn primary">${currentStudy.index+1===currentStudy.questions.length?'Terminar':'Siguiente →'}</button></div>` : `<div class="footer-actions"><button id="cancel-study" class="btn danger ghost-danger">Cerrar o continuar después</button></div>`}
     </main>`;
     attachTopbar();
 
@@ -2817,16 +3811,30 @@
         btn.classList.toggle('active', active);
         btn.setAttribute('aria-pressed', active ? 'true' : 'false');
         btn.title = active ? 'Quitar marca de duda' : 'Marcar esta alternativa con ?';
+        scheduleCurrentSessionSave();
       };
     });
     document.getElementById('cancel-study').onclick = cancelCurrentStudy;
     if (currentStudy.config.feedback === 'end') {
-      document.getElementById('prev-study').onclick = () => { saveStudyDuration(); currentStudy.index--; renderStudyQuestion(); };
-      document.getElementById('next-study').onclick = () => {
+      const goPrev = () => {
+        saveStudyDuration();
+        currentStudy.index--;
+        scheduleCurrentSessionSave({ immediate:true });
+        renderStudyQuestion();
+      };
+      const goNext = () => {
         saveStudyDuration();
         if (currentStudy.index + 1 >= currentStudy.questions.length) finishStudy();
-        else { currentStudy.index++; renderStudyQuestion(); }
+        else {
+          currentStudy.index++;
+          scheduleCurrentSessionSave({ immediate:true });
+          renderStudyQuestion();
+        }
       };
+      document.getElementById('prev-study').onclick = goPrev;
+      document.getElementById('prev-study-top').onclick = goPrev;
+      document.getElementById('next-study').onclick = goNext;
+      document.getElementById('next-study-top').onclick = goNext;
     }
     startStudyTimer();
   }
@@ -2858,6 +3866,7 @@
       timerId = setInterval(() => {
         currentStudy.totalRemaining--;
         updateTimer(currentStudy.totalRemaining);
+        if (currentStudy.totalRemaining % 30 === 0) scheduleCurrentSessionSave();
         if (currentStudy.totalRemaining <= 0) {
           clearTimer();
           finishStudy(true);
@@ -2889,6 +3898,7 @@
     const previousResponse = currentStudy.responses[q.id] || {};
     currentStudy.responses[q.id] = { ...previousResponse, selected: letter, didNotKnow: false, timedOut: false };
     currentStudy.answerTimes[q.id] = Number(currentStudy.durations[q.id] || 0);
+    scheduleCurrentSessionSave();
 
     if (currentStudy.config.feedback === 'immediate') {
       clearTimer();
@@ -2899,15 +3909,19 @@
         currentStudy.config.studyMode || 'custom_study', false,
         {
           uncertainOptions,
-          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
+          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25),
+          ...sessionAttemptMeta(currentStudy, q.id),
         }
       );
+      if (savedAttempt?.id) currentStudy.attemptIdsByQuestion[q.id] = savedAttempt.id;
       currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
+      scheduleCurrentSessionSave({ immediate:true });
       disableOptionsAndPaint(q, letter);
       revealStudyQuestionMetadata(q);
       document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
       renderFeedback(q, letter, isCorrect, () => {
         currentStudy.index++;
+        scheduleCurrentSessionSave({ immediate:true });
         renderStudyQuestion();
       }, false, false, uncertainOptions, {
         attemptId: savedAttempt?.id || null,
@@ -2926,6 +3940,7 @@
 
     saveStudyDuration();
     currentStudy.responses[q.id] = { selected: null, didNotKnow: true };
+    scheduleCurrentSessionSave();
 
     if (currentStudy.config.feedback === 'immediate') {
       clearTimer();
@@ -2936,10 +3951,13 @@
         {
           uncertainOptions,
           dontKnow: true,
-          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
+          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25),
+          ...sessionAttemptMeta(currentStudy, q.id),
         }
       );
+      if (savedAttempt?.id) currentStudy.attemptIdsByQuestion[q.id] = savedAttempt.id;
       currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
+      scheduleCurrentSessionSave({ immediate:true });
       disableOptionsAndPaint(q, null);
       revealStudyQuestionMetadata(q);
       document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
@@ -2947,7 +3965,7 @@
       if (dontKnowBtn) dontKnowBtn.disabled = true;
       renderFeedback(
         q, null, false,
-        () => { currentStudy.index++; renderStudyQuestion(); },
+        () => { currentStudy.index++; scheduleCurrentSessionSave({ immediate:true }); renderStudyQuestion(); },
         false, false, uncertainOptions,
         {
           attemptId: savedAttempt?.id || null,
@@ -2959,6 +3977,7 @@
       );
     } else {
       currentStudy.index++;
+      scheduleCurrentSessionSave({ immediate:true });
       if (currentStudy.index >= currentStudy.questions.length) finishStudy();
       else renderStudyQuestion();
     }
@@ -2981,16 +4000,19 @@
         currentStudy.config.studyMode || 'custom_study', true,
         {
           uncertainOptions,
-          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
+          baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25),
+          ...sessionAttemptMeta(currentStudy, q.id),
         }
       ).then((savedAttempt) => {
+        if (savedAttempt?.id) currentStudy.attemptIdsByQuestion[q.id] = savedAttempt.id;
         currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
+        scheduleCurrentSessionSave({ immediate:true });
         disableOptionsAndPaint(q, null);
         revealStudyQuestionMetadata(q);
         document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
         renderFeedback(
           q, null, false,
-          () => { currentStudy.index++; renderStudyQuestion(); },
+          () => { currentStudy.index++; scheduleCurrentSessionSave({ immediate:true }); renderStudyQuestion(); },
           true, false, uncertainOptions,
           {
             attemptId: savedAttempt?.id || null,
@@ -3016,137 +4038,274 @@
     };
 
     currentStudy.index++;
+    scheduleCurrentSessionSave({ immediate:true });
     if (currentStudy.index >= currentStudy.questions.length) finishStudy();
     else renderStudyQuestion();
   }
 
-  async function finishStudy(timeExpired = false) {
-    clearTimer();
-    if (!currentStudy) return renderDashboard();
-    saveStudyDuration();
+  function attemptsForSession(sessionId) {
+    return attempts.filter(attempt => String(attempt.session_id || '') === String(sessionId || ''));
+  }
 
-    let savedStudyAttempts = [];
-    if (currentStudy.config.feedback === 'end') {
-      // En sesiones con corrección al final, las preguntas en blanco forman parte
-      // del resultado de la sesión, pero no se guardan como intentos de aprendizaje.
-      const payload = currentStudy.questions
-        .filter(q => {
-          const response = currentStudy.responses[q.id] || {};
-          return response.selected != null || response.didNotKnow || response.timedOut;
-        })
-        .map(q => {
-          const response = currentStudy.responses[q.id] || {};
-          const selected = response.selected ?? null;
-          const didNotKnow = Boolean(response.didNotKnow);
-          const timedOut = Boolean(response.timedOut);
-          const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
-          const responseTimeMs = timedOut
-            ? studyQuestionTargetMs(q)
-            : Number(currentStudy.answerTimes?.[q.id] ?? currentStudy.durations[q.id] ?? 0);
-          return makeAttempt(
-            q, selected, !didNotKnow && !timedOut && selected === q.official_answer,
-            responseTimeMs,
-            currentStudy.config.studyMode || 'custom_study_end', timedOut,
-            {
-              uncertainOptions,
-              dontKnow: didNotKnow,
-              baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25)
-            }
-          );
-        });
-      savedStudyAttempts = await recordAttemptsBatch(payload) || [];
+  function studyAttemptPayload(study, q) {
+    const response = study.responses[q.id] || {};
+    const selected = response.selected ?? null;
+    const didNotKnow = Boolean(response.didNotKnow);
+    const timedOut = Boolean(response.timedOut);
+    const uncertainOptions = uncertaintyOptionsFor(study.scratch, q.id);
+    const responseTimeMs = timedOut
+      ? effectiveTargetSeconds(q, Number(study.config.secondsPerQuestion || profile?.target_response_seconds || 25)) * 1000
+      : Number(study.answerTimes?.[q.id] ?? study.durations?.[q.id] ?? 0);
+    return makeAttempt(
+      q,
+      selected,
+      !didNotKnow && !timedOut && selected === q.official_answer,
+      responseTimeMs,
+      study.config.studyMode || (study.config.feedback === 'end' ? 'custom_study_end' : 'custom_study_immediate'),
+      timedOut,
+      {
+        uncertainOptions,
+        dontKnow:didNotKnow,
+        baseTargetSeconds:Number(study.config.secondsPerQuestion || profile?.target_response_seconds || 25),
+        ...sessionAttemptMeta(study, q.id),
+      }
+    );
+  }
+
+  async function ensureStudyAttempts(study, questionList) {
+    const sessionId = study?.row?.id;
+    const existing = new Map(attemptsForSession(sessionId).map(attempt => [attempt.question_id, attempt]));
+    const missingPayload = questionList
+      .filter(q => !existing.has(q.id))
+      .map(q => studyAttemptPayload(study, q));
+    const saved = missingPayload.length ? await recordAttemptsBatch(missingPayload) : [];
+    for (const attempt of saved) existing.set(attempt.question_id, attempt);
+    for (const [questionId, attempt] of existing.entries()) {
+      if (attempt?.id) study.attemptIdsByQuestion[questionId] = attempt.id;
+    }
+    return [...existing.values()].filter(attempt => questionList.some(q => q.id === attempt.question_id));
+  }
+
+  async function finalizeSessionRow(holder, state, { partial = false } = {}) {
+    const row = holder?.row;
+    if (!row?.id) return null;
+    const normalizedState = normalizeSessionState(state);
+    const answeredCount = answeredIdsFor(row, normalizedState).length;
+    const now = sessionNowIso();
+    const completed = {
+      ...row,
+      state:normalizedState,
+      status:'completed',
+      is_partial:Boolean(partial),
+      closed_reason:partial ? 'completed_partial' : 'completed_full',
+      answered_count:answeredCount,
+      planned_count:row.planned_count || row.question_ids?.length || 0,
+      active_time_ms:normalizedState.activeTimeMs || 0,
+      paused_time_ms:normalizedState.pausedTimeMs || 0,
+      completed_at:now,
+      updated_at:now,
+      client_app_version:APP_VERSION,
+      state_schema_version:1,
+      state_revision:Number(row.state_revision || 0) + 1,
+    };
+    await saveSessionShadow(completed, cloudConfigured ? 'pending' : 'local');
+    removeActiveSessionInMemory(row.id);
+    upsertSessionInMemory(completed);
+
+    if (cloudConfigured) {
+      const updatePayload = {
+        state:normalizedState,
+        status:'completed',
+        is_partial:Boolean(partial),
+        closed_reason:partial ? 'completed_partial' : 'completed_full',
+        answered_count:answeredCount,
+        planned_count:completed.planned_count,
+        active_time_ms:completed.active_time_ms,
+        paused_time_ms:completed.paused_time_ms,
+        completed_at:now,
+        updated_at:now,
+        last_synced_at:now,
+        client_app_version:APP_VERSION,
+        state_schema_version:1,
+        state_revision:completed.state_revision,
+      };
+      const { data, error } = await supa.from('practice_sessions')
+        .update(updatePayload)
+        .eq('id', row.id)
+        .eq('status', 'active')
+        .select()
+        .maybeSingle();
+      if (error || !data) {
+        await sessionStore?.queueOperation('CLOSE_SESSION', { sessionId:row.id, updatePayload }, `CLOSE_SESSION:${row.id}`);
+        const pending = { ...completed, syncStatus:error ? 'offline' : 'conflict', syncError:error?.message || 'Session was not active on the server.' };
+        await saveSessionShadow(pending, pending.syncStatus);
+        upsertSessionInMemory(pending);
+        return pending;
+      }
+      const synced = { ...data, syncStatus:'synced' };
+      await saveSessionShadow(synced, 'synced');
+      upsertSessionInMemory(synced);
+      return synced;
     }
 
-    const result = currentStudy.questions.map(q => {
-      const response = currentStudy.responses[q.id] || {};
-      const selected = response.selected ?? null;
-      const timedOut = Boolean(response.timedOut);
-      return {
-        q,
-        selected,
-        didNotKnow: Boolean(response.didNotKnow),
-        timedOut,
-        correct: !response.didNotKnow && !timedOut && selected === q.official_answer
-      };
-    });
-    const correct = result.filter(r => r.correct).length;
-    const uncertainCount = currentStudy.questions.filter(q => uncertaintyOptionsFor(currentStudy.scratch, q.id).length > 0).length;
-    reviewContext = {
-      type: 'study',
-      questions: currentStudy.questions,
-      responses: currentStudy.responses,
-      scratch: currentStudy.scratch || {},
-      optionOrders: currentStudy.optionOrders || {},
-      shuffleOptions: currentStudy.config.shuffleOptions !== false,
-      attemptsByQuestion: Object.fromEntries(savedStudyAttempts.map(a => [a.question_id, a])),
-      index: 0
-    };
+    saveLocalSessions();
+    return completed;
+  }
 
-    app.innerHTML = `<main class="shell">${topbar('Sesión terminada', true)}<section class="panel empty"><h2>${timeExpired ? 'Tiempo terminado' : 'Sesión completada'}</h2><p class="score-big">${correct}/${result.length}</p><p>${pct(correct, result.length)} de aciertos · ${uncertainCount} preguntas con duda registrada</p><div class="actions"><button id="review-btn" class="btn">Revisar respuestas</button><button class="btn primary" data-home>Volver al inicio</button></div></section></main>`;
-    attachTopbar();
-    document.getElementById('review-btn').onclick = () => renderReviewQuestion();
+  async function closeStudyPartial() {
+    if (!currentStudy || sessionActionInProgress) return;
+    const answeredQuestions = currentStudy.questions.filter(q => responseCountsAsAnswered(currentStudy.responses?.[q.id]));
+    if (!answeredQuestions.length) return;
+    sessionActionInProgress = true;
+    try {
+      clearTimer();
+      saveStudyDuration();
+      endSessionActivity();
+      await flushCurrentSessionSave();
+      const savedAttempts = await ensureStudyAttempts(currentStudy, answeredQuestions);
+      const state = studyStateSnapshot();
+      await finalizeSessionRow(currentStudy, state, { partial:true });
+      reviewContext = {
+        type:'study_session',
+        sessionId:currentStudy.row.id,
+        partial:true,
+        questions:answeredQuestions,
+        responses:currentStudy.responses,
+        scratch:currentStudy.scratch || {},
+        optionOrders:currentStudy.optionOrders || {},
+        shuffleOptions:currentStudy.config.shuffleOptions !== false,
+        attemptsByQuestion:Object.fromEntries(savedAttempts.map(attempt => [attempt.question_id, attempt])),
+        index:0,
+      };
+      currentStudy = null;
+      deactivateSessionNavigationGuard();
+      renderReviewQuestion();
+    } finally {
+      sessionActionInProgress = false;
+    }
+  }
+
+  async function finishStudy(timeExpired = false) {
+    clearTimer();
+    if (!currentStudy || sessionActionInProgress) return currentStudy ? null : renderDashboard();
+    sessionActionInProgress = true;
+    try {
+      saveStudyDuration();
+      endSessionActivity();
+      await flushCurrentSessionSave();
+      const study = currentStudy;
+      const answeredQuestions = study.questions.filter(q => responseCountsAsAnswered(study.responses?.[q.id]));
+      const savedStudyAttempts = await ensureStudyAttempts(study, answeredQuestions);
+      const state = studyStateSnapshot();
+      await finalizeSessionRow(study, state, { partial:false });
+
+      const result = study.questions.map(q => {
+        const response = study.responses[q.id] || {};
+        const selected = response.selected ?? null;
+        const timedOut = Boolean(response.timedOut);
+        return {
+          q,
+          selected,
+          didNotKnow:Boolean(response.didNotKnow),
+          timedOut,
+          correct:!response.didNotKnow && !timedOut && selected === q.official_answer,
+        };
+      });
+      const correct = result.filter(row => row.correct).length;
+      const uncertainCount = study.questions.filter(q => uncertaintyOptionsFor(study.scratch, q.id).length > 0).length;
+      reviewContext = {
+        type:'study_session',
+        sessionId:study.row.id,
+        partial:false,
+        questions:study.questions,
+        responses:study.responses,
+        scratch:study.scratch || {},
+        optionOrders:study.optionOrders || {},
+        shuffleOptions:study.config.shuffleOptions !== false,
+        attemptsByQuestion:Object.fromEntries(savedStudyAttempts.map(attempt => [attempt.question_id, attempt])),
+        index:0,
+      };
+      currentStudy = null;
+      deactivateSessionNavigationGuard();
+
+      app.innerHTML = `<main class="shell">${topbar('Sesión terminada', true)}<section class="panel empty"><h2>${timeExpired ? 'Tiempo terminado' : 'Sesión completada'}</h2><p class="score-big">${correct}/${result.length}</p><p>${pct(correct, result.length)} de aciertos · ${answeredQuestions.length} respondidas · ${uncertainCount} preguntas con duda registrada</p><div class="actions"><button id="review-btn" class="btn">Revisar respuestas</button><button class="btn primary" data-home>Volver al inicio</button></div></section></main>`;
+      attachTopbar();
+      document.getElementById('review-btn').onclick = () => renderReviewQuestion();
+    } finally {
+      sessionActionInProgress = false;
+    }
   }
 
   async function launchExam(selected, config) {
     clearTimer();
-    config = { shuffleOptions: true, ...config };
-    const state = {
-      currentIndex: 0,
-      responses: {},
-      marked: {},
-      scratch: {},
-      timeSpent: {},
-      optionOrders: createOptionOrders(
+    if (!selected?.length) return renderMessage('Sin preguntas', 'No se encontraron preguntas para iniciar este simulacro.');
+    config = { shuffleOptions:true, ...config };
+    currentStudy = null;
+    const state = normalizeSessionState({
+      schemaVersion:1,
+      currentIndex:0,
+      responses:{},
+      marked:{},
+      scratch:{},
+      timeSpent:{},
+      optionOrders:createOptionOrders(
         selected,
         config.shuffleOptions !== false && config.examLayout !== 'paper'
       ),
-      remainingSeconds: config.totalSeconds,
-      breakTaken: false,
-    };
-
-    let sessionRow = null;
-    if (cloudConfigured) {
-      const { data, error } = await supa.from('practice_sessions').insert({
-        user_id: user.id,
-        mode: 'exam',
-        title: config.title,
-        config,
-        question_ids: selected.map(q => q.id),
-        state,
-        status: 'active',
-        updated_at: new Date().toISOString(),
-      }).select().single();
-      if (error) {
-        alert(`No se pudo crear la sesión persistente: ${error.message}. Ejecuta la migración v0.4 en Supabase.`);
-        return;
-      }
-      sessionRow = data;
-      activeSessions.unshift(data);
-    } else {
-      sessionRow = { id: makeUuid(), mode: 'exam', title: config.title, config, question_ids: selected.map(q=>q.id), state, status:'active', updated_at:new Date().toISOString() };
-      activeSessions.unshift(sessionRow); saveLocalSessions();
-    }
-
-    currentExam = { row: sessionRow, config, questions: selected, state };
+      remainingSeconds:config.totalSeconds,
+      totalRemaining:null,
+      breakTaken:false,
+      activeTimeMs:0,
+      pausedTimeMs:0,
+      lastVisibleAt:sessionNowIso(),
+      lastSavedAt:sessionNowIso(),
+      deviceInstanceId,
+    });
+    const sessionRow = await createPersistentSession('exam', selected, config, state);
+    currentExam = { row:sessionRow, config, questions:selected, state };
+    beginSessionActivity();
+    activateSessionNavigationGuard();
     if (config.examLayout === 'paper') renderHistoricalExamPaper();
     else renderExamQuestion();
   }
 
-  async function resumePersistentSession(row) {
+  async function resumePersistentSession(rawRow) {
+    const row = SessionCore.normalizeSessionRow ? SessionCore.normalizeSessionRow(rawRow) : rawRow;
     const selected = (row.question_ids || []).map(id => questions.find(q => q.id === id)).filter(Boolean);
     if (!selected.length) return renderMessage('No se pudo reanudar', 'Las preguntas de la sesión ya no están disponibles.');
-    currentExam = { row, config: row.config || {}, questions: selected, state: row.state || {} };
-    currentExam.state.responses ||= {};
-    currentExam.state.marked ||= {};
-    currentExam.state.scratch ||= {};
-    currentExam.state.timeSpent ||= {};
-    currentExam.state.optionOrders ||= createOptionOrders(
-      selected,
-      currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper'
-    );
-    currentExam.state.currentIndex ||= 0;
-    currentExam.state.remainingSeconds ??= currentExam.config.totalSeconds || 0;
-    if (currentExam.config.examLayout === 'paper') renderHistoricalExamPaper();
+
+    if (row.mode === 'study') {
+      currentExam = null;
+      const study = {
+        row,
+        config:row.config || {},
+        questions:selected,
+      };
+      currentStudy = SessionCore.stateToStudy
+        ? SessionCore.stateToStudy(row, selected, createOptionOrders)
+        : applyStateToStudy(study, row.state || {});
+      currentStudy.row = row;
+      currentStudy.config = row.config || {};
+      currentStudy.questions = selected;
+      applyStateToStudy(currentStudy, row.state || {});
+      beginSessionActivity();
+      activateSessionNavigationGuard();
+      renderStudyQuestion();
+      return;
+    }
+
+    currentStudy = null;
+    const state = normalizeSessionState(row.state || {});
+    const config = row.config || {};
+    state.optionOrders = Object.keys(state.optionOrders || {}).length
+      ? state.optionOrders
+      : createOptionOrders(selected, config.shuffleOptions !== false && config.examLayout !== 'paper');
+    state.currentIndex = Math.min(Math.max(0, state.currentIndex || 0), Math.max(0, selected.length - 1));
+    state.remainingSeconds ??= config.totalSeconds || 0;
+    currentExam = { row, config, questions:selected, state };
+    beginSessionActivity();
+    activateSessionNavigationGuard();
+    if (config.examLayout === 'paper') renderHistoricalExamPaper();
     else renderExamQuestion();
   }
 
@@ -3160,64 +4319,40 @@
   }
 
   async function persistExamState() {
-    if (!currentExam) return;
-    currentExam.row.state = currentExam.state;
-    currentExam.row.updated_at = new Date().toISOString();
-    if (cloudConfigured) {
-      await supa.from('practice_sessions').update({ state: currentExam.state, updated_at: currentExam.row.updated_at }).eq('id', currentExam.row.id);
-    } else {
-      const idx = activeSessions.findIndex(s => s.id === currentExam.row.id);
-      if (idx >= 0) activeSessions[idx] = currentExam.row;
-      saveLocalSessions();
-    }
+    if (!currentExam) return null;
+    currentExam.state = normalizeSessionState(currentExam.state);
+    return scheduleCurrentSessionSave({ immediate:true });
   }
 
-
-  async function abandonSessionRow(row, returnHome = false) {
-    if (!row) return;
-    if (!confirm(`¿Cancelar "${row.title || 'esta sesión'}"?\n\nSe eliminará de las sesiones en curso. Las respuestas de este simulacro que aún no hayan sido entregadas NO contarán como intentos.`)) return;
-
-    const now = new Date().toISOString();
-    if (cloudConfigured) {
-      const { error } = await supa.from('practice_sessions')
-        .update({ status:'abandoned', updated_at:now })
-        .eq('id', row.id);
-      if (error) {
-        alert(`No se pudo cancelar la sesión: ${error.message}`);
-        return;
-      }
-    } else {
-      const idx = activeSessions.findIndex(s => s.id === row.id);
-      if (idx >= 0) activeSessions[idx] = { ...activeSessions[idx], status:'abandoned', updated_at:now };
-      saveLocalSessions();
+  async function continueExamLater() {
+    if (!currentExam || sessionActionInProgress) return;
+    sessionActionInProgress = true;
+    try {
+      clearTimer();
+      accumulateExamTime();
+      endSessionActivity();
+      await flushCurrentSessionSave();
+      currentExam = null;
+      deactivateSessionNavigationGuard();
+      renderDashboard();
+    } finally {
+      sessionActionInProgress = false;
     }
-
-    activeSessions = activeSessions.filter(s => s.id !== row.id);
-    if (currentExam?.row?.id === row.id) currentExam = null;
-    if (returnHome) renderDashboard();
   }
 
   async function exitCurrentExam() {
-    if (!currentExam) return renderDashboard();
-    clearTimer();
-    accumulateExamTime();
-    await persistExamState();
-    currentExam = null;
-    renderDashboard();
+    return continueExamLater();
   }
 
   async function cancelCurrentExam() {
-    if (!currentExam) return renderDashboard();
-    clearTimer();
-    accumulateExamTime();
-    await abandonSessionRow(currentExam.row, true);
+    requestCurrentSessionExit();
   }
 
   function renderExamQuestion() {
     clearTimer();
     scrollPageTop();
     const q = currentExam.questions[currentExam.state.currentIndex];
-    const selected = currentExam.state.responses[q.id] ?? null;
+    const selected = sessionSelected(currentExam.state, q.id);
     const marked = Boolean(currentExam.state.marked[q.id]);
     currentExam.state.scratch ||= {};
     const uncertainOptions = uncertaintyOptionsFor(currentExam.state.scratch, q.id);
@@ -3225,6 +4360,12 @@
 
     app.innerHTML = `<main class="shell exam-shell">
       ${topbar(currentExam.config.title || 'Simulacro', false)}
+      <div class="question-step-nav exam-question-step-nav" aria-label="Navegación superior del simulacro">
+        <button class="btn small ghost" data-exam-prev ${currentExam.state.currentIndex===0?'disabled':''}>← Anterior</button>
+        <strong>${currentExam.state.currentIndex+1}/${currentExam.questions.length}</strong>
+        <button class="btn small ${marked?'warn-btn':'ghost'}" data-exam-mark>${marked?'⚑ Marcada':'⚐ Marcar'}</button>
+        <button class="btn small primary" data-exam-next>${currentExam.state.currentIndex+1===currentExam.questions.length?'Ir al final':'Siguiente →'}</button>
+      </div>
       <section class="exam-layout">
         <div class="panel question-card">
           <div class="progress"><div style="width:${(currentExam.state.currentIndex/currentExam.questions.length)*100}%"></div></div>
@@ -3239,20 +4380,19 @@
             ).map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.sourceLetter || o.letter))).join('')}</div>
           </div>
         </div>
-        <aside class="panel exam-nav"><div class="exam-nav-head"><strong>Navegación</strong><button id="mark-btn" class="btn small ${marked?'warn-btn':''}">${marked?'⚑ Marcada':'⚐ Marcar'}</button></div><div class="question-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="legend"><span>● respondida</span><span>⚑ revisar</span></div></aside>
+        <aside class="panel exam-nav"><div class="exam-nav-head"><strong>Navegación</strong><button class="btn small ${marked?'warn-btn':''}" data-exam-mark>${marked?'⚑ Marcada':'⚐ Marcar'}</button></div><div class="question-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="legend"><span>● respondida</span><span>⚑ revisar</span></div></aside>
       </section>
       <div class="exam-controls">
-        <button id="prev-exam" class="btn ghost" ${currentExam.state.currentIndex===0?'disabled':''}>← Anterior</button>
-        <button id="exit-exam" class="btn ghost">Salir y continuar después</button>
-        <button id="cancel-exam" class="btn danger ghost-danger">Cancelar simulacro</button>
+        <button class="btn ghost" data-exam-prev ${currentExam.state.currentIndex===0?'disabled':''}>← Anterior</button>
+        <button id="session-exit-exam" class="btn ghost">Cerrar o continuar después</button>
         <button id="finish-exam" class="btn danger">Entregar examen</button>
-        <button id="next-exam" class="btn primary">${currentExam.state.currentIndex+1===currentExam.questions.length?'Ir al final':'Siguiente →'}</button>
+        <button class="btn primary" data-exam-next>${currentExam.state.currentIndex+1===currentExam.questions.length?'Ir al final':'Siguiente →'}</button>
       </div>
     </main>`;
     attachTopbar();
 
     document.querySelectorAll('.option').forEach(btn => btn.onclick = async () => {
-      currentExam.state.responses[q.id] = btn.dataset.letter;
+      currentExam.state.responses[q.id] = { ...sessionResponse(currentExam.state, q.id), selected:btn.dataset.letter, didNotKnow:false, timedOut:false };
       document.querySelectorAll('.option').forEach(b => b.classList.toggle('selected', b.dataset.letter === btn.dataset.letter));
       await persistExamState();
       refreshExamGridOnly();
@@ -3275,17 +4415,18 @@
       await persistExamState();
       renderExamQuestion();
     });
-    document.getElementById('mark-btn').onclick = async () => {
+    const toggleExamMark = async () => {
       currentExam.state.marked[q.id] = !currentExam.state.marked[q.id];
       await persistExamState();
       renderExamQuestion();
     };
-    document.getElementById('prev-exam').onclick = async () => {
+    const goExamPrev = async () => {
+      if (currentExam.state.currentIndex <= 0) return;
       accumulateExamTime();
       currentExam.state.currentIndex--;
       await persistExamState(); renderExamQuestion();
     };
-    document.getElementById('next-exam').onclick = async () => {
+    const goExamNext = async () => {
       accumulateExamTime();
       const nextIndex = currentExam.state.currentIndex + 1;
       if (currentExam.config.breakAfter > 0 && nextIndex === currentExam.config.breakAfter && !currentExam.state.breakTaken && nextIndex < currentExam.questions.length) {
@@ -3299,8 +4440,10 @@
         await persistExamState(); renderExamQuestion();
       } else renderExamOverview();
     };
-    document.getElementById('exit-exam').onclick = exitCurrentExam;
-    document.getElementById('cancel-exam').onclick = cancelCurrentExam;
+    document.querySelectorAll('[data-exam-mark]').forEach(btn => btn.onclick = toggleExamMark);
+    document.querySelectorAll('[data-exam-prev]').forEach(btn => btn.onclick = goExamPrev);
+    document.querySelectorAll('[data-exam-next]').forEach(btn => btn.onclick = goExamNext);
+    document.getElementById('session-exit-exam').onclick = cancelCurrentExam;
     document.getElementById('finish-exam').onclick = renderExamOverview;
     startExamTimer();
   }
@@ -3319,7 +4462,7 @@
   }
 
   function examGridButton(q, i) {
-    const answered = currentExam.state.responses[q.id] != null;
+    const answered = sessionSelected(currentExam.state, q.id) != null;
     const marked = Boolean(currentExam.state.marked[q.id]);
     const current = i === currentExam.state.currentIndex;
     const label = currentExam?.config?.examLayout === 'paper' ? historicalDisplayNumber(q, i) : String(i + 1);
@@ -3337,21 +4480,20 @@
   function renderBreakScreen() {
     clearTimer();
     const done = currentExam.config.breakAfter;
-    app.innerHTML = `<main class="shell">${topbar('Descanso', false)}<section class="panel empty"><h2>Bloque 1 completado</h2><p>Has llegado a la pregunta ${done}. Tu progreso está guardado.</p><p class="muted">${currentExam.config.pauseDuringBreak ? 'El cronómetro está pausado durante este descanso.' : 'El cronómetro continúa corriendo.'}</p><div class="actions"><button id="continue-block" class="btn primary">Continuar con el siguiente bloque</button><button id="exit-break" class="btn ghost">Salir y continuar después</button><button id="cancel-break" class="btn danger ghost-danger">Cancelar simulacro</button></div></section></main>`;
+    app.innerHTML = `<main class="shell">${topbar('Descanso', false)}<section class="panel empty"><h2>Bloque 1 completado</h2><p>Has llegado a la pregunta ${done}. Tu progreso está guardado.</p><p class="muted">${currentExam.config.pauseDuringBreak ? 'El cronómetro está pausado durante este descanso.' : 'El cronómetro continúa corriendo.'}</p><div class="actions"><button id="continue-block" class="btn primary">Continuar con el siguiente bloque</button><button id="session-exit-break" class="btn ghost">Cerrar o continuar después</button></div></section></main>`;
     attachTopbar();
     if (!currentExam.config.pauseDuringBreak) startExamTimer();
     document.getElementById('continue-block').onclick = () => currentExam.config.examLayout === 'paper' ? renderHistoricalExamPaper() : renderExamQuestion();
-    document.getElementById('exit-break').onclick = exitCurrentExam;
-    document.getElementById('cancel-break').onclick = cancelCurrentExam;
+    document.getElementById('session-exit-break').onclick = cancelCurrentExam;
   }
 
   function renderExamOverview() {
     clearTimer();
     accumulateExamTime();
-    const answered = currentExam.questions.filter(q => currentExam.state.responses[q.id] != null).length;
+    const answered = currentExam.questions.filter(q => sessionSelected(currentExam.state, q.id) != null).length;
     const marked = currentExam.questions.filter(q => currentExam.state.marked[q.id]).length;
     const uncertain = currentExam.questions.filter(q => Object.values(currentExam.state.scratch?.[q.id] || {}).includes('tentative')).length;
-    app.innerHTML = `<main class="shell">${topbar('Revisión antes de entregar', false)}<section class="panel"><h2>Resumen del simulacro</h2><div class="kpis"><div class="kpi"><div class="value">${answered}</div><div class="label">Respondidas</div></div><div class="kpi"><div class="value">${currentExam.questions.length-answered}</div><div class="label">Sin responder</div></div><div class="kpi"><div class="value">${marked}</div><div class="label">Marcadas para revisar</div></div><div class="kpi"><div class="value">${uncertain}</div><div class="label">Dudosas (?)</div></div><div class="kpi"><div class="value">${formatTime(currentExam.state.remainingSeconds)}</div><div class="label">Tiempo restante</div></div></div><div class="question-grid overview-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="footer-actions"><button id="back-exam" class="btn ghost">Volver al examen</button><button id="cancel-overview" class="btn danger ghost-danger">Cancelar simulacro</button><button id="submit-exam" class="btn danger">Entregar y corregir</button></div></section></main>`;
+    app.innerHTML = `<main class="shell">${topbar('Revisión antes de entregar', false)}<section class="panel"><h2>Resumen del simulacro</h2><div class="kpis"><div class="kpi"><div class="value">${answered}</div><div class="label">Respondidas</div></div><div class="kpi"><div class="value">${currentExam.questions.length-answered}</div><div class="label">Sin responder</div></div><div class="kpi"><div class="value">${marked}</div><div class="label">Marcadas para revisar</div></div><div class="kpi"><div class="value">${uncertain}</div><div class="label">Dudosas (?)</div></div><div class="kpi"><div class="value">${formatTime(currentExam.state.remainingSeconds)}</div><div class="label">Tiempo restante</div></div></div><div class="question-grid overview-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="footer-actions"><button id="back-exam" class="btn ghost">Volver al examen</button><button id="cancel-overview" class="btn ghost">Cerrar o continuar después</button><button id="submit-exam" class="btn danger">Entregar y corregir</button></div></section></main>`;
     attachTopbar();
     document.querySelectorAll('[data-qindex]').forEach(btn => btn.onclick = () => {
       currentExam.state.currentIndex = Number(btn.dataset.qindex);
@@ -3370,65 +4512,125 @@
     };
   }
 
+  function examAttemptPayload(exam, q, historicalAverageMs = 0) {
+    const selected = sessionSelected(exam.state, q.id);
+    const measuredMs = exam.state.timeSpent?.[q.id] || (exam.config.examLayout === 'paper' ? historicalAverageMs : 0);
+    const uncertainOptions = Object.entries(exam.state.scratch?.[q.id] || {})
+      .filter(([, state]) => state === 'tentative')
+      .map(([letter]) => letter);
+    return makeAttempt(
+      q,
+      selected,
+      selected === q.official_answer,
+      measuredMs,
+      exam.config.studyMode || 'exam',
+      false,
+      {
+        uncertainOptions,
+        ...sessionAttemptMeta(exam, q.id),
+      }
+    );
+  }
+
+  async function ensureExamAttempts(exam, questionList) {
+    const existing = new Map(attemptsForSession(exam?.row?.id).map(attempt => [attempt.question_id, attempt]));
+    const answeredForTiming = questionList.length;
+    const elapsedSessionMs = Math.max(0, (Number(exam.config.totalSeconds || 0) - Number(exam.state.remainingSeconds || 0)) * 1000);
+    const historicalAverageMs = answeredForTiming ? Math.round(elapsedSessionMs / answeredForTiming) : 0;
+    const payload = questionList
+      .filter(q => !existing.has(q.id))
+      .map(q => examAttemptPayload(exam, q, historicalAverageMs));
+    const saved = payload.length ? await recordAttemptsBatch(payload) : [];
+    for (const attempt of saved) existing.set(attempt.question_id, attempt);
+    return [...existing.values()].filter(attempt => questionList.some(q => q.id === attempt.question_id));
+  }
+
+  async function closeExamPartial() {
+    if (!currentExam || sessionActionInProgress) return;
+    const answeredQuestions = currentExam.questions.filter(q => sessionSelected(currentExam.state, q.id) != null);
+    if (!answeredQuestions.length) return;
+    sessionActionInProgress = true;
+    try {
+      clearTimer();
+      accumulateExamTime();
+      endSessionActivity();
+      await flushCurrentSessionSave();
+      const exam = currentExam;
+      const savedAttempts = await ensureExamAttempts(exam, answeredQuestions);
+      const state = normalizeSessionState(exam.state);
+      await finalizeSessionRow(exam, state, { partial:true });
+      reviewContext = {
+        type:'exam_session',
+        sessionId:exam.row.id,
+        partial:true,
+        questions:answeredQuestions,
+        responses:state.responses,
+        scratch:state.scratch || {},
+        marked:state.marked || {},
+        optionOrders:state.optionOrders || {},
+        shuffleOptions:exam.config.shuffleOptions !== false && exam.config.examLayout !== 'paper',
+        attemptsByQuestion:Object.fromEntries(savedAttempts.map(attempt => [attempt.question_id, attempt])),
+        index:0,
+      };
+      currentExam = null;
+      deactivateSessionNavigationGuard();
+      renderReviewQuestion();
+    } finally {
+      sessionActionInProgress = false;
+    }
+  }
+
   async function finishExam(timeExpired = false) {
     clearTimer();
-    accumulateExamTime();
-    const answeredForTiming = currentExam.questions.filter(q => currentExam.state.responses[q.id] != null).length;
-    const elapsedSessionMs = Math.max(0, (Number(currentExam.config.totalSeconds || 0) - Number(currentExam.state.remainingSeconds || 0)) * 1000);
-    const historicalAverageMs = answeredForTiming ? Math.round(elapsedSessionMs / answeredForTiming) : 0;
-    const attemptMode = currentExam.config.studyMode || 'exam';
-    // Las preguntas en blanco siguen contando como omitidas en el RESULTADO del simulacro,
-    // pero NO se guardan como intentos de práctica ni alimentan el repaso espaciado.
-    // Así, una maratón entregada con 20 respuestas suma 20 preguntas al volumen diario, no 200.
-    const payload = currentExam.questions
-      .filter(q => currentExam.state.responses[q.id] != null)
-      .map(q => {
-        const selected = currentExam.state.responses[q.id];
-        const measuredMs = currentExam.state.timeSpent[q.id] || (currentExam.config.examLayout === 'paper' ? historicalAverageMs : 0);
-        const uncertainOptions = Object.entries(currentExam.state.scratch?.[q.id] || {})
-          .filter(([,state]) => state === 'tentative')
-          .map(([letter]) => letter);
-        return makeAttempt(q, selected, selected === q.official_answer, measuredMs, attemptMode, false, { uncertainOptions });
+    if (!currentExam || sessionActionInProgress) return;
+    sessionActionInProgress = true;
+    try {
+      accumulateExamTime();
+      endSessionActivity();
+      await flushCurrentSessionSave();
+      const exam = currentExam;
+      const answeredQuestions = exam.questions.filter(q => sessionSelected(exam.state, q.id) != null);
+      const savedExamAttempts = await ensureExamAttempts(exam, answeredQuestions);
+      const state = normalizeSessionState(exam.state);
+      await finalizeSessionRow(exam, state, { partial:false });
+
+      const result = exam.questions.map(q => {
+        const selected = sessionSelected(state, q.id);
+        return { q, selected, correct:selected === q.official_answer };
       });
-    const savedExamAttempts = await recordAttemptsBatch(payload) || [];
+      const correct = result.filter(row => row.correct).length;
+      const answered = result.filter(row => row.selected != null).length;
+      reviewContext = {
+        type:'exam_session',
+        sessionId:exam.row.id,
+        partial:false,
+        questions:exam.questions,
+        responses:state.responses,
+        scratch:state.scratch || {},
+        marked:state.marked || {},
+        optionOrders:state.optionOrders || {},
+        shuffleOptions:exam.config.shuffleOptions !== false && exam.config.examLayout !== 'paper',
+        attemptsByQuestion:Object.fromEntries(savedExamAttempts.map(attempt => [attempt.question_id, attempt])),
+        index:0,
+      };
+      currentExam = null;
+      deactivateSessionNavigationGuard();
 
-    if (cloudConfigured) {
-      await supa.from('practice_sessions').update({ status:'completed', state: currentExam.state, completed_at:new Date().toISOString(), updated_at:new Date().toISOString() }).eq('id', currentExam.row.id);
-    } else {
-      const idx = activeSessions.findIndex(s => s.id === currentExam.row.id);
-      if (idx >= 0) activeSessions[idx].status = 'completed';
-      saveLocalSessions();
+      app.innerHTML = `<main class="shell">${topbar('Resultado del simulacro', true)}<section class="panel empty"><h2>${timeExpired ? 'Tiempo agotado' : 'Simulacro entregado'}</h2><p class="score-big">${correct}/${result.length}</p><p>${pct(correct, result.length)} · ${answered} respondidas · ${result.length - answered} omitidas</p><div class="actions"><button id="review-btn" class="btn">Revisar pregunta por pregunta</button><button class="btn primary" data-home>Volver al inicio</button></div></section></main>`;
+      attachTopbar();
+      document.getElementById('review-btn').onclick = renderReviewQuestion;
+    } finally {
+      sessionActionInProgress = false;
     }
-    activeSessions = activeSessions.filter(s => s.id !== currentExam.row.id);
-
-    const result = currentExam.questions.map(q => {
-      const selected = currentExam.state.responses[q.id] ?? null;
-      return { q, selected, correct: selected === q.official_answer };
-    });
-    const correct = result.filter(r => r.correct).length;
-    const answered = result.filter(r => r.selected != null).length;
-    reviewContext = {
-      type:'exam',
-      questions:currentExam.questions,
-      responses:currentExam.state.responses,
-      scratch:currentExam.state.scratch || {},
-      marked:currentExam.state.marked || {},
-      optionOrders: currentExam.state.optionOrders || {},
-      shuffleOptions: currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper',
-      attemptsByQuestion: Object.fromEntries(savedExamAttempts.map(a => [a.question_id, a])),
-      index:0
-    };
-
-    app.innerHTML = `<main class="shell">${topbar('Resultado del simulacro', true)}<section class="panel empty"><h2>${timeExpired?'Tiempo agotado':'Simulacro entregado'}</h2><p class="score-big">${correct}/${result.length}</p><p>${pct(correct,result.length)} · ${answered} respondidas · ${result.length-answered} omitidas</p><div class="actions"><button id="review-btn" class="btn">Revisar pregunta por pregunta</button><button class="btn primary" data-home>Volver al inicio</button></div></section></main>`;
-    attachTopbar();
-    document.getElementById('review-btn').onclick = renderReviewQuestion;
   }
 
   function renderReviewQuestion() {
     clearTimer();
     scrollPageTop();
     const q = reviewContext.questions[reviewContext.index];
-    const historyReview = reviewContext?.type === 'history';
+    const historyReview = String(reviewContext?.type || '').startsWith('history_');
+    const historySessionReview = reviewContext?.type === 'history_session';
+    const specificQueryReview = reviewContext?.type === 'specific_query';
     const responseValue = reviewContext.responses[q.id];
     const selected = responseValue?.selected ?? responseValue ?? null;
     const didNotKnow = Boolean(responseValue?.didNotKnow);
@@ -3439,13 +4641,15 @@
       .filter(([,state]) => state === 'tentative')
       .map(([letter]) => letter);
     const reviewOptions = displayOptionList(q, reviewContext.optionOrders || {}, reviewContext.shuffleOptions !== false);
-    app.innerHTML = `<main class="shell">${topbar('Revisión', true)}<section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p>${questionMediaHtml(q)}<div class="options">${reviewOptions.map(o => {
+    const reviewTitle = reviewContext?.type === 'specific_query' ? 'Consulta' : 'Revisión';
+    app.innerHTML = `<main class="shell">${topbar(reviewTitle, true)}<div class="review-navigation-wrap"><div class="question-step-nav" aria-label="Navegación superior de la revisión"><button class="btn small ghost" data-review-prev ${reviewContext.index===0?'disabled':''}>← Anterior</button><strong>${reviewContext.index+1}/${reviewContext.questions.length}</strong><button class="btn small primary" data-review-next>${reviewContext.index+1===reviewContext.questions.length?(specificQueryReview?'Volver al selector':'Terminar revisión'):'Siguiente →'}</button></div>${specificQueryReview?`<div class="specific-review-actions" aria-label="Acciones de consulta"><button class="btn small ghost" data-review-selector type="button">← Volver al selector</button><button class="btn small danger ghost-danger" data-review-exit type="button">Salir</button></div>`:''}</div><section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p>${questionMediaHtml(q)}<div class="options">${reviewOptions.map(o => {
       const sourceLetter = o.sourceLetter || o.letter;
       return `<div class="option ${sourceLetter===q.official_answer?'correct':sourceLetter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`;
-    }).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions"><button id="prev-review" class="btn ghost" ${historyReview?'style="visibility:hidden"':(reviewContext.index===0?'disabled':'')}>← Anterior</button><button id="next-review" class="btn primary">${historyReview?'Volver al historial':(reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →')}</button></div></main>`;
+    }).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions review-footer-actions"><button class="btn ghost" data-review-prev ${historyReview && !historySessionReview?'style="visibility:hidden"':(reviewContext.index===0?'disabled':'')}>← Anterior</button>${specificQueryReview?`<button class="btn ghost" data-review-selector type="button">Volver al selector</button><button class="btn danger ghost-danger" data-review-exit type="button">Salir</button>`:''}<button class="btn primary" data-review-next>${specificQueryReview?(reviewContext.index+1===reviewContext.questions.length?'Volver al selector':'Siguiente →'):historyReview?(historySessionReview && reviewContext.index+1<reviewContext.questions.length?'Siguiente →':'Volver al historial'):(reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →')}</button></div></main>`;
     attachTopbar();
     const sessionAttempt = reviewContext?.attemptsByQuestion?.[q.id] || null;
-    const latestAttempt = sessionAttempt || (reviewContext?.type === 'study'
+    const sessionScopedReview = Boolean(reviewContext?.sessionId);
+    const latestAttempt = sessionAttempt || (sessionScopedReview
       ? null
       : attemptsForQuestion(q.id)
           .slice()
@@ -3476,16 +4680,39 @@
     if (reviewFeedbackNode && !reviewFeedbackNode.innerHTML.trim()) {
       renderReviewFeedbackFallback(q, selected, correct, timedOut, uncertainOptions, reviewFeedbackMeta);
     }
-    if (!historyReview) {
-      document.getElementById('prev-review').onclick = () => { reviewContext.index--; renderReviewQuestion(); };
-    }
-    document.getElementById('next-review').onclick = () => {
+    const goReviewPrev = () => {
+      if (reviewContext.index <= 0) return;
+      reviewContext.index--;
+      renderReviewQuestion();
+    };
+    const goReviewNext = () => {
+      if (reviewContext?.type === 'specific_query') {
+        if (reviewContext.index + 1 < reviewContext.questions.length) {
+          reviewContext.index++;
+          renderReviewQuestion();
+        } else renderSpecificQuestions();
+        return;
+      }
       if (historyReview) {
+        if (historySessionReview && reviewContext.index + 1 < reviewContext.questions.length) {
+          reviewContext.index++;
+          renderReviewQuestion();
+          return;
+        }
         const returnDate = reviewContext.returnDate || isoDateLocal();
         renderHistory(returnDate);
       } else if (reviewContext.index + 1 >= reviewContext.questions.length) renderDashboard();
       else { reviewContext.index++; renderReviewQuestion(); }
     };
+    if (!historyReview || historySessionReview) document.querySelectorAll('[data-review-prev]').forEach(btn => btn.onclick = goReviewPrev);
+    document.querySelectorAll('[data-review-next]').forEach(btn => btn.onclick = goReviewNext);
+    if (specificQueryReview) {
+      document.querySelectorAll('[data-review-selector]').forEach(btn => btn.onclick = () => renderSpecificQuestions(specificQueryDraft));
+      document.querySelectorAll('[data-review-exit]').forEach(btn => btn.onclick = () => {
+        reviewContext = null;
+        renderDashboard();
+      });
+    }
   }
 
 
@@ -3721,7 +4948,11 @@
 
     bindPostAnswerUncertainButton(feedbackMeta, q, selected);
     bindReviewFlagButtons(target);
-    if (!reviewOnly && onNext) document.getElementById('next-feedback').onclick = onNext;
+    if (!reviewOnly && onNext) {
+      document.getElementById('next-feedback').onclick = onNext;
+      const topNext = document.getElementById('next-study-top');
+      if (topNext) { topNext.hidden = false; topNext.disabled = false; topNext.onclick = onNext; }
+    }
   }
 
   function makeAttempt(q, selected, isCorrect, responseTimeMs, studyMode, timedOut, meta = {}) {
@@ -3755,6 +4986,10 @@
       target_seconds: normalizedTarget,
       was_due: Boolean(state && new Date(state.due_at) <= new Date(answeredAt)),
       answered_at: answeredAt,
+      updated_at: answeredAt,
+      session_id: meta.sessionId || null,
+      session_question_index: Number.isInteger(meta.sessionQuestionIndex) ? meta.sessionQuestionIndex : null,
+      client_attempt_id: meta.clientAttemptId || makeUuid(),
     };
   }
 
@@ -3838,33 +5073,90 @@
     return updated;
   }
 
+  function upsertAttemptInMemory(row) {
+    if (!row) return null;
+    const index = attempts.findIndex(item =>
+      (row.client_attempt_id && item.client_attempt_id === row.client_attempt_id) ||
+      (row.id && String(item.id) === String(row.id))
+    );
+    if (index >= 0) attempts[index] = row;
+    else attempts.push(row);
+    return row;
+  }
+
+  async function saveAttemptShadow(row, syncStatus = 'pending') {
+    if (!row?.client_attempt_id) return;
+    try { await sessionStore?.putAttempt(row, syncStatus); }
+    catch (error) { console.warn('Could not save attempt shadow.', error); }
+  }
+
   async function recordSingleAttempt(q, selected, isCorrect, ms, mode, timedOut, meta = {}) {
     const attempt = makeAttempt(q, selected, isCorrect, ms, mode, timedOut, meta);
-    let saved;
+    const localRow = {
+      id: `local-${attempt.client_attempt_id}`,
+      ...attempt,
+      user_id:user?.id || 'local-user',
+      syncStatus:cloudConfigured ? 'pending' : 'local',
+    };
+    await saveAttemptShadow(localRow, localRow.syncStatus);
+
+    let saved = localRow;
     if (cloudConfigured) {
-      const { data, error } = await supa.from('attempts').insert({ ...attempt, user_id:user.id }).select().single();
-      if (error) { alert(`No se pudo guardar el intento: ${error.message}`); return null; }
-      saved = data; attempts.push(data);
+      const { data, error } = await supa.from('attempts')
+        .upsert({ ...attempt, user_id:user.id }, { onConflict:'user_id,client_attempt_id' })
+        .select()
+        .single();
+      if (error) {
+        await sessionStore?.queueOperation('INSERT_ATTEMPT', { ...attempt, user_id:user.id }, `INSERT_ATTEMPT:${attempt.client_attempt_id}`);
+        console.warn('Attempt queued for synchronization.', error);
+      } else {
+        saved = { ...data, syncStatus:'synced' };
+        await saveAttemptShadow(saved, 'synced');
+      }
     } else {
-      saved = { id: makeUuid(), ...attempt };
-      attempts.push(saved); saveLocalAttempts();
+      saved = { ...localRow, id:makeUuid() };
+      await saveAttemptShadow(saved, 'local');
     }
+
+    upsertAttemptInMemory(saved);
+    if (!cloudConfigured) saveLocalAttempts();
     await applyAttemptsToMemory([saved]);
     return saved;
   }
 
   async function recordAttemptsBatch(payload) {
     if (!payload.length) return [];
-    let saved = [];
-    if (cloudConfigured) {
-      const rows = payload.map(a => ({ ...a, user_id:user.id }));
-      const { data, error } = await supa.from('attempts').insert(rows).select();
-      if (error) { alert(`No se pudieron guardar todos los intentos: ${error.message}`); return []; }
-      saved = data || []; attempts.push(...saved);
-    } else {
-      saved = payload.map(a => ({ id:makeUuid(), ...a }));
-      attempts.push(...saved); saveLocalAttempts();
+    const rows = payload.map(row => ({
+      ...row,
+      client_attempt_id:row.client_attempt_id || makeUuid(),
+      user_id:user?.id || 'local-user',
+    }));
+
+    for (const row of rows) {
+      await saveAttemptShadow({ id:`local-${row.client_attempt_id}`, ...row }, cloudConfigured ? 'pending' : 'local');
     }
+
+    let saved = rows.map(row => ({ id:`local-${row.client_attempt_id}`, ...row, syncStatus:cloudConfigured ? 'pending' : 'local' }));
+    if (cloudConfigured) {
+      const { data, error } = await supa.from('attempts')
+        .upsert(rows, { onConflict:'user_id,client_attempt_id' })
+        .select();
+      if (error) {
+        for (const row of rows) {
+          await sessionStore?.queueOperation('INSERT_ATTEMPT', row, `INSERT_ATTEMPT:${row.client_attempt_id}`);
+        }
+        console.warn('Attempt batch queued for synchronization.', error);
+      } else {
+        saved = (data || []).map(row => ({ ...row, syncStatus:'synced' }));
+        for (const row of saved) await saveAttemptShadow(row, 'synced');
+      }
+    } else {
+      saved = rows.map(row => ({ id:makeUuid(), ...row, syncStatus:'local' }));
+      for (const row of saved) await saveAttemptShadow(row, 'local');
+    }
+
+    saved.forEach(upsertAttemptInMemory);
+    if (!cloudConfigured) saveLocalAttempts();
     await applyAttemptsToMemory(saved);
     return saved;
   }
@@ -3884,6 +5176,9 @@
       practice_errors:'Errores',
       practice_uncertain:'Dudas',
       practice_sprint:'Sprint',
+      specific_questions:'Preguntas específicas',
+      topic_coverage:'Cobertura por tema',
+      topic_unseen:'No vistas del tema',
     };
     if (labels[mode]) return labels[mode];
     if (String(mode).startsWith('practice_')) return `Práctica · ${String(mode).replace('practice_','').replaceAll('_',' ')}`;
@@ -4006,7 +5301,7 @@
       scratch[q.id] = Object.fromEntries(uncertainOptions.map(letter => [letter, 'tentative']));
     }
     reviewContext = {
-      type:'history',
+      type:'history_legacy_attempt',
       questions:[q],
       index:0,
       responses:{ [q.id]: { selected:attempt.selected_answer || null, timedOut:Boolean(attempt.timed_out), didNotKnow } },
@@ -4019,22 +5314,120 @@
     renderReviewQuestion();
   }
 
-  function renderHistory(selectedDate = isoDateLocal()) {
+  function completedSessionsForDate(dateIso) {
+    return completedSessions
+      .filter(row => isoDateLocal(row.completed_at || row.updated_at || row.created_at) === dateIso)
+      .sort((a,b) => new Date(b.completed_at || b.updated_at || 0) - new Date(a.completed_at || a.updated_at || 0));
+  }
+
+  function attemptsForSessionId(sessionId) {
+    return attempts
+      .filter(attempt => String(attempt.session_id || '') === String(sessionId || ''))
+      .sort((a,b) => {
+        const indexA = Number.isFinite(Number(a.session_question_index)) ? Number(a.session_question_index) : Number.MAX_SAFE_INTEGER;
+        const indexB = Number.isFinite(Number(b.session_question_index)) ? Number(b.session_question_index) : Number.MAX_SAFE_INTEGER;
+        if (indexA !== indexB) return indexA - indexB;
+        return new Date(a.answered_at || 0) - new Date(b.answered_at || 0);
+      });
+  }
+
+  function renderSessionHistoryCard(row) {
+    const list = attemptsForSessionId(row.id);
+    const summary = SessionCore.buildSessionSummary
+      ? SessionCore.buildSessionSummary(row, list)
+      : {
+          title:row.title || studyModeLabel(row.config?.studyMode || row.config?.examType || row.mode),
+          partial:Boolean(row.is_partial),
+          planned:Number(row.planned_count || row.question_ids?.length || 0),
+          answered:list.length || Number(row.answered_count || 0),
+          correct:list.filter(attempt => attempt.is_correct).length,
+          accuracy:list.length ? Math.round(list.filter(attempt => attempt.is_correct).length / list.length * 100) : null,
+          activeTimeMs:Number(row.active_time_ms || 0),
+          completedAt:row.completed_at || row.updated_at,
+        };
+    const label = summary.title || studyModeLabel(row.config?.studyMode || row.config?.examType || row.mode);
+    const completion = summary.partial ? '<span class="tag warn">Sesión parcial</span>' : '<span class="tag ok">Sesión completa</span>';
+    const accuracy = summary.accuracy == null ? '—' : `${summary.accuracy}%`;
+    const syncTag = ['pending','offline','conflict'].includes(row.syncStatus)
+      ? '<span class="tag warn">Pendiente de sincronizar</span>'
+      : '';
+    return `<article class="history-session-card">
+      <div class="history-session-head">
+        <div><div class="history-attempt-tags">${completion}${syncTag}<span class="tag">${esc(row.mode === 'exam' ? 'Simulacro' : 'Práctica')}</span></div><h3>${esc(label)}</h3><small>${formatClock(summary.completedAt)} · ${formatDurationCompact(summary.activeTimeMs)}</small></div>
+        <button class="btn small" data-history-session="${esc(row.id)}">Revisar sesión</button>
+      </div>
+      <div class="history-metrics compact">
+        <div><strong>${summary.answered}</strong><small>respondidas</small></div>
+        <div><strong>${summary.planned}</strong><small>planificadas</small></div>
+        <div><strong>${summary.correct}</strong><small>correctas</small></div>
+        <div><strong>${accuracy}</strong><small>acierto</small></div>
+      </div>
+    </article>`;
+  }
+
+  function responseFromAttempt(attempt) {
+    return {
+      selected:attempt?.selected_answer || null,
+      didNotKnow:String(attempt?.uncertainty_note || '').includes('NO_SE_EXPLICITO'),
+      timedOut:Boolean(attempt?.timed_out),
+      locked:true,
+      lockedByTimeout:Boolean(attempt?.timed_out),
+      metadataRevealed:true,
+    };
+  }
+
+  async function openHistorySession(sessionId, returnDate) {
+    const row = completedSessions.find(item => String(item.id) === String(sessionId));
+    if (!row) return renderMessage('Historial', 'No se encontró esa sesión.');
+    const state = normalizeSessionState(row.state || {});
+    await ensureHistorySessionAttempts(row.id);
+    const sessionAttempts = attemptsForSessionId(row.id);
+    const attemptsByQuestion = Object.fromEntries(sessionAttempts.map(attempt => [attempt.question_id, attempt]));
+    const answeredSet = new Set(sessionAttempts.map(attempt => attempt.question_id));
+    const orderedIds = (row.question_ids || []).filter(id => !row.is_partial || answeredSet.has(id) || responseCountsAsAnswered(state.responses?.[id]));
+    for (const attempt of sessionAttempts) if (!orderedIds.includes(attempt.question_id)) orderedIds.push(attempt.question_id);
+    const selectedQuestions = orderedIds.map(id => questions.find(question => question.id === id)).filter(Boolean);
+    if (!selectedQuestions.length) return renderMessage('Historial', 'La sesión no contiene preguntas revisables en el corpus actual.');
+    const responses = { ...(state.responses || {}) };
+    for (const attempt of sessionAttempts) {
+      if (!responseCountsAsAnswered(responses[attempt.question_id])) responses[attempt.question_id] = responseFromAttempt(attempt);
+    }
+    reviewContext = {
+      type:'history_session',
+      sessionId:row.id,
+      partial:Boolean(row.is_partial),
+      questions:selectedQuestions,
+      index:0,
+      responses,
+      scratch:state.scratch || {},
+      marked:state.marked || {},
+      optionOrders:state.optionOrders || {},
+      shuffleOptions:row.config?.shuffleOptions !== false && row.config?.examLayout !== 'paper',
+      attemptsByQuestion,
+      returnDate:returnDate || isoDateLocal(row.completed_at || row.updated_at),
+    };
+    renderReviewQuestion();
+  }
+
+  async function renderHistory(selectedDate = isoDateLocal()) {
     clearTimer();
     const dateIso = /^\d{4}-\d{2}-\d{2}$/.test(String(selectedDate)) ? String(selectedDate) : isoDateLocal();
+    await ensureHistoryDateLoaded(dateIso);
     const qById = new Map(questions.map(q => [q.id, q]));
+    const daySessions = completedSessionsForDate(dateIso);
     const dayAttempts = attempts
-      .filter(a => isoDateLocal(a.answered_at) === dateIso)
+      .filter(attempt => isoDateLocal(attempt.answered_at) === dateIso)
       .sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at));
+    const legacyDayAttempts = dayAttempts.filter(attempt => !attempt.session_id);
     const morning = dayAttempts.filter(a => halfDayKey(a) === 'morning');
     const afternoon = dayAttempts.filter(a => halfDayKey(a) === 'afternoon');
     const daySummary = summarizeAttemptList(dayAttempts);
     const today = isoDateLocal();
     const recentDates = Array.from({length:14}, (_,i) => shiftLocalDate(today, -i));
 
-    app.innerHTML = `<main class="shell">${topbar('Historial y ritmo', true)}
+    app.innerHTML = `<main class="shell">${topbar('Historial por sesiones', true)}
       <section class="panel history-date-panel">
-        <div><h2>${esc(formatHistoryDate(dateIso))}</h2><p class="muted">Seguimiento basado en los intentos guardados. Las pausas muestran intervalos entre respuestas; no distinguen una distracción de un descanso planificado.</p></div>
+        <div><h2>${esc(formatHistoryDate(dateIso))}</h2><p class="muted">Las sesiones nuevas se muestran como unidades completas. Los intentos anteriores a la actualización que no poseen identificador de sesión permanecen separados y no se presentan como sesiones exactas.</p></div>
         <div class="history-date-controls">
           <button id="history-prev-day" class="btn small ghost" type="button">← Día anterior</button>
           <input id="history-date" class="input history-date-input" type="date" value="${esc(dateIso)}" max="${esc(today)}">
@@ -4043,11 +5436,11 @@
       </section>
 
       <section class="kpis history-kpis">
+        <div class="kpi"><div class="value">${daySessions.length}</div><div class="label">Sesiones</div></div>
         <div class="kpi"><div class="value">${daySummary.total}</div><div class="label">Preguntas</div></div>
         <div class="kpi"><div class="value">${pct(daySummary.correct,daySummary.total)}</div><div class="label">Acierto</div></div>
         <div class="kpi"><div class="value">${daySummary.avgMs?`${(daySummary.avgMs/1000).toFixed(1)} s`:'—'}</div><div class="label">Tiempo medio</div></div>
         <div class="kpi"><div class="value">${daySummary.uncertain}</div><div class="label">Con duda</div></div>
-        <div class="kpi"><div class="value">${daySummary.timedOut}</div><div class="label">Tiempo agotado</div></div>
       </section>
 
       <section class="history-half-grid">
@@ -4056,24 +5449,30 @@
       </section>
 
       <section class="panel history-list-panel">
-        <div class="section-head"><div><h2>Intentos del día</h2><p class="muted">Abre cualquiera para volver a ver la pregunta, tu respuesta y la explicación completa.</p></div></div>
-        <div class="history-attempt-list">${dayAttempts.length
-          ? dayAttempts.map(a => renderAttemptHistoryRow(a, qById.get(a.question_id))).join('')
-          : '<div class="empty">No hay intentos registrados en esta fecha.</div>'}</div>
+        <div class="section-head"><div><h2>Sesiones del día</h2><p class="muted">Cada tarjeta conserva el orden original, el cierre completo o parcial y el acceso a la revisión pregunta por pregunta.</p></div></div>
+        <div class="history-session-list">${daySessions.length
+          ? daySessions.map(renderSessionHistoryCard).join('')
+          : '<div class="empty">No hay sesiones finalizadas en esta fecha.</div>'}</div>
       </section>
+
+      ${legacyDayAttempts.length ? `<details class="panel history-list-panel legacy-history-panel">
+        <summary class="legacy-history-summary"><span><strong>Actividad anterior sin sesión exacta</strong><small>${legacyDayAttempts.length} intento${legacyDayAttempts.length===1?'':'s'} heredado${legacyDayAttempts.length===1?'':'s'} · abrir solo si necesitas revisarlos</small></span><span class="tag">Colapsado</span></summary>
+        <div class="legacy-history-content"><p class="muted">Estos intentos fueron creados antes de guardar un identificador de sesión. Se conservan individualmente para no inventar agrupaciones.</p><div class="history-attempt-list">${legacyDayAttempts.map(a => renderAttemptHistoryRow(a, qById.get(a.question_id))).join('')}</div></div>
+      </details>` : ''}
 
       <section class="panel history-days-panel">
         <h2>Últimos 14 días</h2>
         <div class="table-wrap"><table>
-          <thead><tr><th>Fecha</th><th class="num">Mañana</th><th class="num">Tarde</th><th class="num">Total</th><th class="num">Acierto</th><th></th></tr></thead>
+          <thead><tr><th>Fecha</th><th class="num">Sesiones</th><th class="num">Preguntas</th><th class="num">Acierto</th><th class="num">Actividad heredada</th><th></th></tr></thead>
           <tbody>${recentDates.map(date => {
-            const list = attempts.filter(a => isoDateLocal(a.answered_at) === date);
+            const sessions = completedSessionsForDate(date);
+            const list = attempts.filter(attempt => isoDateLocal(attempt.answered_at) === date);
+            const legacy = list.filter(attempt => !attempt.session_id);
             const summary = summarizeAttemptList(list);
-            const am = list.filter(a => halfDayKey(a)==='morning').length;
-            const pm = list.length-am;
-            return `<tr><td>${esc(parseLocalDate(date).toLocaleDateString('es-PE',{day:'2-digit',month:'2-digit'}))}</td><td class="num">${am}</td><td class="num">${pm}</td><td class="num">${summary.total}</td><td class="num">${pct(summary.correct,summary.total)}</td><td><button class="btn small ghost" data-history-date="${esc(date)}">Ver</button></td></tr>`;
+            return `<tr><td>${esc(parseLocalDate(date).toLocaleDateString('es-PE',{day:'2-digit',month:'2-digit'}))}</td><td class="num">${sessions.length}</td><td class="num">${summary.total}</td><td class="num">${pct(summary.correct,summary.total)}</td><td class="num">${legacy.length}</td><td><button class="btn small ghost" data-history-date="${esc(date)}">Ver</button></td></tr>`;
           }).join('')}</tbody>
         </table></div>
+        ${cloudConfigured && historyHasMore ? '<div class="footer-actions"><button id="history-load-more" class="btn ghost" type="button">Cargar historial anterior</button></div>' : ''}
       </section>
     </main>`;
 
@@ -4082,7 +5481,15 @@
     document.getElementById('history-next-day').onclick = () => renderHistory(shiftLocalDate(dateIso,1));
     document.getElementById('history-date').onchange = ev => renderHistory(ev.target.value);
     document.querySelectorAll('[data-history-date]').forEach(btn => btn.onclick = () => renderHistory(btn.dataset.historyDate));
+    document.querySelectorAll('[data-history-session]').forEach(btn => btn.onclick = () => openHistorySession(btn.dataset.historySession,dateIso));
     document.querySelectorAll('[data-history-attempt]').forEach(btn => btn.onclick = () => openHistoryAttempt(btn.dataset.historyAttempt,dateIso));
+    const loadMore = document.getElementById('history-load-more');
+    if (loadMore) loadMore.onclick = async () => {
+      loadMore.disabled = true;
+      loadMore.textContent = 'Cargando…';
+      await loadMoreCompletedSessions();
+      renderHistory(dateIso);
+    };
   }
 
   function reviewFlagEntries(type = 'all', view = 'open') {
@@ -4128,6 +5535,7 @@
         lines.push(`   Resolución: ${flag.resolution_summary || 'Sin resumen'}`);
         lines.push(`   Cerrada: ${flag.resolved_at || flag.updated_at || 'No registrado'}`);
       }
+      if (flag.user_note) lines.push(`   Observación: ${String(flag.user_note).replace(/\s+/g, ' ').trim()}`);
       lines.push(`   Enunciado: ${String(q.question || '').replace(/\s+/g, ' ').trim()}`);
       lines.push('');
     });
@@ -4160,7 +5568,7 @@
     const entries = reviewFlagEntries(type, view);
     if (!entries.length) return;
     const rows = [
-      ['estado','flag','id','año','prueba','numero_pregunta','area','especialidad','tema','entidad','enunciado','content_revision','creado_en','actualizado_en','resuelto_en','patch_id','resumen_resolucion','registro_anterior'],
+      ['estado','flag','id','año','prueba','numero_pregunta','area','especialidad','tema','entidad','observacion_usuario','enunciado','content_revision','creado_en','actualizado_en','resuelto_en','patch_id','resumen_resolucion','registro_anterior'],
       ...entries.map(({ flag, q }) => [
         reviewFlagStateMeta(flag).label,
         reviewFlagMeta(flag.flag_type).label,
@@ -4172,6 +5580,7 @@
         q.specialty,
         q.topic,
         q.subtopic,
+        flag.user_note,
         q.question,
         flag.content_revision,
         flag.created_at,
@@ -4234,6 +5643,7 @@
           </div>` : '';
           return `<article class="review-flag-card ${isHistory ? 'closed' : ''}">
             <div class="review-flag-card-head"><div class="meta-line"><span class="tag ${state.className}">${state.icon} ${esc(state.label)}</span><span class="tag warn">${meta.icon} ${esc(meta.label)}</span>${questionSourceTag(q)}<span class="tag">${esc(q.id)}</span></div>${isHistory ? '' : `<div class="review-flag-card-actions"><button class="btn small primary" type="button" data-resolve-review-flag-list="${esc(q.id)}">Registrar parche</button><button class="btn small danger ghost-danger" type="button" data-remove-review-flag-list="${esc(q.id)}">Quitar</button></div>`}</div>
+            ${flag.user_note ? `<div class="review-flag-user-note"><strong>Tu observación</strong><p>${esc(flag.user_note)}</p></div>` : ''}
             <p class="review-flag-question">${esc(q.question)}</p>
             <p class="muted review-flag-taxonomy">${esc([q.area, q.specialty, q.topic, entity].filter(Boolean).join(' → '))}</p>
             ${historyHtml}
@@ -4258,60 +5668,164 @@
     });
   }
 
-  function renderStats() {
+  function formatHoursMinutes(ms = 0) {
+    const minutes = Math.max(0, Math.round(Number(ms || 0) / 60000));
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    return `${hours} h${rest ? ` ${rest} min` : ''}`;
+  }
+
+  function topicTierLabel(tier = '') {
+    return String(tier || 'SIN_CLASIFICAR').replaceAll('_', ' ');
+  }
+
+  function renderTopicCoverageDetail(topicKey, returnSort = 'rentability', returnView = 'topics') {
     clearTimer();
+    const coverage = W3Tools.buildCoverageSnapshot
+      ? W3Tools.buildCoverageSnapshot(questions, attempts, memoryStates, new Date())
+      : { topics:[] };
+    const topic = coverage.topics.find(item => item.key === topicKey);
+    if (!topic) return renderStats(returnSort, returnView);
+    const topicQuestions = topic.questionIds.map(id => questions.find(q => q.id === id)).filter(Boolean);
+    const seen = new Set(attempts.map(a => a.question_id));
+    const correctEver = new Set(attempts.filter(a => a.is_correct).map(a => a.question_id));
+
+    app.innerHTML = `<main class="shell">${topbar('Detalle de tema', true)}
+      <section class="panel topic-coverage-detail-head">
+        <button id="coverage-back" class="btn small ghost" type="button">← Volver a Mi estado</button>
+        <div class="meta-line"><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<span class="tag">Rentabilidad ${Math.round(topic.score)}</span>` : ''}</div>
+        <h2>${esc(topic.label)}</h2><p class="muted">${esc(topic.area)} → ${esc(topic.specialty)}</p>
+        <div class="coverage-detail-kpis"><span><strong>${topic.seen}/${topic.total}</strong> vistas</span><span><strong>${topic.correctEver}/${topic.total}</strong> acertadas alguna vez</span><span><strong>${topic.overdue}</strong> vencidas</span><span><strong>${topic.uncertainAttempts}</strong> intentos dudosos</span></div>
+        <div class="footer-actions"><button id="topic-unseen-session" class="btn primary" ${topic.seen===topic.total?'disabled':''}>Practicar no vistas</button><button id="topic-all-session" class="btn">Crear sesión del tema</button></div>
+      </section>
+      <section class="panel"><h2>Preguntas del tema</h2><div class="topic-question-list">${topicQuestions.map(q => `<article><div><strong>${esc(q.id)}</strong><span class="tag ${!seen.has(q.id)?'':'ok'}">${!seen.has(q.id)?'No vista':correctEver.has(q.id)?'Acertada alguna vez':'Vista sin acierto'}</span></div><p>${esc(q.question)}</p></article>`).join('')}</div></section>
+    </main>`;
+    attachTopbar();
+    document.getElementById('coverage-back').onclick = () => renderStats(returnSort, returnView);
+    document.getElementById('topic-all-session').onclick = () => launchStudy(topicQuestions, { mode:'study', count:topicQuestions.length, randomize:false, feedback:'end', timeMode:'none', secondsPerQuestion:Number(profile?.target_response_seconds||25), totalSeconds:0, title:topic.label, studyMode:'topic_coverage', shuffleOptions:true });
+    const unseenButton = document.getElementById('topic-unseen-session');
+    if (unseenButton) unseenButton.onclick = () => {
+      const pool = topicQuestions.filter(q => !seen.has(q.id));
+      if (pool.length) launchStudy(pool, { mode:'study', count:pool.length, randomize:false, feedback:'end', timeMode:'none', secondsPerQuestion:Number(profile?.target_response_seconds||25), totalSeconds:0, title:`No vistas · ${topic.label}`, studyMode:'topic_unseen', shuffleOptions:true });
+    };
+  }
+
+  function specialtyRentabilityTier(score, topics = []) {
+    if (Number.isFinite(score)) {
+      if (score >= 75) return 'MUY_ALTA';
+      if (score >= 60) return 'ALTA';
+      if (score >= 40) return 'MEDIA';
+      return 'BAJA';
+    }
+    const rank = W3Tools.TIER_ORDER || { MUY_ALTA:0, ALTA:1, MEDIA:2, BAJA:3, SIN_CLASIFICAR:4 };
+    return [...topics].sort((a,b) => (rank[a.tier] ?? 4) - (rank[b.tier] ?? 4))[0]?.tier || 'SIN_CLASIFICAR';
+  }
+
+  function buildSpecialtyCoverageGroups(topics = []) {
+    const groups = new Map();
+    for (const topic of topics) {
+      const key = `${topic.area}|||${topic.specialty}`;
+      if (!groups.has(key)) groups.set(key, {
+        key, area:topic.area, specialty:topic.specialty, topics:[], total:0, seen:0,
+        correctEver:0, attempts:0, correctAttempts:0, uncertainAttempts:0, overdue:0,
+        scoreWeight:0, scoreTotal:0,
+      });
+      const group = groups.get(key);
+      group.topics.push(topic);
+      group.total += Number(topic.total || 0);
+      group.seen += Number(topic.seen || 0);
+      group.correctEver += Number(topic.correctEver || 0);
+      group.attempts += Number(topic.attempts || 0);
+      group.correctAttempts += Number(topic.correctAttempts || 0);
+      group.uncertainAttempts += Number(topic.uncertainAttempts || 0);
+      group.overdue += Number(topic.overdue || 0);
+      if (Number.isFinite(topic.score)) {
+        const weight = Math.max(1, Number(topic.total || 0));
+        group.scoreWeight += topic.score * weight;
+        group.scoreTotal += weight;
+      }
+    }
+    return [...groups.values()].map(group => {
+      const score = group.scoreTotal ? group.scoreWeight / group.scoreTotal : null;
+      const orderedTopics = W3Tools.sortTopics ? W3Tools.sortTopics(group.topics, 'rentability') : group.topics;
+      return {
+        ...group,
+        topics:orderedTopics,
+        score,
+        tier:specialtyRentabilityTier(score, orderedTopics),
+        coverage:group.total ? group.seen / group.total : 0,
+        accuracy:group.attempts ? group.correctAttempts / group.attempts : null,
+      };
+    }).sort((a,b) => localeSort(a.area,b.area) || (b.score ?? -1) - (a.score ?? -1) || localeSort(a.specialty,b.specialty));
+  }
+
+  function topicCoverageTableMarkup(topics = []) {
+    return `<div class="table-wrap"><table class="topic-coverage-table"><thead><tr><th>Tema</th><th>Rentabilidad</th><th class="num">Vistas</th><th class="num">Total</th><th class="num">Cobertura</th><th class="num">Dudas</th><th class="num">Vencidas</th></tr></thead><tbody>${topics.map(topic => `<tr class="clickable-row" data-topic-coverage-key="${esc(topic.key)}" tabindex="0"><td><strong>${esc(topic.label)}</strong><small>${esc(topic.area)} · ${esc(topic.specialty)}</small></td><td><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<small>${Math.round(topic.score)}</small>` : ''}</td><td class="num">${topic.seen}</td><td class="num">${topic.total}</td><td class="num">${Math.round(topic.coverage*100)}%</td><td class="num">${topic.uncertainAttempts}</td><td class="num">${topic.overdue}</td></tr>`).join('')}</tbody></table></div>`;
+  }
+
+  function specialtyCoverageMarkup(groups = []) {
+    return `<p class="muted specialty-coverage-note">La rentabilidad de cada especialidad es el promedio de los puntajes de sus temas, ponderado por el número de preguntas. Dentro de cada especialidad, los temas se ordenan por rentabilidad.</p><div class="specialty-coverage-list">${groups.map(group => `<details class="specialty-coverage-group"><summary><div><strong>${esc(group.specialty)}</strong><small>${esc(group.area)} · ${group.topics.length} tema${group.topics.length===1?'':'s'} · ${group.total} preguntas</small></div><div class="specialty-summary-metrics"><span class="tag">${esc(topicTierLabel(group.tier))}${group.score == null?'':` · ${Math.round(group.score)}`}</span><span>${group.seen}/${group.total} vistas · ${Math.round(group.coverage*100)}%</span><span>${group.overdue} vencidas</span></div></summary>${topicCoverageTableMarkup(group.topics)}</details>`).join('')}</div>`;
+  }
+
+  function renderStats(topicSort = 'rentability', coverageView = 'topics') {
+    clearTimer();
+    const coverage = W3Tools.buildCoverageSnapshot
+      ? W3Tools.buildCoverageSnapshot(questions, attempts, memoryStates, new Date())
+      : { totalQuestions:questions.length, seenQuestions:overallStats().answered, correctEverQuestions:new Set(attempts.filter(a=>a.is_correct).map(a=>a.question_id)).size, totalTopics:0, touchedTopics:0, completeTopics:0, topics:[] };
+    const timeSummary = W3Tools.buildTimeSummary
+      ? W3Tools.buildTimeSummary(attempts, completedSessions, questions.length, new Date())
+      : { todayQuestions:dailyActual(isoDateLocal()), activeMsToday:attempts.filter(a=>isoDateLocal(a.answered_at)===isoDateLocal()).reduce((sum,a)=>sum+Number(a.response_time_ms||0),0), pacePerDay:sevenDayPace(), unseenQuestions:Math.max(0,questions.length-overallStats().answered), projectedDays:null };
+    const sortedTopics = W3Tools.sortTopics ? W3Tools.sortTopics(coverage.topics, topicSort) : coverage.topics;
+    const specialtyGroups = buildSpecialtyCoverageGroups(coverage.topics);
+    const normalizedCoverageView = coverageView === 'specialties' ? 'specialties' : 'topics';
     const byArea = new Map();
-    for (const q of questions) if (!byArea.has(q.area)) byArea.set(q.area, { questions:0, attempts:0, correct:0 });
-    for (const q of questions) byArea.get(q.area).questions++;
+    for (const q of questions) {
+      const area = q.canonical_area || q.area || 'Sin área';
+      if (!byArea.has(area)) byArea.set(area, { questions:0, attempts:0, correct:0 });
+      byArea.get(area).questions++;
+    }
     for (const a of attempts) {
       const q = questions.find(x => x.id === a.question_id); if (!q) continue;
-      const g = byArea.get(q.area); g.attempts++; if (a.is_correct) g.correct++;
+      const area = q.canonical_area || q.area || 'Sin área';
+      const g = byArea.get(area); g.attempts++; if (a.is_correct) g.correct++;
     }
-    const hard = questions
-      .map(q => ({ q, s:questionStats(q.id) }))
-      .filter(x => x.s.seen)
-      .sort((a,b) => (b.s.wrong/b.s.seen)-(a.s.wrong/a.s.seen))
-      .slice(0,10);
+    const hard = questions.map(q => ({ q, s:questionStats(q.id) })).filter(x => x.s.seen).sort((a,b) => (b.s.wrong/b.s.seen)-(a.s.wrong/a.s.seen)).slice(0,10);
     const s = overallStats();
+    const overdueCount = memoryStates.filter(row => row.due_at && new Date(row.due_at) <= new Date()).length;
 
-    app.innerHTML = `<main class="shell">${topbar('Estadísticas', true)}
-      <section class="panel stats-report-link">
-        <div>
-          <h2>Informe dinámico de debilidades</h2>
-          <p class="muted">Convierte errores, dudas ?, lentitud y repasos vencidos en una lista de temas priorizados que puedes copiar y pegar directamente en el chat.</p>
-        </div>
-        <div class="stats-link-actions"><button id="stats-weakness-report" class="btn primary">Ver informe</button><button id="stats-history" class="btn">🕘 Historial y ritmo</button></div>
+    app.innerHTML = `<main class="shell">${topbar('Mi estado', true)}
+      <section class="panel stats-report-link"><div><h2>Informe dinámico de debilidades</h2><p class="muted">Separa cobertura, debilidad y rentabilidad. La cobertura se calcula localmente con el corpus y los intentos ya cargados.</p></div><div class="stats-link-actions"><button id="stats-weakness-report" class="btn primary">Ver informe</button><button id="stats-history" class="btn">🕘 Historial y ritmo</button></div></section>
+
+      <section class="kpis coverage-kpis">
+        <div class="kpi"><div class="value">${coverage.seenQuestions}/${coverage.totalQuestions}</div><div class="label">Preguntas vistas ≥1 vez</div></div>
+        <div class="kpi"><div class="value">${coverage.correctEverQuestions}/${coverage.totalQuestions}</div><div class="label">Acertadas ≥1 vez</div></div>
+        <div class="kpi"><div class="value">${coverage.touchedTopics}/${coverage.totalTopics}</div><div class="label">Temas tocados</div></div>
+        <div class="kpi"><div class="value">${coverage.completeTopics}/${coverage.totalTopics}</div><div class="label">Temas con cobertura completa</div></div>
       </section>
 
-      <section class="kpis">
-        <div class="kpi"><div class="value">${attempts.length}</div><div class="label">Intentos</div></div>
-        <div class="kpi"><div class="value">${pct(s.correct,attempts.length)}</div><div class="label">Precisión oficial</div></div>
-        <div class="kpi"><div class="value">${pct(s.auditedCorrect,s.audited.length)}</div><div class="label">Dominio auditado</div></div>
-        <div class="kpi"><div class="value">${s.avg?`${(s.avg/1000).toFixed(1)} s`:'—'}</div><div class="label">Tiempo medio</div></div>
-      </section>
+      <section class="panel compact-time-panel"><div class="section-head"><div><h2>Ritmo útil</h2><p class="muted">Panel reducido para apoyar el banqueo, no para sustituir las proyecciones de Anki.</p></div></div><div class="compact-time-grid"><div><strong>${timeSummary.todayQuestions}</strong><span>preguntas hoy</span></div><div><strong>${formatHoursMinutes(timeSummary.activeMsToday)}</strong><span>tiempo activo hoy</span></div><div><strong>${timeSummary.pacePerDay.toFixed(1)}/día</strong><span>ritmo de 7 días</span></div><div><strong>${timeSummary.unseenQuestions}</strong><span>por ver</span></div><div><strong>${timeSummary.projectedDays == null ? '—' : `${timeSummary.projectedDays} días`}</strong><span>primera vuelta al ritmo actual</span></div><div><strong>${overdueCount}</strong><span>repasos vencidos</span></div></div></section>
 
-      <section class="stats-grid">
-        <div class="panel">
-          <h2>Por área</h2>
-          <div class="table-wrap"><table>
-            <thead><tr><th>Área</th><th class="num">Preg.</th><th class="num">Intentos</th><th class="num">Acierto</th></tr></thead>
-            <tbody>${[...byArea.entries()].sort().map(([area,g])=>`<tr><td>${esc(area)}</td><td class="num">${g.questions}</td><td class="num">${g.attempts}</td><td class="num">${pct(g.correct,g.attempts)}</td></tr>`).join('')}</tbody>
-          </table></div>
-        </div>
+      <section class="kpis secondary-stats-kpis"><div class="kpi"><div class="value">${attempts.length}</div><div class="label">Intentos</div></div><div class="kpi"><div class="value">${pct(s.correct,attempts.length)}</div><div class="label">Precisión oficial</div></div><div class="kpi"><div class="value">${pct(s.auditedCorrect,s.audited.length)}</div><div class="label">Dominio auditado</div></div><div class="kpi"><div class="value">${s.avg?`${(s.avg/1000).toFixed(1)} s`:'—'}</div><div class="label">Tiempo medio</div></div></section>
 
-        <div class="panel">
-          <h2>Más difíciles</h2>
-          <div class="table-wrap"><table>
-            <thead><tr><th>ID</th><th>Tema</th><th class="num">Fallos</th><th class="num">Vistas</th></tr></thead>
-            <tbody>${hard.map(({q,s})=>`<tr><td>${esc(q.id)}</td><td>${esc(q.topic)}</td><td class="num">${s.wrong}</td><td class="num">${s.seen}</td></tr>`).join('')}</tbody>
-          </table></div>
-        </div>
+      <section class="stats-grid"><div class="panel"><h2>Por área</h2><div class="table-wrap"><table><thead><tr><th>Área</th><th class="num">Preg.</th><th class="num">Intentos</th><th class="num">Acierto</th></tr></thead><tbody>${[...byArea.entries()].sort().map(([area,g])=>`<tr><td>${esc(area)}</td><td class="num">${g.questions}</td><td class="num">${g.attempts}</td><td class="num">${pct(g.correct,g.attempts)}</td></tr>`).join('')}</tbody></table></div></div><div class="panel"><h2>Más difíciles</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>Tema</th><th class="num">Fallos</th><th class="num">Vistas</th></tr></thead><tbody>${hard.map(({q,s})=>`<tr><td>${esc(q.id)}</td><td>${esc(q.rentability_topic_label || q.topic)}</td><td class="num">${s.wrong}</td><td class="num">${s.seen}</td></tr>`).join('')}</tbody></table></div></div></section>
+
+      <section class="panel topic-coverage-panel"><div class="section-head topic-coverage-head"><div><h2>Cobertura canónica</h2><p class="muted">Este bloque queda al final de Mi estado. Puedes ver los 274 temas individualmente o agruparlos por especialidad sin perder el acceso al detalle.</p></div><div class="topic-coverage-controls"><label>Vista<select id="topic-coverage-view" class="input"><option value="topics" ${normalizedCoverageView==='topics'?'selected':''}>Temas individuales</option><option value="specialties" ${normalizedCoverageView==='specialties'?'selected':''}>Agrupado por especialidad</option></select></label>${normalizedCoverageView==='topics'?`<label>Orden<select id="topic-coverage-sort" class="input"><option value="rentability" ${topicSort==='rentability'?'selected':''}>Rentabilidad</option><option value="coverage" ${topicSort==='coverage'?'selected':''}>Menor cobertura</option><option value="weakness" ${topicSort==='weakness'?'selected':''}>Mayor debilidad</option><option value="alphabetical" ${topicSort==='alphabetical'?'selected':''}>Alfabético</option></select></label>`:''}</div></div>
+        ${normalizedCoverageView==='specialties' ? specialtyCoverageMarkup(specialtyGroups) : topicCoverageTableMarkup(sortedTopics)}
       </section>
     </main>`;
 
     attachTopbar();
     document.getElementById('stats-weakness-report').onclick = renderWeaknessReport;
     document.getElementById('stats-history').onclick = () => renderHistory();
+    const coverageSortNode = document.getElementById('topic-coverage-sort');
+    if (coverageSortNode) coverageSortNode.onchange = ev => renderStats(ev.target.value, normalizedCoverageView);
+    document.getElementById('topic-coverage-view').onchange = ev => renderStats(topicSort, ev.target.value);
+    document.querySelectorAll('[data-topic-coverage-key]').forEach(row => {
+      const open = () => renderTopicCoverageDetail(row.dataset.topicCoverageKey, topicSort, normalizedCoverageView);
+      row.onclick = open;
+      row.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } };
+    });
   }
 
   init();
