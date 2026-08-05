@@ -1811,7 +1811,7 @@ details.explain-block summary { cursor: pointer; }
   .review-flag-note-label { display: grid; }
 }
 
-/* ===== Residentado v1.1.0-rc2: navegación y calidad de vida ===== */
+/* ===== Residentado v1.1.1: estabilización de sesiones y navegación ===== */
 .next-task.resume-task {
   outline: 2px solid color-mix(in srgb, var(--brand) 45%, transparent);
   outline-offset: 2px;

@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = '1.1.0-rc2';
+  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.1.1';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
@@ -50,6 +50,20 @@
   let sessionActionInProgress = false;
   let sessionNavigationGuardActive = false;
   let deviceInstanceId = null;
+  // FIX-SESSION-005: lease de edicion exclusivo por pestana.
+  const tabInstanceId = makeUuid();
+  const sessionSyncBlocked = new Set();
+  const conflictNoticeShown = new Set();
+  const recoveryCreatedForSession = new Map();
+  const SESSION_LEASE_PREFIX = 'residentado_session_lease_v1:';
+  const SESSION_LEASE_TTL_MS = 18000;
+  const SESSION_LEASE_HEARTBEAT_MS = 5000;
+  let activeLeaseSessionId = null;
+  let sessionLeaseHeartbeat = null;
+  let lastLifecycleSaveAt = 0;
+  const sessionLeaseChannel = typeof BroadcastChannel === 'function'
+    ? new BroadcastChannel('residentado-session-lease-v1')
+    : null;
 
   const observed = q => String(q.audit_status || '').startsWith('OBSERVADA');
   const caveat = q => q.audit_status === 'VALIDADA_CON_CAVEAT';
@@ -92,8 +106,187 @@
     return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
   }
 
-
   function sessionNowIso() { return new Date().toISOString(); }
+
+  function isSessionConflictError(error) {
+    const code = String(error?.code || error?.status || '');
+    const message = String(error?.message || '');
+    return code === 'PT409' || code === '409' || code === '40001'
+      || message.includes('SESSION_REVISION_CONFLICT_OR_NOT_ACTIVE');
+  }
+
+  function sessionStateFingerprint(state = {}) {
+    return SessionCore.sessionStateFingerprint
+      ? SessionCore.sessionStateFingerprint(state)
+      : JSON.stringify(normalizeSessionState(state));
+  }
+
+  function sessionLeaseKey(sessionId) { return `${SESSION_LEASE_PREFIX}${sessionId}`; }
+
+  function readSessionLease(sessionId) {
+    try { return JSON.parse(localStorage.getItem(sessionLeaseKey(sessionId)) || 'null'); }
+    catch { return null; }
+  }
+
+  function writeSessionLease(sessionId) {
+    const lease = { sessionId, tabId:tabInstanceId, expiresAt:Date.now() + SESSION_LEASE_TTL_MS };
+    try { localStorage.setItem(sessionLeaseKey(sessionId), JSON.stringify(lease)); }
+    catch { return null; }
+    sessionLeaseChannel?.postMessage({ type:'lease', ...lease });
+    return lease;
+  }
+
+  function handleSessionLeaseLoss(sessionId) {
+    if (!sessionId || sessionId !== activeLeaseSessionId) return;
+    sessionSyncBlocked.add(sessionId);
+    clearInterval(sessionLeaseHeartbeat);
+    sessionLeaseHeartbeat = null;
+    if (!conflictNoticeShown.has(`lease:${sessionId}`)) {
+      conflictNoticeShown.add(`lease:${sessionId}`);
+      alert('Esta sesión fue abierta en otra pestaña. Esta copia conservará el progreso local, pero no enviará más guardados a Supabase para evitar sobrescrituras.');
+    }
+  }
+
+  function refreshSessionLease() {
+    if (!activeLeaseSessionId) return;
+    const current = readSessionLease(activeLeaseSessionId);
+    if (current && current.tabId !== tabInstanceId && Number(current.expiresAt || 0) > Date.now()) {
+      handleSessionLeaseLoss(activeLeaseSessionId);
+      return;
+    }
+    writeSessionLease(activeLeaseSessionId);
+  }
+
+  function claimSessionLease(sessionId) {
+    if (!sessionId) return true;
+    const current = readSessionLease(sessionId);
+    if (current && current.tabId !== tabInstanceId && Number(current.expiresAt || 0) > Date.now()) return false;
+    if (activeLeaseSessionId && activeLeaseSessionId !== sessionId) releaseActiveSessionLease();
+    activeLeaseSessionId = sessionId;
+    sessionSyncBlocked.delete(sessionId);
+    writeSessionLease(sessionId);
+    clearInterval(sessionLeaseHeartbeat);
+    sessionLeaseHeartbeat = setInterval(refreshSessionLease, SESSION_LEASE_HEARTBEAT_MS);
+    return true;
+  }
+
+  function releaseActiveSessionLease() {
+    clearInterval(sessionLeaseHeartbeat);
+    sessionLeaseHeartbeat = null;
+    if (!activeLeaseSessionId) return;
+    const sessionId = activeLeaseSessionId;
+    const current = readSessionLease(sessionId);
+    if (!current || current.tabId === tabInstanceId) {
+      try { localStorage.removeItem(sessionLeaseKey(sessionId)); } catch {}
+      sessionLeaseChannel?.postMessage({ type:'release', sessionId, tabId:tabInstanceId });
+    }
+    activeLeaseSessionId = null;
+  }
+
+  function sessionInsertPayload(row) {
+    return {
+      id:row.id,
+      user_id:user?.id || row.user_id,
+      mode:row.mode,
+      title:row.title,
+      config:row.config || {},
+      question_ids:row.question_ids || [],
+      state:normalizeSessionState(row.state || {}),
+      status:row.status || 'active',
+      is_partial:Boolean(row.is_partial),
+      closed_reason:row.closed_reason || null,
+      answered_count:Number(row.answered_count || 0),
+      planned_count:Number(row.planned_count || row.question_ids?.length || 0),
+      active_time_ms:Number(row.active_time_ms || 0),
+      paused_time_ms:Number(row.paused_time_ms || 0),
+      last_synced_at:row.last_synced_at || null,
+      state_schema_version:Number(row.state_schema_version || 1),
+      state_revision:Number(row.state_revision || 0),
+      client_app_version:APP_VERSION,
+      created_at:row.created_at || sessionNowIso(),
+      updated_at:row.updated_at || sessionNowIso(),
+      completed_at:row.completed_at || null,
+    };
+  }
+
+  function buildRecoverySessionRow(sourceRow, reason = 'revision_conflict') {
+    const now = sessionNowIso();
+    const sourceId = sourceRow.id;
+    const previousRecovery = sourceRow.config?.recovery || {};
+    return {
+      ...sourceRow,
+      id:makeUuid(),
+      title:`${String(sourceRow.title || 'Sesión').replace(/ · recuperación local$/i, '')} · recuperación local`,
+      config:{
+        ...(sourceRow.config || {}),
+        recovery:{
+          rootSessionId:previousRecovery.rootSessionId || previousRecovery.sourceSessionId || sourceId,
+          sourceSessionId:sourceId,
+          reason,
+          createdAt:now,
+          sourceRevision:Number(sourceRow.state_revision || 0),
+        },
+      },
+      status:'active',
+      is_partial:false,
+      closed_reason:null,
+      state_revision:0,
+      last_synced_at:null,
+      client_app_version:APP_VERSION,
+      created_at:now,
+      updated_at:now,
+      completed_at:null,
+      syncStatus:'recovery_local',
+      syncError:null,
+    };
+  }
+
+  async function persistRecoverySession(sourceRow, reason = 'revision_conflict') {
+    if (!sourceRow?.id) return null;
+    const existingId = recoveryCreatedForSession.get(sourceRow.id);
+    if (existingId) return sessionStore?.getSession ? sessionStore.getSession(existingId) : activeSessions.find(row => row.id === existingId);
+
+    let recovery = buildRecoverySessionRow(sourceRow, reason);
+    recoveryCreatedForSession.set(sourceRow.id, recovery.id);
+    await saveSessionShadow(recovery, 'recovery_local');
+    if (!cloudConfigured || !user || !navigator.onLine) {
+      await sessionStore?.queueOperation('CREATE_SESSION', sessionInsertPayload(recovery), `CREATE_SESSION:${recovery.id}`);
+      return recovery;
+    }
+
+    const payload = sessionInsertPayload(recovery);
+    const { data, error } = await supa.from('practice_sessions').insert(payload).select().single();
+    if (!error && data) {
+      recovery = { ...data, syncStatus:'synced' };
+      await saveSessionShadow(recovery, 'synced');
+      return recovery;
+    }
+
+    recovery = { ...recovery, syncStatus:'offline_create', syncError:error?.message || 'No se pudo crear la copia de recuperación.' };
+    await saveSessionShadow(recovery, 'offline_create');
+    await sessionStore?.queueOperation('CREATE_SESSION', payload, `CREATE_SESSION:${recovery.id}`);
+    return recovery;
+  }
+
+  // FIX-SESSION-004: preservar progreso local diferente antes de aceptar una revision remota superior.
+  async function preserveStaleLocalSessionCopies(remoteRows = [], localRows = []) {
+    if (!sessionStore) return [];
+    const remoteById = new Map((remoteRows || []).map(row => [row.id, row]));
+    const recoveries = [];
+    for (const local of localRows || []) {
+      const remote = remoteById.get(local.id);
+      if (!remote || local.status !== 'active') continue;
+      const localRevision = Number(local.state_revision || 0);
+      const remoteRevision = Number(remote.state_revision || 0);
+      const riskyStatus = ['conflict', 'pending', 'offline'].includes(local.syncStatus);
+      const stateDiffers = sessionStateFingerprint(local.state || {}) !== sessionStateFingerprint(remote.state || {});
+      if (stateDiffers && (local.syncStatus === 'conflict' || (riskyStatus && localRevision < remoteRevision))) {
+        const recovery = await persistRecoverySession(local, 'stale_local_shadow_on_load');
+        if (recovery) recoveries.push(recovery);
+      }
+    }
+    return recoveries;
+  }
 
   async function initializeSessionStorage() {
     try {
@@ -302,15 +495,40 @@
     if (!cloudConfigured || !user || !sessionStore || !navigator.onLine) return { processed:0, remaining:0 };
     const rows = (await sessionStore.listOutbox()).slice().sort((a,b) => Number(a.id || 0) - Number(b.id || 0));
     let processed = 0;
+    let restartRequested = false;
     for (const item of rows) {
       let ok = false;
       try {
         if (item.type === 'CREATE_SESSION') {
           const payload = { ...item.payload, user_id:user.id };
-          const { data, error } = await supa.from('practice_sessions').upsert(payload, { onConflict:'id' }).select().single();
+          const { data, error } = await supa.from('practice_sessions').insert(payload).select().single();
           if (!error && data) {
             await saveSessionShadow({ ...data, syncStatus:'synced' }, 'synced');
             ok = true;
+          } else if (String(error?.code || '') === '23505') {
+            // FIX-SESSION-006: never overwrite an existing server session with an offline CREATE replay.
+            const { data:existing } = await supa.from('practice_sessions').select('*').eq('id', payload.id).maybeSingle();
+            if (existing) {
+              const local = await sessionStore.getSession(payload.id);
+              const localDiffers = local && sessionStateFingerprint(local.state || {}) !== sessionStateFingerprint(existing.state || {});
+              if (localDiffers) {
+                const desired = { ...local, state_revision:Number(existing.state_revision || 0), syncStatus:'offline' };
+                await saveSessionShadow(desired, 'offline');
+                await sessionStore.queueOperation('UPSERT_SESSION', {
+                  sessionId:desired.id,
+                  expectedRevision:Number(existing.state_revision || 0),
+                  state:desired.state || {},
+                  config:desired.config || {},
+                  answeredCount:Number(desired.answered_count || 0),
+                  activeTimeMs:Number(desired.active_time_ms || 0),
+                  pausedTimeMs:Number(desired.paused_time_ms || 0),
+                }, `UPSERT_SESSION:${desired.id}`);
+                restartRequested = true;
+              } else {
+                await saveSessionShadow({ ...existing, syncStatus:'synced' }, 'synced');
+              }
+              ok = true;
+            }
           }
         } else if (item.type === 'UPSERT_SESSION') {
           const p = item.payload || {};
@@ -329,6 +547,21 @@
             const saved = Array.isArray(data) ? data[0] : data;
             if (saved) await saveSessionShadow({ ...saved, syncStatus:'synced' }, 'synced');
             ok = true;
+          } else if (isSessionConflictError(error)) {
+            // FIX-SESSION-003: a revision conflict is terminal for this stale operation, not an offline retry.
+            const stored = await sessionStore.getSession(p.sessionId);
+            const local = stored ? {
+              ...stored,
+              state:p.state || stored.state,
+              config:p.config || stored.config,
+              answered_count:Number(p.answeredCount ?? stored.answered_count ?? 0),
+              active_time_ms:Number(p.activeTimeMs ?? stored.active_time_ms ?? 0),
+              paused_time_ms:Number(p.pausedTimeMs ?? stored.paused_time_ms ?? 0),
+            } : null;
+            if (local) await persistRecoverySession(local, 'outbox_revision_conflict');
+            const { data:remote } = await supa.from('practice_sessions').select('*').eq('id', p.sessionId).maybeSingle();
+            if (remote) await saveSessionShadow({ ...remote, syncStatus:'synced' }, 'synced');
+            ok = true;
           }
         } else if (item.type === 'INSERT_ATTEMPT') {
           const payload = { ...item.payload, user_id:user.id };
@@ -344,13 +577,19 @@
           }
         } else if (item.type === 'CLOSE_SESSION') {
           const p = item.payload || {};
-          const { data, error } = await supa.from('practice_sessions')
+          let request = supa.from('practice_sessions')
             .update(p.updatePayload || {})
             .eq('id', p.sessionId)
-            .select()
-            .maybeSingle();
+            .eq('status', 'active');
+          if (p.expectedRevision != null) request = request.eq('state_revision', Number(p.expectedRevision));
+          const { data, error } = await request.select().maybeSingle();
           if (!error && data) {
             await saveSessionShadow({ ...data, syncStatus:'synced' }, 'synced');
+            ok = true;
+          } else if (!error && !data) {
+            const stored = await sessionStore.getSession(p.sessionId);
+            const local = stored ? { ...stored, ...(p.updatePayload || {}), status:'active' } : null;
+            if (local) await persistRecoverySession(local, 'close_revision_conflict');
             ok = true;
           }
         }
@@ -360,8 +599,13 @@
       if (!ok) break;
       await sessionStore.deleteOutbox(item.id);
       processed += 1;
+      if (restartRequested) break;
     }
     const remaining = (await sessionStore.listOutbox()).length;
+    if (restartRequested && remaining) {
+      const next = await processSessionOutbox();
+      return { processed:processed + next.processed, remaining:next.remaining };
+    }
     return { processed, remaining };
   }
 
@@ -371,12 +615,38 @@
     if (owner.kind === 'exam') owner.holder.state = normalizeSessionState(savedRow.state || owner.holder.state);
   }
 
+  async function handleSessionRevisionConflict(owner, row, error) {
+    // FIX-SESSION-002/003/004: stop stale writes, preserve local progress, and continue on a new revision-safe session.
+    sessionSyncBlocked.add(row.id);
+    const conflicted = { ...row, syncStatus:'conflict', syncError:error?.message || 'SESSION_REVISION_CONFLICT_OR_NOT_ACTIVE' };
+    await saveSessionShadow(conflicted, 'conflict');
+    const recovery = await persistRecoverySession(conflicted, 'revision_conflict');
+
+    const { data:remote } = await supa.from('practice_sessions').select('*').eq('id', row.id).maybeSingle();
+    if (remote) await saveSessionShadow({ ...remote, syncStatus:'synced' }, 'synced');
+
+    if (owner && recovery) {
+      releaseActiveSessionLease();
+      updateHolderFromSavedRow(owner, recovery);
+      claimSessionLease(recovery.id);
+      sessionSyncBlocked.delete(recovery.id);
+    }
+
+    if (!conflictNoticeShown.has(row.id)) {
+      conflictNoticeShown.add(row.id);
+      alert(recovery
+        ? 'Se detectó una revisión distinta de esta sesión. Tu progreso local se conservó en una copia de recuperación y continuarás allí sin sobrescribir la otra copia.'
+        : 'Se detectó una revisión distinta. El progreso local quedó conservado, pero la sincronización de esta sesión fue detenida para evitar una sobrescritura.');
+    }
+    return recovery || conflicted;
+  }
+
   async function syncSessionOwner(owner) {
     if (!owner?.row?.id) return owner?.row || null;
     const state = normalizeSessionState(owner.kind === 'study' ? studyStateSnapshot() : owner.holder.state);
     const now = sessionNowIso();
     const answeredCount = answeredIdsFor(owner.row, state).length;
-    const row = {
+    let row = {
       ...owner.row,
       state,
       answered_count:answeredCount,
@@ -387,8 +657,16 @@
       updated_at:now,
     };
     owner.holder.row = row;
-    await saveSessionShadow(row, cloudConfigured ? 'pending' : 'local');
-    if (!cloudConfigured) return row;
+    await saveSessionShadow(row, cloudConfigured ? (row.syncStatus || 'pending') : 'local');
+    if (!cloudConfigured || sessionSyncBlocked.has(row.id)) return row;
+
+    if (['recovery_local', 'offline_create'].includes(row.syncStatus)) {
+      await processSessionOutbox();
+      const refreshed = await sessionStore?.getSession(row.id);
+      if (!refreshed || refreshed.syncStatus !== 'synced') return row;
+      row = refreshed;
+      updateHolderFromSavedRow(owner, row);
+    }
 
     const expectedRevision = Number(row.state_revision || 0);
     const { data, error } = await supa.rpc('save_practice_session_state', {
@@ -403,10 +681,10 @@
       p_state_schema_version:1,
     });
     if (error) {
-      const conflict = String(error.message || '').includes('SESSION_REVISION_CONFLICT_OR_NOT_ACTIVE') || String(error.code || '') === '40001';
-      const status = conflict ? 'conflict' : 'offline';
-      const pending = { ...row, syncStatus:status, syncError:error.message };
-      await saveSessionShadow(pending, status);
+      if (isSessionConflictError(error)) return handleSessionRevisionConflict(owner, row, error);
+
+      const pending = { ...row, syncStatus:'offline', syncError:error.message };
+      await saveSessionShadow(pending, 'offline');
       await sessionStore?.queueOperation('UPSERT_SESSION', {
         sessionId:row.id,
         expectedRevision,
@@ -416,7 +694,6 @@
         activeTimeMs:state.activeTimeMs || 0,
         pausedTimeMs:state.pausedTimeMs || 0,
       }, `UPSERT_SESSION:${row.id}`);
-      if (conflict) alert('Esta sesión cambió en otro dispositivo. Se conservó una copia local para evitar pérdida de respuestas.');
       return pending;
     }
     const saved = Array.isArray(data) ? data[0] : data;
@@ -437,7 +714,8 @@
       return sessionSaveChain;
     };
     if (immediate) return run();
-    sessionSaveTimer = setTimeout(run, 650);
+    // OPT-SAVE-001: consolidar rafagas de respuesta/navegacion en un unico guardado.
+    sessionSaveTimer = setTimeout(run, 1000);
     return Promise.resolve(owner.row);
   }
 
@@ -484,8 +762,28 @@
     sessionHiddenStartedAt = 0;
   }
 
+  function requestLifecycleSessionSave() {
+    const now = Date.now();
+    if (now - lastLifecycleSaveAt < 1500) return;
+    lastLifecycleSaveAt = now;
+    accumulateSessionActivity();
+    scheduleCurrentSessionSave({ immediate:true });
+  }
+
   function installSessionLifecycleHooks() {
     window.addEventListener('online', () => { processSessionOutbox().catch(() => {}); });
+    window.addEventListener('storage', event => {
+      if (!activeLeaseSessionId || event.key !== sessionLeaseKey(activeLeaseSessionId)) return;
+      const lease = readSessionLease(activeLeaseSessionId);
+      if (lease && lease.tabId !== tabInstanceId && Number(lease.expiresAt || 0) > Date.now()) handleSessionLeaseLoss(activeLeaseSessionId);
+    });
+    sessionLeaseChannel?.addEventListener('message', event => {
+      const message = event.data || {};
+      if (message.type === 'lease' && message.sessionId === activeLeaseSessionId && message.tabId !== tabInstanceId) {
+        const lease = readSessionLease(activeLeaseSessionId);
+        if (lease?.tabId !== tabInstanceId) handleSessionLeaseLoss(activeLeaseSessionId);
+      }
+    });
     document.addEventListener('visibilitychange', () => {
       const owner = currentSessionOwner();
       if (!owner) return;
@@ -493,20 +791,20 @@
       if (document.visibilityState === 'hidden') {
         sessionActivityStartedAt = 0;
         sessionHiddenStartedAt = performance.now();
-        scheduleCurrentSessionSave({ immediate:true });
+        requestLifecycleSessionSave();
       } else {
         sessionHiddenStartedAt = 0;
         sessionActivityStartedAt = performance.now();
+        refreshSessionLease();
       }
     });
     window.addEventListener('pagehide', () => {
-      accumulateSessionActivity();
-      scheduleCurrentSessionSave({ immediate:true });
+      if (!currentSessionOwner()) return;
+      requestLifecycleSessionSave();
     });
     window.addEventListener('beforeunload', event => {
       if (!currentSessionOwner()) return;
-      accumulateSessionActivity();
-      scheduleCurrentSessionSave({ immediate:true });
+      // FIX-SESSION-007: do not launch a second asynchronous save during unload; visibility/pagehide already requested one.
       event.preventDefault();
       event.returnValue = '';
     });
@@ -525,6 +823,7 @@
 
   function deactivateSessionNavigationGuard() {
     sessionNavigationGuardActive = false;
+    releaseActiveSessionLease();
   }
 
   function closeExitDialog() {
@@ -1668,7 +1967,7 @@
       .order('completed_at', { ascending:false });
     if (error) return;
     completedSessions = SessionCore.mergeSessionRows
-      ? SessionCore.mergeSessionRows(completedSessions, data || []).filter(row => row.status === 'completed')
+      ? SessionCore.mergeSessionRows(data || [], completedSessions).filter(row => row.status === 'completed')
       : [...completedSessions, ...(data || [])];
     if (sessionStore) for (const row of data || []) await sessionStore.putSession(row, 'synced');
   }
@@ -1679,7 +1978,7 @@
     const page = await fetchCompletedSessionsPage(nextPage);
     if (page.error) return false;
     completedSessions = SessionCore.mergeSessionRows
-      ? SessionCore.mergeSessionRows(completedSessions, page.data || []).filter(row => row.status === 'completed')
+      ? SessionCore.mergeSessionRows(page.data || [], completedSessions).filter(row => row.status === 'completed')
       : [...completedSessions, ...(page.data || [])];
     historyPage = nextPage;
     historyHasMore = page.hasMore;
@@ -1902,8 +2201,10 @@
     const localSessionRows = sessionStore?.getSessionsForUser
       ? await sessionStore.getSessionsForUser(user.id)
       : (sessionStore ? await sessionStore.getAllSessions() : []);
-    const localActive = localSessionRows.filter(row => row.status === 'active');
-    const localCompleted = localSessionRows.filter(row => row.status === 'completed');
+    const recoveryRows = await preserveStaleLocalSessionCopies(sRes.error ? [] : (sRes.data || []), localSessionRows);
+    const localRowsWithRecoveries = [...localSessionRows, ...recoveryRows];
+    const localActive = localRowsWithRecoveries.filter(row => row.status === 'active');
+    const localCompleted = localRowsWithRecoveries.filter(row => row.status === 'completed');
     activeSessions = SessionCore.mergeSessionRows
       ? SessionCore.mergeSessionRows(sRes.error ? [] : (sRes.data || []), localActive).filter(row => row.status === 'active')
       : (sRes.error ? localActive : (sRes.data || []));
@@ -1911,7 +2212,10 @@
       ? SessionCore.mergeSessionRows(firstHistoryPage.error ? [] : (firstHistoryPage.data || []), localCompleted).filter(row => row.status === 'completed')
       : (firstHistoryPage.error ? localCompleted : (firstHistoryPage.data || []));
     if (sessionStore) {
-      for (const row of [...(sRes.data || []), ...(firstHistoryPage.data || [])]) await sessionStore.putSession(row, 'synced');
+      // FIX-SESSION-004: persistir la fila elegida por reconciliacion, no sobrescribirla luego con el remoto bruto.
+      for (const row of [...activeSessions, ...completedSessions]) {
+        await sessionStore.putSession(row, row.syncStatus || 'synced');
+      }
       await processSessionOutbox();
     }
     await reconcileMemoryFromAttempts();
@@ -1961,6 +2265,7 @@
     const logout = document.getElementById('logout-btn');
     if (logout) logout.onclick = async () => {
       if (!confirm('¿Cerrar sesión en este dispositivo?')) return;
+      releaseActiveSessionLease();
       await supa.auth.signOut();
       user = null;
       renderLogin();
@@ -3697,6 +4002,7 @@
     const row = await createPersistentSession('study', selected, config, state);
     if (!currentStudy) return;
     currentStudy.row = row;
+    claimSessionLease(row.id);
     beginSessionActivity();
     activateSessionNavigationGuard();
     renderStudyQuestion();
@@ -3819,7 +4125,7 @@
       const goPrev = () => {
         saveStudyDuration();
         currentStudy.index--;
-        scheduleCurrentSessionSave({ immediate:true });
+        scheduleCurrentSessionSave();
         renderStudyQuestion();
       };
       const goNext = () => {
@@ -3827,7 +4133,7 @@
         if (currentStudy.index + 1 >= currentStudy.questions.length) finishStudy();
         else {
           currentStudy.index++;
-          scheduleCurrentSessionSave({ immediate:true });
+          scheduleCurrentSessionSave();
           renderStudyQuestion();
         }
       };
@@ -3915,13 +4221,13 @@
       );
       if (savedAttempt?.id) currentStudy.attemptIdsByQuestion[q.id] = savedAttempt.id;
       currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
-      scheduleCurrentSessionSave({ immediate:true });
+      scheduleCurrentSessionSave();
       disableOptionsAndPaint(q, letter);
       revealStudyQuestionMetadata(q);
       document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
       renderFeedback(q, letter, isCorrect, () => {
         currentStudy.index++;
-        scheduleCurrentSessionSave({ immediate:true });
+        scheduleCurrentSessionSave();
         renderStudyQuestion();
       }, false, false, uncertainOptions, {
         attemptId: savedAttempt?.id || null,
@@ -3957,7 +4263,7 @@
       );
       if (savedAttempt?.id) currentStudy.attemptIdsByQuestion[q.id] = savedAttempt.id;
       currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
-      scheduleCurrentSessionSave({ immediate:true });
+      scheduleCurrentSessionSave();
       disableOptionsAndPaint(q, null);
       revealStudyQuestionMetadata(q);
       document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
@@ -3965,7 +4271,7 @@
       if (dontKnowBtn) dontKnowBtn.disabled = true;
       renderFeedback(
         q, null, false,
-        () => { currentStudy.index++; scheduleCurrentSessionSave({ immediate:true }); renderStudyQuestion(); },
+        () => { currentStudy.index++; scheduleCurrentSessionSave(); renderStudyQuestion(); },
         false, false, uncertainOptions,
         {
           attemptId: savedAttempt?.id || null,
@@ -3977,7 +4283,7 @@
       );
     } else {
       currentStudy.index++;
-      scheduleCurrentSessionSave({ immediate:true });
+      scheduleCurrentSessionSave();
       if (currentStudy.index >= currentStudy.questions.length) finishStudy();
       else renderStudyQuestion();
     }
@@ -4006,13 +4312,13 @@
       ).then((savedAttempt) => {
         if (savedAttempt?.id) currentStudy.attemptIdsByQuestion[q.id] = savedAttempt.id;
         currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
-        scheduleCurrentSessionSave({ immediate:true });
+        scheduleCurrentSessionSave();
         disableOptionsAndPaint(q, null);
         revealStudyQuestionMetadata(q);
         document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
         renderFeedback(
           q, null, false,
-          () => { currentStudy.index++; scheduleCurrentSessionSave({ immediate:true }); renderStudyQuestion(); },
+          () => { currentStudy.index++; scheduleCurrentSessionSave(); renderStudyQuestion(); },
           true, false, uncertainOptions,
           {
             attemptId: savedAttempt?.id || null,
@@ -4038,7 +4344,7 @@
     };
 
     currentStudy.index++;
-    scheduleCurrentSessionSave({ immediate:true });
+    scheduleCurrentSessionSave();
     if (currentStudy.index >= currentStudy.questions.length) finishStudy();
     else renderStudyQuestion();
   }
@@ -4086,12 +4392,13 @@
     return [...existing.values()].filter(attempt => questionList.some(q => q.id === attempt.question_id));
   }
 
-  async function finalizeSessionRow(holder, state, { partial = false } = {}) {
+  async function finalizeSessionRow(holder, state, { partial = false, retryAfterConflict = true } = {}) {
     const row = holder?.row;
     if (!row?.id) return null;
     const normalizedState = normalizeSessionState(state);
     const answeredCount = answeredIdsFor(row, normalizedState).length;
     const now = sessionNowIso();
+    const expectedRevision = Number(row.state_revision || 0);
     const completed = {
       ...row,
       state:normalizedState,
@@ -4106,7 +4413,7 @@
       updated_at:now,
       client_app_version:APP_VERSION,
       state_schema_version:1,
-      state_revision:Number(row.state_revision || 0) + 1,
+      state_revision:expectedRevision + 1,
     };
     await saveSessionShadow(completed, cloudConfigured ? 'pending' : 'local');
     removeActiveSessionInMemory(row.id);
@@ -4133,14 +4440,24 @@
         .update(updatePayload)
         .eq('id', row.id)
         .eq('status', 'active')
+        // FIX-SESSION-008: cierre optimista; nunca sobrescribir una revision nueva.
+        .eq('state_revision', expectedRevision)
         .select()
         .maybeSingle();
-      if (error || !data) {
-        await sessionStore?.queueOperation('CLOSE_SESSION', { sessionId:row.id, updatePayload }, `CLOSE_SESSION:${row.id}`);
-        const pending = { ...completed, syncStatus:error ? 'offline' : 'conflict', syncError:error?.message || 'Session was not active on the server.' };
-        await saveSessionShadow(pending, pending.syncStatus);
+      if (error) {
+        await sessionStore?.queueOperation('CLOSE_SESSION', { sessionId:row.id, expectedRevision, updatePayload }, `CLOSE_SESSION:${row.id}`);
+        const pending = { ...completed, syncStatus:'offline', syncError:error.message };
+        await saveSessionShadow(pending, 'offline');
         upsertSessionInMemory(pending);
         return pending;
+      }
+      if (!data) {
+        const conflictSource = { ...row, state:normalizedState, answered_count:answeredCount, active_time_ms:completed.active_time_ms, paused_time_ms:completed.paused_time_ms };
+        const recovered = await handleSessionRevisionConflict({ kind:holder === currentExam ? 'exam' : 'study', holder, row, state:normalizedState }, conflictSource, { message:'SESSION_REVISION_CONFLICT_OR_NOT_ACTIVE', code:'PT409' });
+        if (retryAfterConflict && recovered?.id && holder?.row?.id === recovered.id) {
+          return finalizeSessionRow(holder, normalizedState, { partial, retryAfterConflict:false });
+        }
+        return recovered || completed;
       }
       const synced = { ...data, syncStatus:'synced' };
       await saveSessionShadow(synced, 'synced');
@@ -4263,6 +4580,7 @@
     });
     const sessionRow = await createPersistentSession('exam', selected, config, state);
     currentExam = { row:sessionRow, config, questions:selected, state };
+    claimSessionLease(sessionRow.id);
     beginSessionActivity();
     activateSessionNavigationGuard();
     if (config.examLayout === 'paper') renderHistoricalExamPaper();
@@ -4271,8 +4589,12 @@
 
   async function resumePersistentSession(rawRow) {
     const row = SessionCore.normalizeSessionRow ? SessionCore.normalizeSessionRow(rawRow) : rawRow;
+    if (!claimSessionLease(row.id)) {
+      alert('Esta sesión ya está abierta en otra pestaña. Ciérrala allí o espera unos 18 segundos para que venza el bloqueo antes de reanudarla aquí.');
+      return;
+    }
     const selected = (row.question_ids || []).map(id => questions.find(q => q.id === id)).filter(Boolean);
-    if (!selected.length) return renderMessage('No se pudo reanudar', 'Las preguntas de la sesión ya no están disponibles.');
+    if (!selected.length) { releaseActiveSessionLease(); return renderMessage('No se pudo reanudar', 'Las preguntas de la sesión ya no están disponibles.'); }
 
     if (row.mode === 'study') {
       currentExam = null;
@@ -4321,7 +4643,7 @@
   async function persistExamState() {
     if (!currentExam) return null;
     currentExam.state = normalizeSessionState(currentExam.state);
-    return scheduleCurrentSessionSave({ immediate:true });
+    return scheduleCurrentSessionSave();
   }
 
   async function continueExamLater() {
