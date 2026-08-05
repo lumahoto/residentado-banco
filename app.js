@@ -1,8 +1,9 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.2.0';
+  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.3.0';
   const LEARNING_NOTES_MIGRATION = 'MIGRATIONS/20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql';
+  const TTS_CATALOG_TABLE = 'tts_topic_catalog';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
@@ -45,6 +46,8 @@
   const W4Data = window.ResidentadoW4Data || {};
   let ttsCatalog = { catalogVersion:'unloaded', topics:[] };
   let ttsCatalogByTopic = new Map();
+  let ttsCatalogSource = 'unloaded';
+  let ttsCatalogLoadError = '';
   let datasetManifest = null;
   let historyPage = 0;
   let historyHasMore = true;
@@ -2030,20 +2033,53 @@
     await upsertMemoryRows(rebuilt);
   }
 
+  function applyTtsCatalog(raw, source = 'unknown') {
+    ttsCatalog = W4Data.normalizeCatalog ? W4Data.normalizeCatalog(raw) : raw;
+    ttsCatalogByTopic = W4Data.catalogMap
+      ? W4Data.catalogMap(ttsCatalog)
+      : new Map((ttsCatalog.topics || []).map(item => [item.topicId, item]));
+    ttsCatalogSource = source;
+    ttsCatalogLoadError = '';
+  }
+
   async function loadStaticTtsCatalog() {
     try {
       const response = await fetch('./tts_catalog.json', { cache:'no-cache' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const raw = await response.json();
-      ttsCatalog = W4Data.normalizeCatalog ? W4Data.normalizeCatalog(raw) : raw;
-      ttsCatalogByTopic = W4Data.catalogMap
-        ? W4Data.catalogMap(ttsCatalog)
-        : new Map((ttsCatalog.topics || []).map(item => [item.topicId, item]));
+      applyTtsCatalog(await response.json(), 'static-fallback');
     } catch (error) {
-      console.warn('TTS catalog unavailable.', error);
+      console.warn('TTS static catalog unavailable.', error);
       ttsCatalog = { catalogVersion:'unavailable', topics:[] };
       ttsCatalogByTopic = new Map();
+      ttsCatalogSource = 'unavailable';
+      ttsCatalogLoadError = error?.message || String(error);
     }
+  }
+
+  async function loadCloudTtsCatalog() {
+    if (!supa || !user) return { data:ttsCatalog, error:null, source:ttsCatalogSource };
+    const { data, error } = await supa.from(TTS_CATALOG_TABLE)
+      .select('rentability_topic_id,topic_label,canonical_area,main_specialty,rentability_tier,rentability_score,status,primary_code,tts_version,catalog_version,part_count,part_codes,estimated_minutes,package_relative_folder,complete_txt_file,complete_markdown_file,source_status,source_package,source_package_sha256,reviewed_as_of,available_at,updated_at')
+      .order('primary_code', { ascending:true });
+    if (error) {
+      console.warn('No se pudo cargar el catálogo TTS desde Supabase; se conserva el respaldo local.', error.message);
+      ttsCatalogLoadError = error.message;
+      return { data:ttsCatalog, error, source:ttsCatalogSource, usedFallback:true };
+    }
+    const rows = data || [];
+    if (!rows.length) {
+      const errorMessage = 'El catálogo TTS remoto respondió sin filas; se conserva el respaldo local.';
+      console.warn(errorMessage);
+      ttsCatalogLoadError = errorMessage;
+      return { data:ttsCatalog, error:null, source:ttsCatalogSource, usedFallback:true };
+    }
+    applyTtsCatalog({
+      catalogVersion:rows[0]?.catalog_version || 'EMPTY',
+      generatedAt:rows.reduce((latest, row) => String(row.updated_at || row.available_at || '') > String(latest || '') ? (row.updated_at || row.available_at) : latest, null),
+      taxonomyVersion:'POST_SEGUNDA_AUDITORIA_274_20260804',
+      topics:rows,
+    }, 'supabase');
+    return { data:ttsCatalog, error:null, source:'supabase' };
   }
 
   async function fetchDatasetManifest() {
@@ -2428,6 +2464,8 @@
   async function loadCloudData() {
     clearTimer();
     app.innerHTML = `<div class="splash"><div class="logo-mark">R</div><p>Sincronizando cambios…</p></div>`;
+
+    await loadCloudTtsCatalog();
 
     const [qRes, aRes, pRes, mRes, fRes, nRes] = await Promise.all([
       loadCorpusWithCache(),
@@ -2944,7 +2982,7 @@
         recentErrorRate,
         coverage: g.totalQuestions ? g.seenQuestions / g.totalQuestions : 0,
         tts,
-        ttsStatusLabel: W4Data.catalogStatusLabel ? W4Data.catalogStatusLabel(tts) : (tts?.status || 'Pendiente'),
+        ttsStatusLabel: W4Data.catalogCompactLabel ? W4Data.catalogCompactLabel(tts) : (W4Data.catalogStatusLabel ? W4Data.catalogStatusLabel(tts) : (tts?.status || 'Pendiente')),
       };
     }).sort((a,b) =>
       b.score - a.score ||
@@ -3189,6 +3227,7 @@
           <span class="roadmap-kicker">SE RECALCULA CON CADA RESPUESTA</span>
           <h1>Tu mapa actual de debilidades</h1>
           <p class="muted">Usa el estado más reciente de cada pregunta: errores, dudas <strong>?</strong>, error+duda, lentitud, errores recientes y repasos vencidos. Una pregunta incorrecta con <strong>?</strong> recibe prioridad adicional.</p>
+          <small class="tts-catalog-meta">Disponibilidad TTS: ${availableTtsCount()} temas · catálogo ${esc(ttsCatalog.catalogVersion || '—')} · ${ttsCatalogSource === 'supabase' ? 'Supabase' : 'respaldo local'}</small>
         </div>
         <div class="actions">
           <button id="copy-weakness-report" class="btn primary">📋 Copiar informe para ChatGPT</button>
@@ -6552,13 +6591,73 @@
     return String(tier || 'SIN_CLASIFICAR').replaceAll('_', ' ');
   }
 
+  function ttsForCoverageTopic(topic = {}) {
+    const topicId = topic.id || topic.topicId || topic.key || null;
+    return topicId ? (ttsCatalogByTopic.get(topicId) || null) : null;
+  }
+
+  function availableTtsCount() {
+    return [...ttsCatalogByTopic.values()].filter(item => item && item.status !== 'PENDING').length;
+  }
+
+  function enrichCoverageTopics(topics = []) {
+    return topics.map(topic => {
+      const tts = ttsForCoverageTopic(topic);
+      const ttsStatusLabel = W4Data.catalogCompactLabel
+        ? W4Data.catalogCompactLabel(tts)
+        : (W4Data.catalogStatusLabel ? W4Data.catalogStatusLabel(tts) : (tts?.status || 'Pendiente'));
+      return { ...topic, tts, ttsStatusLabel, ttsAvailable:Boolean(tts && tts.status !== 'PENDING') };
+    });
+  }
+
+  function coverageTopicTtsPrompt(topic = {}) {
+    if (W4Data.ttsRequestForTopic) {
+      return W4Data.ttsRequestForTopic(
+        { topicId:topic.id || topic.key, label:topic.label, area:topic.area, specialty:topic.specialty },
+        topic.tts || ttsForCoverageTopic(topic),
+        null
+      );
+    }
+    return `Necesito una lectura TTS del tema canónico: ${topic.label || 'tema no especificado'}.`;
+  }
+
+  async function copyTextSafely(text) {
+    if (window.isSecureContext && navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        return;
+      } catch {
+        // Continúa con el respaldo compatible con PWA/offline.
+      }
+    }
+    const box = document.createElement('textarea');
+    box.value = text;
+    box.style.position = 'fixed';
+    box.style.left = '-9999px';
+    document.body.appendChild(box);
+    box.select();
+    if (typeof document.execCommand === 'function') document.execCommand('copy');
+    box.remove();
+  }
+
+  async function copyCoverageTtsRequest(topic, button = null) {
+    const original = button?.textContent || '';
+    if (button) button.textContent = '✓ Solicitud copiada';
+    try {
+      await copyTextSafely(coverageTopicTtsPrompt(topic));
+    } finally {
+      if (button) setTimeout(() => { button.textContent = original; }, 1800);
+    }
+  }
+
   function renderTopicCoverageDetail(topicKey, returnSort = 'rentability', returnView = 'topics') {
     clearTimer();
     const coverage = W3Tools.buildCoverageSnapshot
       ? W3Tools.buildCoverageSnapshot(questions, attempts, memoryStates, new Date())
       : { topics:[] };
-    const topic = coverage.topics.find(item => item.key === topicKey);
-    if (!topic) return renderStats(returnSort, returnView);
+    const baseTopic = coverage.topics.find(item => item.key === topicKey);
+    if (!baseTopic) return renderStats(returnSort, returnView);
+    const topic = enrichCoverageTopics([baseTopic])[0];
     const topicQuestions = topic.questionIds.map(id => questions.find(q => q.id === id)).filter(Boolean);
     const seen = new Set(attempts.map(a => a.question_id));
     const correctEver = new Set(attempts.filter(a => a.is_correct).map(a => a.question_id));
@@ -6566,16 +6665,17 @@
     app.innerHTML = `<main class="shell">${topbar('Detalle de tema', true)}
       <section class="panel topic-coverage-detail-head">
         <button id="coverage-back" class="btn small ghost" type="button">← Volver a Mi estado</button>
-        <div class="meta-line"><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<span class="tag">Rentabilidad ${Math.round(topic.score)}</span>` : ''}</div>
+        <div class="meta-line"><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<span class="tag">Rentabilidad ${Math.round(topic.score)}</span>` : ''}<span class="tag ${topic.ttsAvailable?'ok':''}">TTS ${esc(topic.ttsStatusLabel)}</span></div>
         <h2>${esc(topic.label)}</h2><p class="muted">${esc(topic.area)} → ${esc(topic.specialty)}</p>
         <div class="coverage-detail-kpis"><span><strong>${topic.seen}/${topic.total}</strong> vistas</span><span><strong>${topic.correctEver}/${topic.total}</strong> acertadas alguna vez</span><span><strong>${topic.overdue}</strong> vencidas</span><span><strong>${topic.uncertainAttempts}</strong> intentos dudosos</span></div>
-        <div class="footer-actions"><button id="topic-unseen-session" class="btn primary" ${topic.seen===topic.total?'disabled':''}>Practicar no vistas</button><button id="topic-all-session" class="btn">Crear sesión del tema</button></div>
+        <div class="footer-actions"><button id="topic-unseen-session" class="btn primary" ${topic.seen===topic.total?'disabled':''}>Practicar no vistas</button><button id="topic-all-session" class="btn">Crear sesión del tema</button><button id="topic-tts-request" class="btn ghost">📋 ${topic.ttsAvailable?'Pedir suplemento TTS':'Pedir TTS'}</button></div>
       </section>
       <section class="panel"><h2>Preguntas del tema</h2><div class="topic-question-list">${topicQuestions.map(q => `<article><div><strong>${esc(q.id)}</strong><span class="tag ${!seen.has(q.id)?'':'ok'}">${!seen.has(q.id)?'No vista':correctEver.has(q.id)?'Acertada alguna vez':'Vista sin acierto'}</span></div><p>${esc(q.question)}</p></article>`).join('')}</div></section>
     </main>`;
     attachTopbar();
     document.getElementById('coverage-back').onclick = () => renderStats(returnSort, returnView);
     document.getElementById('topic-all-session').onclick = () => launchStudy(topicQuestions, { mode:'study', count:topicQuestions.length, randomize:false, feedback:'end', timeMode:'none', secondsPerQuestion:Number(profile?.target_response_seconds||25), totalSeconds:0, title:topic.label, studyMode:'topic_coverage', shuffleOptions:true });
+    document.getElementById('topic-tts-request').onclick = ev => copyCoverageTtsRequest(topic, ev.currentTarget);
     const unseenButton = document.getElementById('topic-unseen-session');
     if (unseenButton) unseenButton.onclick = () => {
       const pool = topicQuestions.filter(q => !seen.has(q.id));
@@ -6601,7 +6701,7 @@
       if (!groups.has(key)) groups.set(key, {
         key, area:topic.area, specialty:topic.specialty, topics:[], total:0, seen:0,
         correctEver:0, attempts:0, correctAttempts:0, uncertainAttempts:0, overdue:0,
-        scoreWeight:0, scoreTotal:0,
+        ttsAvailable:0, scoreWeight:0, scoreTotal:0,
       });
       const group = groups.get(key);
       group.topics.push(topic);
@@ -6612,6 +6712,7 @@
       group.correctAttempts += Number(topic.correctAttempts || 0);
       group.uncertainAttempts += Number(topic.uncertainAttempts || 0);
       group.overdue += Number(topic.overdue || 0);
+      if (topic.ttsAvailable) group.ttsAvailable += 1;
       if (Number.isFinite(topic.score)) {
         const weight = Math.max(1, Number(topic.total || 0));
         group.scoreWeight += topic.score * weight;
@@ -6633,11 +6734,11 @@
   }
 
   function topicCoverageTableMarkup(topics = []) {
-    return `<div class="table-wrap"><table class="topic-coverage-table"><thead><tr><th class="num coverage-rank">N.º</th><th>Tema</th><th>Rentabilidad</th><th class="num">Vistas</th><th class="num">Total</th><th class="num">Cobertura</th><th class="num">Dudas</th><th class="num">Vencidas</th></tr></thead><tbody>${topics.map((topic,index) => `<tr class="clickable-row" data-topic-coverage-key="${esc(topic.key)}" tabindex="0"><td class="num coverage-rank">${index+1}</td><td><strong>${esc(topic.label)}</strong><small>${esc(topic.area)} · ${esc(topic.specialty)}</small></td><td><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<small>${Math.round(topic.score)}</small>` : ''}</td><td class="num">${topic.seen}</td><td class="num">${topic.total}</td><td class="num">${Math.round(topic.coverage*100)}%</td><td class="num">${topic.uncertainAttempts}</td><td class="num">${topic.overdue}</td></tr>`).join('')}</tbody></table></div>`;
+    return `<div class="table-wrap"><table class="topic-coverage-table"><thead><tr><th class="num coverage-rank">N.º</th><th>Tema</th><th>Rentabilidad</th><th>TTS</th><th class="num">Vistas</th><th class="num">Total</th><th class="num">Cobertura</th><th class="num">Dudas</th><th class="num">Vencidas</th></tr></thead><tbody>${topics.map((topic,index) => `<tr class="clickable-row" data-topic-coverage-key="${esc(topic.key)}" tabindex="0"><td class="num coverage-rank">${index+1}</td><td><strong>${esc(topic.label)}</strong><small>${esc(topic.area)} · ${esc(topic.specialty)}</small></td><td><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<small>${Math.round(topic.score)}</small>` : ''}</td><td><button class="btn small ghost tts-availability ${topic.ttsAvailable?'available':''}" type="button" data-topic-tts-key="${esc(topic.key)}" title="${topic.ttsAvailable?'La lectura existe; copiar pedido de suplemento':'La lectura todavía no existe; copiar pedido TTS'}">${esc(topic.ttsStatusLabel || 'Pendiente')}</button></td><td class="num">${topic.seen}</td><td class="num">${topic.total}</td><td class="num">${Math.round(topic.coverage*100)}%</td><td class="num">${topic.uncertainAttempts}</td><td class="num">${topic.overdue}</td></tr>`).join('')}</tbody></table></div>`;
   }
 
   function specialtyCoverageMarkup(groups = []) {
-    return `<p class="muted specialty-coverage-note">La rentabilidad de cada especialidad es el promedio de los puntajes de sus temas, ponderado por el número de preguntas. Dentro de cada especialidad, los temas se ordenan por rentabilidad.</p><div class="specialty-coverage-list">${groups.map(group => `<details class="specialty-coverage-group"><summary><div><strong>${esc(group.specialty)}</strong><small>${esc(group.area)} · ${group.topics.length} tema${group.topics.length===1?'':'s'} · ${group.total} preguntas</small></div><div class="specialty-summary-metrics"><span class="tag">${esc(topicTierLabel(group.tier))}${group.score == null?'':` · ${Math.round(group.score)}`}</span><span>${group.seen}/${group.total} vistas · ${Math.round(group.coverage*100)}%</span><span>${group.overdue} vencidas</span></div></summary>${topicCoverageTableMarkup(group.topics)}</details>`).join('')}</div>`;
+    return `<p class="muted specialty-coverage-note">La rentabilidad de cada especialidad es el promedio de los puntajes de sus temas, ponderado por el número de preguntas. Dentro de cada especialidad, los temas se ordenan por rentabilidad.</p><div class="specialty-coverage-list">${groups.map(group => `<details class="specialty-coverage-group"><summary><div><strong>${esc(group.specialty)}</strong><small>${esc(group.area)} · ${group.topics.length} tema${group.topics.length===1?'':'s'} · ${group.total} preguntas</small></div><div class="specialty-summary-metrics"><span class="tag">${esc(topicTierLabel(group.tier))}${group.score == null?'':` · ${Math.round(group.score)}`}</span><span>${group.seen}/${group.total} vistas · ${Math.round(group.coverage*100)}%</span><span>${group.overdue} vencidas</span><span>${group.ttsAvailable}/${group.topics.length} TTS</span></div></summary>${topicCoverageTableMarkup(group.topics)}</details>`).join('')}</div>`;
   }
 
   function renderStats(topicSort = 'rentability', coverageView = 'topics') {
@@ -6648,8 +6749,10 @@
     const timeSummary = W3Tools.buildTimeSummary
       ? W3Tools.buildTimeSummary(attempts, completedSessions, questions.length, new Date())
       : { todayQuestions:dailyActual(isoDateLocal()), activeMsToday:attempts.filter(a=>isoDateLocal(a.answered_at)===isoDateLocal()).reduce((sum,a)=>sum+Number(a.response_time_ms||0),0), pacePerDay:sevenDayPace(), unseenQuestions:Math.max(0,questions.length-overallStats().answered), projectedDays:null };
-    const sortedTopics = W3Tools.sortTopics ? W3Tools.sortTopics(coverage.topics, topicSort) : coverage.topics;
-    const specialtyGroups = buildSpecialtyCoverageGroups(coverage.topics);
+    const coverageTopics = enrichCoverageTopics(coverage.topics);
+    const availableTts = availableTtsCount();
+    const sortedTopics = W3Tools.sortTopics ? W3Tools.sortTopics(coverageTopics, topicSort) : coverageTopics;
+    const specialtyGroups = buildSpecialtyCoverageGroups(coverageTopics);
     const normalizedCoverageView = coverageView === 'specialties' ? 'specialties' : 'topics';
     const byArea = new Map();
     for (const q of questions) {
@@ -6682,7 +6785,7 @@
 
       <section class="stats-grid"><div class="panel"><h2>Por área</h2><div class="table-wrap"><table><thead><tr><th>Área</th><th class="num">Preg.</th><th class="num">Intentos</th><th class="num">Acierto</th></tr></thead><tbody>${[...byArea.entries()].sort().map(([area,g])=>`<tr><td>${esc(area)}</td><td class="num">${g.questions}</td><td class="num">${g.attempts}</td><td class="num">${pct(g.correct,g.attempts)}</td></tr>`).join('')}</tbody></table></div></div><div class="panel"><h2>Más difíciles</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>Tema</th><th class="num">Fallos</th><th class="num">Vistas</th></tr></thead><tbody>${hard.map(({q,s})=>`<tr><td>${esc(q.id)}</td><td>${esc(q.rentability_topic_label || q.topic)}</td><td class="num">${s.wrong}</td><td class="num">${s.seen}</td></tr>`).join('')}</tbody></table></div></div></section>
 
-      <section class="panel topic-coverage-panel"><div class="section-head topic-coverage-head"><div><h2>Cobertura canónica</h2><p class="muted">Este bloque queda al final de Mi estado. Puedes ver los 274 temas individualmente o agruparlos por especialidad sin perder el acceso al detalle.</p></div><div class="topic-coverage-controls"><label>Vista<select id="topic-coverage-view" class="input"><option value="topics" ${normalizedCoverageView==='topics'?'selected':''}>Temas individuales</option><option value="specialties" ${normalizedCoverageView==='specialties'?'selected':''}>Agrupado por especialidad</option></select></label>${normalizedCoverageView==='topics'?`<label>Orden<select id="topic-coverage-sort" class="input"><option value="rentability" ${topicSort==='rentability'?'selected':''}>Rentabilidad</option><option value="coverage" ${topicSort==='coverage'?'selected':''}>Menor cobertura</option><option value="weakness" ${topicSort==='weakness'?'selected':''}>Mayor debilidad</option><option value="alphabetical" ${topicSort==='alphabetical'?'selected':''}>Alfabético</option></select></label>`:''}</div></div>
+      <section class="panel topic-coverage-panel"><div class="section-head topic-coverage-head"><div><h2>Cobertura canónica</h2><p class="muted">Este bloque queda al final de Mi estado. Puedes ver los 274 temas individualmente o agruparlos por especialidad. La disponibilidad TTS se carga una sola vez desde Supabase y usa el respaldo local si no hay conexión.</p><small class="tts-catalog-meta">Catálogo ${esc(ttsCatalog.catalogVersion || '—')} · ${availableTts} TTS disponibles · fuente ${ttsCatalogSource === 'supabase' ? 'Supabase' : 'respaldo local'}${ttsCatalogLoadError ? ' · sincronización remota no disponible' : ''}</small></div><div class="topic-coverage-controls"><label>Vista<select id="topic-coverage-view" class="input"><option value="topics" ${normalizedCoverageView==='topics'?'selected':''}>Temas individuales</option><option value="specialties" ${normalizedCoverageView==='specialties'?'selected':''}>Agrupado por especialidad</option></select></label>${normalizedCoverageView==='topics'?`<label>Orden<select id="topic-coverage-sort" class="input"><option value="rentability" ${topicSort==='rentability'?'selected':''}>Rentabilidad</option><option value="coverage" ${topicSort==='coverage'?'selected':''}>Menor cobertura</option><option value="weakness" ${topicSort==='weakness'?'selected':''}>Mayor debilidad</option><option value="alphabetical" ${topicSort==='alphabetical'?'selected':''}>Alfabético</option></select></label>`:''}</div></div>
         ${normalizedCoverageView==='specialties' ? specialtyCoverageMarkup(specialtyGroups) : topicCoverageTableMarkup(sortedTopics)}
       </section>
     </main>`;
@@ -6697,6 +6800,15 @@
       const open = () => renderTopicCoverageDetail(row.dataset.topicCoverageKey, topicSort, normalizedCoverageView);
       row.onclick = open;
       row.onkeydown = ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } };
+    });
+    document.querySelectorAll('[data-topic-tts-key]').forEach(button => {
+      button.onclick = ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const topic = coverageTopics.find(item => item.key === button.dataset.topicTtsKey);
+        if (topic) copyCoverageTtsRequest(topic, button);
+      };
+      button.onkeydown = ev => ev.stopPropagation();
     });
   }
 

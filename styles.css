@@ -1981,3 +1981,12 @@ details.explain-block summary { cursor: pointer; }
   .review-jump-input { flex: 1; width: 64px; }
   .review-jump-actions .btn { flex: 1 1 auto; }
 }
+
+
+/* v1.3.0 — disponibilidad TTS compartida entre Debilidades y Cobertura canónica */
+.tts-availability.available { border-color:var(--ok, #2f855a); font-weight:700; }
+.tts-catalog-meta { display:block; margin-top:6px; color:var(--muted); }
+.topic-coverage-table .tts-availability { white-space:nowrap; }
+@media (max-width: 800px) {
+  .topic-coverage-table .tts-availability { white-space:normal; min-width:108px; }
+}

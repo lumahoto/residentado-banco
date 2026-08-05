@@ -83,29 +83,51 @@
   }
 
   function normalizeCatalog(raw = {}) {
-    const topics = Array.isArray(raw?.topics) ? raw.topics : [];
-    return {
-      catalogVersion: String(raw?.catalogVersion || 'unknown'),
-      generatedAt: raw?.generatedAt || null,
-      taxonomyVersion: raw?.taxonomyVersion || null,
-      topics: topics.map(item => ({
-        topicId: String(item?.topicId || ''),
-        topicLabel: String(item?.topicLabel || item?.topicId || ''),
-        rentabilityTier: item?.rentabilityTier || null,
-        status: ['PENDING', 'PARTIAL', 'COMPLETE'].includes(item?.status) ? item.status : 'PENDING',
-        primaryCode: item?.primaryCode || null,
-        version: item?.version || null,
-        updatedAt: item?.updatedAt || null,
-        estimatedMinutes: item?.estimatedMinutes == null ? null : Number(item.estimatedMinutes),
-        parts: Array.isArray(item?.parts) ? item.parts.map(part => ({
-          code: String(part?.code || ''),
-          title: String(part?.title || part?.code || ''),
-          file: String(part?.file || ''),
-          estimatedMinutes: part?.estimatedMinutes == null ? null : Number(part.estimatedMinutes),
-          coverage: Array.isArray(part?.coverage) ? part.coverage.map(String) : [],
-        })) : [],
+    const topics = Array.isArray(raw) ? raw : (Array.isArray(raw?.topics) ? raw.topics : []);
+    const normalizedTopics = topics.map(item => {
+      const explicitParts = Array.isArray(item?.parts) ? item.parts.map(part => ({
+        code: String(part?.code || ''),
+        title: String(part?.title || part?.code || ''),
+        file: String(part?.file || ''),
+        estimatedMinutes: part?.estimatedMinutes == null ? null : Number(part.estimatedMinutes),
+        coverage: Array.isArray(part?.coverage) ? part.coverage.map(String) : [],
+      })) : [];
+      let partCodes = Array.isArray(item?.part_codes) ? item.part_codes : [];
+      if (!partCodes.length && typeof item?.part_codes === 'string') {
+        try {
+          const parsed = JSON.parse(item.part_codes);
+          partCodes = Array.isArray(parsed) ? parsed : item.part_codes.split('|');
+        } catch {
+          partCodes = item.part_codes.split('|');
+        }
+      }
+      const parts = explicitParts.length ? explicitParts : partCodes.filter(Boolean).map(code => ({
+        code:String(code), title:String(code), file:'', estimatedMinutes:null, coverage:[],
+      }));
+      const rawStatus = String(item?.status || 'PENDING').toUpperCase();
+      return {
+        topicId: String(item?.topicId || item?.rentability_topic_id || ''),
+        topicLabel: String(item?.topicLabel || item?.topic_label || item?.topicId || item?.rentability_topic_id || ''),
+        rentabilityTier: item?.rentabilityTier || item?.rentability_tier || null,
+        status: ['PENDING', 'PARTIAL', 'COMPLETE'].includes(rawStatus) ? rawStatus : 'PENDING',
+        primaryCode: item?.primaryCode || item?.primary_code || null,
+        version: item?.version || item?.tts_version || null,
+        updatedAt: item?.updatedAt || item?.reviewed_as_of || item?.updated_at || item?.available_at || null,
+        estimatedMinutes: (item?.estimatedMinutes ?? item?.estimated_minutes) == null ? null : Number(item?.estimatedMinutes ?? item?.estimated_minutes),
+        partCount: Number(item?.partCount ?? item?.part_count ?? parts.length) || parts.length,
+        parts,
         missingCoverage: Array.isArray(item?.missingCoverage) ? item.missingCoverage.map(String) : [],
-      })).filter(item => item.topicId),
+        sourceStatus: item?.sourceStatus || item?.source_status || null,
+        sourcePackage: item?.sourcePackage || item?.source_package || null,
+        completeTxtFile: item?.completeTxtFile || item?.complete_txt_file || null,
+        completeMarkdownFile: item?.completeMarkdownFile || item?.complete_markdown_file || null,
+      };
+    }).filter(item => item.topicId);
+    return {
+      catalogVersion: String(raw?.catalogVersion || raw?.catalog_version || topics[0]?.catalog_version || 'unknown'),
+      generatedAt: raw?.generatedAt || raw?.generated_at || null,
+      taxonomyVersion: raw?.taxonomyVersion || raw?.taxonomy_version || null,
+      topics: normalizedTopics,
     };
   }
 
@@ -117,6 +139,12 @@
     if (!item || item.status === 'PENDING') return 'Pendiente';
     if (item.status === 'PARTIAL') return `Parcial${item.parts?.length ? ` · ${item.parts.length} parte${item.parts.length === 1 ? '' : 's'}` : ''}`;
     return `Completa${item.parts?.length ? ` · ${item.parts.length} parte${item.parts.length === 1 ? '' : 's'}` : ''}`;
+  }
+
+  function catalogCompactLabel(item = null) {
+    if (!item || item.status === 'PENDING') return 'Pendiente';
+    const code = item.primaryCode ? `${item.primaryCode} · ` : '';
+    return `${code}${catalogStatusLabel(item)}`;
   }
 
   function ttsRequestForTopic(topic = {}, catalogItem = null, weakness = null) {
@@ -175,6 +203,7 @@
     normalizeCatalog,
     catalogMap,
     catalogStatusLabel,
+    catalogCompactLabel,
     ttsRequestForTopic,
     pageRange,
   };
