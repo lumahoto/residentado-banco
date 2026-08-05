@@ -1,5 +1,17 @@
 # Changelog - Residentado
 
+## v1.2.0 - 2026-08-05
+
+Release funcional construido sobre v1.1.1. Conserva todos los guardrails de sesiones y añade:
+
+- numeración de Cobertura canónica;
+- salto directo, Última y Salir en revisión;
+- posición original para cierres parciales;
+- notas personales de aprendizaje separadas de flags;
+- exportación Markdown/CSV con protocolo Anki y trazabilidad;
+- migración RLS `question_learning_notes`;
+- QA estático, unitario y smoke headless.
+
 ## v1.1.1 - 2026-08-05
 
 Primera base estable posterior a v1.1.0-rc2. v1.1.0 no se promueve a estable por INC-20260805-SESSION-40001.
