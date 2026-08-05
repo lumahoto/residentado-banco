@@ -1,13 +1,15 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.1.1';
+  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.2.0';
+  const LEARNING_NOTES_MIGRATION = 'MIGRATIONS/20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
   const DEMO_SESSIONS_KEY = 'residentado_piloto_sessions_v2';
   const DEMO_MEMORY_KEY = 'residentado_memory_state_v1';
   const DEMO_PROFILE_KEY = 'residentado_learning_profile_v1';
   const DEMO_REVIEW_FLAGS_KEY = 'residentado_question_review_flags_v1';
+  const DEMO_LEARNING_NOTES_KEY = 'residentado_question_learning_notes_v1';
 
   let supa = null;
   let user = null;
@@ -31,6 +33,11 @@
   let reviewFlags = [];
   let reviewFlagHistory = [];
   let reviewFlagByQuestion = new Map();
+  let learningNotes = [];
+  let learningNoteHistory = [];
+  let learningNoteByQuestion = new Map();
+  let learningNotesAvailable = true;
+  let learningNotesLoadError = '';
 
   const SessionCore = window.ResidentadoSessionCore || {};
   const QuestionParser = window.ResidentadoQuestionParser || {};
@@ -1261,6 +1268,27 @@
     catch { return []; }
   }
   function saveLocalReviewFlags() { localStorage.setItem(DEMO_REVIEW_FLAGS_KEY, JSON.stringify(reviewFlagHistory)); }
+  function localLearningNotes() {
+    try { return JSON.parse(localStorage.getItem(DEMO_LEARNING_NOTES_KEY) || '[]'); }
+    catch { return []; }
+  }
+  function saveLocalLearningNotes() { localStorage.setItem(DEMO_LEARNING_NOTES_KEY, JSON.stringify(learningNoteHistory)); }
+
+  const LEARNING_NOTE_TYPES = {
+    general: { label:'Duda o vacío de conocimiento', icon:'🗒' },
+    drug: { label:'Fármaco o mecanismo', icon:'💊' },
+    cutoff: { label:'Valor normal, dosis o punto de corte', icon:'📏' },
+    differential: { label:'Diagnóstico diferencial', icon:'🔀' },
+    explanation: { label:'No entendí la explicación', icon:'💬' },
+    other: { label:'Otro dato para recordar', icon:'🧩' },
+  };
+
+  const LEARNING_NOTE_OUTCOMES = {
+    ALREADY_COVERED: 'Ya estaba cubierto en Anki',
+    UPDATE_EXISTING_CARD: 'Se actualizó una tarjeta existente',
+    CREATE_NEW_CARD: 'Se creó una tarjeta nueva',
+    RESOLVED_WITHOUT_ANKI: 'Resuelta sin tarjeta',
+  };
 
   const REVIEW_FLAG_TYPES = {
     statement: { label:'Revisar enunciado', icon:'📝' },
@@ -1270,6 +1298,221 @@
 
   function reviewFlagMeta(type) {
     return REVIEW_FLAG_TYPES[type] || REVIEW_FLAG_TYPES.general;
+  }
+
+
+  function learningNoteMeta(type) {
+    return LEARNING_NOTE_TYPES[type] || LEARNING_NOTE_TYPES.general;
+  }
+
+  function learningNoteStatus(row = {}) {
+    const status = String(row.status || 'OPEN').toUpperCase();
+    return ['OPEN','RESOLVED','DISMISSED'].includes(status) ? status : 'OPEN';
+  }
+
+  function activeLearningNoteRows(rows = []) {
+    return (rows || []).filter(row => learningNoteStatus(row) === 'OPEN');
+  }
+
+  function rebuildLearningNoteMap() {
+    learningNotes = activeLearningNoteRows(learningNoteHistory.length ? learningNoteHistory : learningNotes)
+      .sort((a,b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+    learningNoteByQuestion = new Map(learningNotes.map(row => [row.question_id, row]));
+  }
+
+  function learningNoteFor(questionId) {
+    return learningNoteByQuestion.get(questionId) || null;
+  }
+
+  function latestClosedLearningNoteFor(questionId) {
+    return learningNoteHistory
+      .filter(row => row.question_id === questionId && learningNoteStatus(row) !== 'OPEN')
+      .sort((a,b) => new Date(b.resolved_at || b.updated_at || 0) - new Date(a.resolved_at || a.updated_at || 0))[0] || null;
+  }
+
+  function mergeLearningNoteHistoryRow(row) {
+    const byId = new Map(learningNoteHistory.map(item => [item.id, item]));
+    byId.set(row.id, row);
+    learningNoteHistory = [...byId.values()]
+      .sort((a,b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0));
+    rebuildLearningNoteMap();
+    if (!cloudConfigured) saveLocalLearningNotes();
+  }
+
+  function learningNoteButton(q) {
+    const existing = learningNoteFor(q?.id);
+    const meta = existing ? learningNoteMeta(existing.note_type) : null;
+    return `<button class="btn small ghost learning-note-btn ${existing?'active':''}" type="button" data-question-learning-note="${esc(q?.id || '')}" aria-haspopup="dialog">${existing ? `${meta.icon} Editar nota` : '🗒 Añadir nota'}</button>`;
+  }
+
+  function refreshLearningNoteButtons(questionId) {
+    const existing = learningNoteFor(questionId);
+    const meta = existing ? learningNoteMeta(existing.note_type) : null;
+    document.querySelectorAll('[data-question-learning-note]').forEach(btn => {
+      if (btn.dataset.questionLearningNote !== questionId) return;
+      btn.classList.toggle('active', Boolean(existing));
+      btn.textContent = existing ? `${meta.icon} Editar nota` : '🗒 Añadir nota';
+    });
+    document.querySelectorAll('[data-learning-notes-count]').forEach(node => {
+      node.textContent = String(learningNotes.length);
+    });
+  }
+
+  function learningNotesUnavailableMessage() {
+    return `La función de notas requiere ejecutar ${LEARNING_NOTES_MIGRATION} en Supabase.${learningNotesLoadError ? `\n\nDetalle: ${learningNotesLoadError}` : ''}`;
+  }
+
+  async function saveQuestionLearningNote(questionId, noteType, noteText = '') {
+    const text = String(noteText ?? '').replace(/\r/g, '').trim().slice(0, 6000);
+    if (!text) return null;
+    if (!LEARNING_NOTE_TYPES[noteType]) noteType = 'general';
+    if (cloudConfigured && !learningNotesAvailable) {
+      alert(learningNotesUnavailableMessage());
+      return null;
+    }
+    const now = new Date().toISOString();
+    const previous = learningNoteFor(questionId);
+    const previousClosed = latestClosedLearningNoteFor(questionId);
+    let row = null;
+    if (cloudConfigured) {
+      if (previous) {
+        const { data, error } = await supa.from('question_learning_notes')
+          .update({ note_type:noteType, note_text:text, client_app_version:APP_VERSION, status:'OPEN', updated_at:now })
+          .eq('id', previous.id)
+          .eq('user_id', user.id)
+          .select('*')
+          .single();
+        if (error) { alert(`No se pudo actualizar la nota: ${error.message}`); return null; }
+        row = data;
+      } else {
+        const payload = {
+          user_id:user.id,
+          question_id:questionId,
+          note_type:noteType,
+          note_text:text,
+          client_app_version:APP_VERSION,
+          status:'OPEN',
+          content_revision:questionContentRevision(questionId),
+          previous_note_id:previousClosed?.id || null,
+          updated_at:now,
+        };
+        const { data, error } = await supa.from('question_learning_notes')
+          .insert(payload)
+          .select('*')
+          .single();
+        if (error) { alert(`No se pudo guardar la nota: ${error.message}`); return null; }
+        row = data;
+      }
+    } else {
+      row = previous ? {
+        ...previous, note_type:noteType, note_text:text, client_app_version:APP_VERSION, status:'OPEN', updated_at:now,
+      } : {
+        id:makeUuid(), user_id:'demo', question_id:questionId, note_type:noteType, note_text:text,
+        client_app_version:APP_VERSION, status:'OPEN', content_revision:questionContentRevision(questionId),
+        previous_note_id:previousClosed?.id || null, created_at:now, updated_at:now,
+      };
+    }
+    mergeLearningNoteHistoryRow(row);
+    refreshLearningNoteButtons(questionId);
+    return row;
+  }
+
+  async function closeQuestionLearningNote(questionId, status, details = {}) {
+    const existing = learningNoteFor(questionId);
+    if (!existing) return false;
+    if (cloudConfigured && !learningNotesAvailable) { alert(learningNotesUnavailableMessage()); return false; }
+    const now = new Date().toISOString();
+    const normalizedStatus = status === 'RESOLVED' ? 'RESOLVED' : 'DISMISSED';
+    const outcome = normalizedStatus === 'RESOLVED' && LEARNING_NOTE_OUTCOMES[details.ankiAction]
+      ? details.ankiAction : null;
+    const summary = cleanEditorialText(details.summary) || (normalizedStatus === 'RESOLVED'
+      ? 'Duda resuelta y revisada para su cobertura en Anki.'
+      : 'Nota retirada por el usuario.');
+    const changes = {
+      status:normalizedStatus,
+      resolved_at:now,
+      resolved_by_batch_id:normalizedStatus === 'RESOLVED' ? (cleanEditorialText(details.batchId) || null) : null,
+      resolution_summary:summary,
+      anki_action:outcome,
+      anki_guid:normalizedStatus === 'RESOLVED' ? (cleanEditorialText(details.ankiGuid) || null) : null,
+      anki_deck:normalizedStatus === 'RESOLVED' ? (cleanEditorialText(details.ankiDeck) || null) : null,
+      updated_at:now,
+    };
+    let row = null;
+    if (cloudConfigured) {
+      const { data, error } = await supa.from('question_learning_notes')
+        .update(changes).eq('id', existing.id).eq('user_id', user.id).select('*').single();
+      if (error) { alert(`No se pudo cerrar la nota: ${error.message}`); return false; }
+      row = data;
+    } else row = { ...existing, ...changes };
+    mergeLearningNoteHistoryRow(row);
+    refreshLearningNoteButtons(questionId);
+    return true;
+  }
+
+  function closeLearningNoteDialog() {
+    const modal = document.getElementById('question-learning-note-modal');
+    if (!modal) return;
+    if (modal._escapeHandler) document.removeEventListener('keydown', modal._escapeHandler);
+    modal.remove();
+  }
+
+  function showLearningNoteDialog(questionId, afterSave = null) {
+    closeLearningNoteDialog();
+    const q = questions.find(item => item.id === questionId);
+    if (!q) return;
+    if (cloudConfigured && !learningNotesAvailable) { alert(learningNotesUnavailableMessage()); return; }
+    const existing = learningNoteFor(questionId);
+    const modal = document.createElement('div');
+    modal.id = 'question-learning-note-modal';
+    modal.className = 'review-flag-modal';
+    modal.innerHTML = `<div class="review-flag-dialog learning-note-dialog" role="dialog" aria-modal="true" aria-labelledby="learning-note-title">
+      <div class="review-flag-dialog-head"><div><h2 id="learning-note-title">🗒 Nota de aprendizaje</h2><p class="muted">Registra lo que no entiendes o no recuerdas. No marca la pregunta como defectuosa ni modifica tu resultado.</p></div><button class="btn small ghost" type="button" data-learning-note-close>✕</button></div>
+      <div class="learning-note-question"><strong>${esc(questionSourceLabel(q))}</strong><p>${esc(q.question)}</p></div>
+      <label class="learning-note-label">Tipo de duda<select id="learning-note-type" class="input">${Object.entries(LEARNING_NOTE_TYPES).map(([key,meta]) => `<option value="${key}" ${(existing?.note_type || 'general')===key?'selected':''}>${meta.icon} ${esc(meta.label)}</option>`).join('')}</select></label>
+      <label class="learning-note-label">¿Qué necesitas aclarar o recordar?<textarea id="learning-note-text" class="input review-flag-note" maxlength="6000" placeholder="Ejemplo: No sé qué es letrozol ni en qué se diferencia del citrato de clomifeno.">${esc(existing?.note_text || '')}</textarea></label>
+      <div id="learning-note-save-status" class="error-msg" aria-live="polite"></div>
+      <div class="dialog-actions"><button class="btn ghost" type="button" data-learning-note-close>Cancelar</button>${existing?'<button id="learning-note-dismiss" class="btn danger ghost-danger" type="button">Quitar nota</button>':''}<button id="learning-note-save" class="btn primary" type="button">Guardar nota</button></div>
+    </div>`;
+    document.body.appendChild(modal);
+    const close = () => closeLearningNoteDialog();
+    modal.querySelectorAll('[data-learning-note-close]').forEach(btn => btn.onclick = close);
+    modal.onclick = ev => { if (ev.target === modal) close(); };
+    modal._escapeHandler = ev => { if (ev.key === 'Escape') close(); };
+    document.addEventListener('keydown', modal._escapeHandler);
+    document.getElementById('learning-note-save').onclick = async () => {
+      const typeNode = document.getElementById('learning-note-type');
+      const textNode = document.getElementById('learning-note-text');
+      const statusNode = document.getElementById('learning-note-save-status');
+      const text = String(textNode?.value || '').trim();
+      if (!text) {
+        statusNode.textContent = 'Escribe la duda o el dato que necesitas recordar.';
+        textNode?.focus();
+        return;
+      }
+      statusNode.textContent = 'Guardando…';
+      modal.querySelectorAll('button, textarea, select').forEach(node => node.disabled = true);
+      const saved = await saveQuestionLearningNote(questionId, typeNode.value, text);
+      if (!saved) {
+        statusNode.textContent = 'No se pudo guardar. Revisa la conexión o la migración e inténtalo otra vez.';
+        modal.querySelectorAll('button, textarea, select').forEach(node => node.disabled = false);
+        return;
+      }
+      close();
+      if (typeof afterSave === 'function') afterSave();
+    };
+    const dismiss = document.getElementById('learning-note-dismiss');
+    if (dismiss) dismiss.onclick = async () => {
+      if (!confirm('¿Quitar esta nota? Quedará registrada como descartada en el historial.')) return;
+      if (await closeQuestionLearningNote(questionId, 'DISMISSED')) { close(); if (typeof afterSave === 'function') afterSave(); }
+    };
+    document.getElementById('learning-note-text').focus();
+  }
+
+  function bindLearningNoteButtons(root = document) {
+    root.querySelectorAll('[data-question-learning-note]').forEach(btn => {
+      btn.onclick = () => showLearningNoteDialog(btn.dataset.questionLearningNote);
+    });
   }
 
   function reviewFlagStatus(row = {}) {
@@ -1943,6 +2186,38 @@
     return { data:merged, error:null, source:since ? 'incremental' : 'initial' };
   }
 
+
+  async function fetchLearningNotesUpdatedSince(since = null) {
+    const pageSize = 1000;
+    const all = [];
+    for (let from = 0; ; from += pageSize) {
+      let query = supa.from('question_learning_notes').select('*').eq('user_id', user.id).order('updated_at', { ascending:true });
+      if (since) query = query.gt('updated_at', since);
+      const { data, error } = await query.range(from, from + pageSize - 1);
+      if (error) return { data:null, error };
+      all.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return { data:all, error:null };
+  }
+
+  async function loadLearningNotesIncremental() {
+    const key = `learning-notes:${user.id}`;
+    const snapshot = sessionStore?.getUserSnapshot ? await sessionStore.getUserSnapshot(key) : null;
+    const cached = snapshot?.rows || [];
+    const since = cached.length ? snapshot?.metadata?.lastSyncAt || null : null;
+    const remote = await fetchLearningNotesUpdatedSince(since);
+    if (remote.error) {
+      return { data:cached, error:null, unavailable:true, reason:remote.error.message || 'Tabla no disponible' };
+    }
+    const merged = W4Data.mergeRows
+      ? W4Data.mergeRows(cached, remote.data || [], row => row.id || `${row.question_id}:${row.updated_at}`)
+      : [...cached, ...(remote.data || [])];
+    const last = W4Data.maxUpdatedAt ? W4Data.maxUpdatedAt(merged, ['updated_at','created_at']) : null;
+    if (sessionStore?.setUserSnapshot) await sessionStore.setUserSnapshot(key, merged, { lastSyncAt:last });
+    return { data:merged, error:null, unavailable:false, source:since ? 'incremental' : 'initial' };
+  }
+
   async function fetchCompletedSessionsPage(page = 0) {
     const range = W4Data.pageRange ? W4Data.pageRange(page, HISTORY_PAGE_SIZE) : { from:page*HISTORY_PAGE_SIZE, to:(page+1)*HISTORY_PAGE_SIZE-1 };
     const { data, error } = await supa.from('practice_sessions')
@@ -2022,6 +2297,9 @@
       reviewFlagHistory = localReviewFlags();
       reviewFlags = activeReviewFlagRows(reviewFlagHistory);
       rebuildReviewFlagMap();
+      learningNoteHistory = localLearningNotes();
+      learningNotes = activeLearningNoteRows(learningNoteHistory);
+      rebuildLearningNoteMap();
       rebuildMemoryMap();
       await reconcileMemoryFromAttempts();
       renderDashboard();
@@ -2151,12 +2429,13 @@
     clearTimer();
     app.innerHTML = `<div class="splash"><div class="logo-mark">R</div><p>Sincronizando cambios…</p></div>`;
 
-    const [qRes, aRes, pRes, mRes, fRes] = await Promise.all([
+    const [qRes, aRes, pRes, mRes, fRes, nRes] = await Promise.all([
       loadCorpusWithCache(),
       loadAttemptsIncremental(),
       supa.from('user_learning_profile').select('*').eq('user_id', user.id).maybeSingle(),
       loadMemoryIncremental(),
       loadFlagsIncremental(),
+      loadLearningNotesIncremental(),
     ]);
 
     if (qRes.error) { renderLogin(`Error al cargar preguntas: ${qRes.error.message}`); return; }
@@ -2182,6 +2461,11 @@
     reviewFlagHistory = fRes.data || [];
     reviewFlags = activeReviewFlagRows(reviewFlagHistory);
     rebuildReviewFlagMap();
+    learningNotesAvailable = !nRes.unavailable;
+    learningNotesLoadError = nRes.reason || '';
+    learningNoteHistory = nRes.data || [];
+    learningNotes = activeLearningNoteRows(learningNoteHistory);
+    rebuildLearningNoteMap();
     rebuildMemoryMap();
 
     if (pRes.data) profile = { ...DEFAULT_PROFILE, ...pRes.data };
@@ -2229,6 +2513,7 @@
       <div class="topbar-menu-wrap">
         <button id="account-menu-btn" class="btn small ghost icon-menu-btn" type="button" aria-label="Abrir menú" aria-expanded="false" aria-controls="account-menu">⋮</button>
         <div id="account-menu" class="topbar-menu-popover" hidden>
+          <button id="learning-notes-menu-btn" class="topbar-menu-item" type="button">🗒 Mis notas de aprendizaje <span class="menu-count" data-learning-notes-count>${learningNotes.length}</span></button>
           <button id="review-flags-menu-btn" class="topbar-menu-item" type="button">⚑ Preguntas para revisar <span class="menu-count" data-review-flags-count>${reviewFlags.length}</span></button>
           ${cloudConfigured ? '<button id="logout-btn" class="topbar-menu-item danger-menu-item" type="button">Salir de la cuenta</button>' : ''}
         </div>
@@ -2259,6 +2544,8 @@
       menu.onclick = ev => ev.stopPropagation();
     }
 
+    const learningNotesMenu = document.getElementById('learning-notes-menu-btn');
+    if (learningNotesMenu) learningNotesMenu.onclick = () => renderLearningNotesPage();
     const reviewFlagsMenu = document.getElementById('review-flags-menu-btn');
     if (reviewFlagsMenu) reviewFlagsMenu.onclick = () => renderReviewFlagsPage();
 
@@ -3549,6 +3836,7 @@
     app.innerHTML = `<main class="shell">
       ${topbar()}
       ${!cloudConfigured ? `<div class="banner"><strong>Modo demo:</strong> el progreso se guarda solo en este navegador.</div>` : ''}
+      ${cloudConfigured && !learningNotesAvailable ? `<div class="banner"><strong>Notas de aprendizaje pendientes de activar:</strong> ejecuta <code>${LEARNING_NOTES_MIGRATION}</code>. La práctica sigue funcionando normalmente.</div>` : ''}
       ${questions.length < 200 ? `<div class="banner"><strong>Piloto de 20 preguntas:</strong> la carga diaria se escala temporalmente al contenido disponible. Las metas completas se activarán al importar el banco maestro.</div>` : ''}
 
       <section class="briefing panel">
@@ -4487,6 +4775,7 @@
         sessionId:currentStudy.row.id,
         partial:true,
         questions:answeredQuestions,
+        originalQuestionIds:currentStudy.questions.map(question => question.id),
         responses:currentStudy.responses,
         scratch:currentStudy.scratch || {},
         optionOrders:currentStudy.optionOrders || {},
@@ -4535,6 +4824,7 @@
         sessionId:study.row.id,
         partial:false,
         questions:study.questions,
+        originalQuestionIds:study.questions.map(question => question.id),
         responses:study.responses,
         scratch:study.scratch || {},
         optionOrders:study.optionOrders || {},
@@ -4886,6 +5176,7 @@
         sessionId:exam.row.id,
         partial:true,
         questions:answeredQuestions,
+        originalQuestionIds:exam.questions.map(question => question.id),
         responses:state.responses,
         scratch:state.scratch || {},
         marked:state.marked || {},
@@ -4927,6 +5218,7 @@
         sessionId:exam.row.id,
         partial:false,
         questions:exam.questions,
+        originalQuestionIds:exam.questions.map(question => question.id),
         responses:state.responses,
         scratch:state.scratch || {},
         marked:state.marked || {},
@@ -4964,77 +5256,95 @@
       .map(([letter]) => letter);
     const reviewOptions = displayOptionList(q, reviewContext.optionOrders || {}, reviewContext.shuffleOptions !== false);
     const reviewTitle = reviewContext?.type === 'specific_query' ? 'Consulta' : 'Revisión';
-    app.innerHTML = `<main class="shell">${topbar(reviewTitle, true)}<div class="review-navigation-wrap"><div class="question-step-nav" aria-label="Navegación superior de la revisión"><button class="btn small ghost" data-review-prev ${reviewContext.index===0?'disabled':''}>← Anterior</button><strong>${reviewContext.index+1}/${reviewContext.questions.length}</strong><button class="btn small primary" data-review-next>${reviewContext.index+1===reviewContext.questions.length?(specificQueryReview?'Volver al selector':'Terminar revisión'):'Siguiente →'}</button></div>${specificQueryReview?`<div class="specific-review-actions" aria-label="Acciones de consulta"><button class="btn small ghost" data-review-selector type="button">← Volver al selector</button><button class="btn small danger ghost-danger" data-review-exit type="button">Salir</button></div>`:''}</div><section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p>${questionMediaHtml(q)}<div class="options">${reviewOptions.map(o => {
-      const sourceLetter = o.sourceLetter || o.letter;
-      return `<div class="option ${sourceLetter===q.official_answer?'correct':sourceLetter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`;
-    }).join('')}</div></div><div id="feedback"></div></section><div class="footer-actions review-footer-actions"><button class="btn ghost" data-review-prev ${historyReview && !historySessionReview?'style="visibility:hidden"':(reviewContext.index===0?'disabled':'')}>← Anterior</button>${specificQueryReview?`<button class="btn ghost" data-review-selector type="button">Volver al selector</button><button class="btn danger ghost-danger" data-review-exit type="button">Salir</button>`:''}<button class="btn primary" data-review-next>${specificQueryReview?(reviewContext.index+1===reviewContext.questions.length?'Volver al selector':'Siguiente →'):historyReview?(historySessionReview && reviewContext.index+1<reviewContext.questions.length?'Siguiente →':'Volver al historial'):(reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →')}</button></div></main>`;
+    const originalIds = reviewContext.originalQuestionIds || reviewContext.questions.map(question => question.id);
+    const originalIndex = originalIds.indexOf(q.id);
+    const originalPositionMarkup = reviewContext.partial && originalIndex >= 0
+      ? `<small class="review-original-position">Respondida ${reviewContext.index+1} de ${reviewContext.questions.length} · pregunta ${originalIndex+1} de la sesión original</small>`
+      : '';
+    app.innerHTML = `<main class="shell">${topbar(reviewTitle, true)}
+      <div class="review-navigation-wrap">
+        <div class="question-step-nav review-step-primary" aria-label="Navegación superior de la revisión">
+          <button class="btn small ghost" data-review-prev ${reviewContext.index===0?'disabled':''}>← Anterior</button>
+          <strong>${reviewContext.index+1}/${reviewContext.questions.length}</strong>
+          <button class="btn small primary" data-review-next>${reviewContext.index+1===reviewContext.questions.length?(specificQueryReview?'Volver al selector':'Terminar revisión'):'Siguiente →'}</button>
+        </div>
+        <div class="review-jump-actions" aria-label="Salto y salida de la revisión">
+          <label>Ir a <input id="review-jump-input" class="input review-jump-input" type="number" min="1" max="${reviewContext.questions.length}" value="${reviewContext.index+1}" inputmode="numeric"></label>
+          <button class="btn small ghost" data-review-jump type="button">Ir</button>
+          <button class="btn small ghost" data-review-last type="button" ${reviewContext.index+1===reviewContext.questions.length?'disabled':''}>Última</button>
+          ${specificQueryReview?'<button class="btn small ghost" data-review-selector type="button">Selector</button>':''}
+          <button class="btn small danger ghost-danger" data-review-exit type="button">Salir</button>
+        </div>
+        ${originalPositionMarkup}
+      </div>
+      <section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p>${questionMediaHtml(q)}<div class="options">${reviewOptions.map(o => {
+        const sourceLetter = o.sourceLetter || o.letter;
+        return `<div class="option ${sourceLetter===q.official_answer?'correct':sourceLetter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`;
+      }).join('')}</div></div><div id="feedback"></div></section>
+      <div class="footer-actions review-footer-actions"><button class="btn ghost" data-review-prev ${historyReview && !historySessionReview?'style="visibility:hidden"':(reviewContext.index===0?'disabled':'')}>← Anterior</button><button class="btn ghost" data-review-last ${reviewContext.index+1===reviewContext.questions.length?'disabled':''}>Última</button><button class="btn danger ghost-danger" data-review-exit>Salir</button><button class="btn primary" data-review-next>${specificQueryReview?(reviewContext.index+1===reviewContext.questions.length?'Volver al selector':'Siguiente →'):historyReview?(historySessionReview && reviewContext.index+1<reviewContext.questions.length?'Siguiente →':'Volver al historial'):(reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →')}</button></div>
+    </main>`;
     attachTopbar();
     const sessionAttempt = reviewContext?.attemptsByQuestion?.[q.id] || null;
     const sessionScopedReview = Boolean(reviewContext?.sessionId);
     const latestAttempt = sessionAttempt || (sessionScopedReview
       ? null
-      : attemptsForQuestion(q.id)
-          .slice()
-          .sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0] || null);
+      : attemptsForQuestion(q.id).slice().sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0] || null);
     const reviewFeedbackMeta = {
-      attemptId: latestAttempt?.id || null,
-      responseTimeMs: Number(latestAttempt?.response_time_ms || 0),
-      targetSeconds: Number(latestAttempt?.target_seconds || effectiveTargetSeconds(q)),
-      wasUncertainAtAnswer: Boolean(latestAttempt?.was_uncertain),
-      // En la revisión al final, cualquier pregunta respondida debe permitir
-      // registrar que el razonamiento no estaba realmente dominado, incluso
-      // si la alternativa final fue correcta o el tiempo terminó después de
-      // haber marcado una respuesta.
-      allowPostMark: !didNotKnow && selected != null,
+      attemptId:latestAttempt?.id || null,
+      responseTimeMs:Number(latestAttempt?.response_time_ms || 0),
+      targetSeconds:Number(latestAttempt?.target_seconds || effectiveTargetSeconds(q)),
+      wasUncertainAtAnswer:Boolean(latestAttempt?.was_uncertain),
+      allowPostMark:!didNotKnow && selected != null,
       didNotKnow,
       omitted,
     };
-
-    // La explicación es parte esencial de la revisión, no un extra opcional.
-    // La protegemos con un fallback para que un dato editorial inesperado no
-    // deje una respuesta correcta mostrando solo el color verde.
-    try {
-      renderFeedback(q, selected, correct, null, timedOut, true, uncertainOptions, reviewFeedbackMeta);
-    } catch (error) {
-      console.error('Error al renderizar la explicación de revisión:', error);
-    }
+    try { renderFeedback(q, selected, correct, null, timedOut, true, uncertainOptions, reviewFeedbackMeta); }
+    catch (error) { console.error('Error al renderizar la explicación de revisión:', error); }
     const reviewFeedbackNode = document.getElementById('feedback');
-    if (reviewFeedbackNode && !reviewFeedbackNode.innerHTML.trim()) {
-      renderReviewFeedbackFallback(q, selected, correct, timedOut, uncertainOptions, reviewFeedbackMeta);
-    }
+    if (reviewFeedbackNode && !reviewFeedbackNode.innerHTML.trim()) renderReviewFeedbackFallback(q, selected, correct, timedOut, uncertainOptions, reviewFeedbackMeta);
+
     const goReviewPrev = () => {
       if (reviewContext.index <= 0) return;
       reviewContext.index--;
       renderReviewQuestion();
     };
     const goReviewNext = () => {
-      if (reviewContext?.type === 'specific_query') {
-        if (reviewContext.index + 1 < reviewContext.questions.length) {
-          reviewContext.index++;
-          renderReviewQuestion();
-        } else renderSpecificQuestions();
+      if (specificQueryReview) {
+        if (reviewContext.index + 1 < reviewContext.questions.length) { reviewContext.index++; renderReviewQuestion(); }
+        else renderSpecificQuestions();
         return;
       }
       if (historyReview) {
-        if (historySessionReview && reviewContext.index + 1 < reviewContext.questions.length) {
-          reviewContext.index++;
-          renderReviewQuestion();
-          return;
-        }
-        const returnDate = reviewContext.returnDate || isoDateLocal();
-        renderHistory(returnDate);
+        if (historySessionReview && reviewContext.index + 1 < reviewContext.questions.length) { reviewContext.index++; renderReviewQuestion(); return; }
+        renderHistory(reviewContext.returnDate || isoDateLocal());
       } else if (reviewContext.index + 1 >= reviewContext.questions.length) renderDashboard();
       else { reviewContext.index++; renderReviewQuestion(); }
     };
+    const exitReview = () => {
+      const context = reviewContext;
+      reviewContext = null;
+      if (String(context?.type || '').startsWith('history_')) renderHistory(context.returnDate || isoDateLocal());
+      else renderDashboard();
+    };
+    const jumpReview = () => {
+      const input = document.getElementById('review-jump-input');
+      const value = Number(input?.value);
+      if (!Number.isInteger(value) || value < 1 || value > reviewContext.questions.length) {
+        input?.focus();
+        alert(`Escribe un número entre 1 y ${reviewContext.questions.length}.`);
+        return;
+      }
+      reviewContext.index = value - 1;
+      renderReviewQuestion();
+    };
     if (!historyReview || historySessionReview) document.querySelectorAll('[data-review-prev]').forEach(btn => btn.onclick = goReviewPrev);
     document.querySelectorAll('[data-review-next]').forEach(btn => btn.onclick = goReviewNext);
-    if (specificQueryReview) {
-      document.querySelectorAll('[data-review-selector]').forEach(btn => btn.onclick = () => renderSpecificQuestions(specificQueryDraft));
-      document.querySelectorAll('[data-review-exit]').forEach(btn => btn.onclick = () => {
-        reviewContext = null;
-        renderDashboard();
-      });
-    }
+    document.querySelectorAll('[data-review-last]').forEach(btn => btn.onclick = () => { reviewContext.index = reviewContext.questions.length - 1; renderReviewQuestion(); });
+    document.querySelectorAll('[data-review-exit]').forEach(btn => btn.onclick = exitReview);
+    document.querySelectorAll('[data-review-jump]').forEach(btn => btn.onclick = jumpReview);
+    const jumpInput = document.getElementById('review-jump-input');
+    if (jumpInput) jumpInput.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); jumpReview(); } };
+    if (specificQueryReview) document.querySelectorAll('[data-review-selector]').forEach(btn => btn.onclick = () => renderSpecificQuestions(specificQueryDraft));
   }
 
 
@@ -5169,6 +5479,7 @@
       ${hasEditorialText(q?.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(cleanEditorialText(q.exam_pearl))}</p></div>` : ''}
       ${hasEditorialText(q?.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(cleanEditorialText(q.memory_hook))}</p></div>` : ''}
       ${quickReference}
+      <div class="learning-note-action"><div><strong>¿Qué te falta entender o recordar?</strong><p class="muted">Guarda una duda personal para resolverla después y compararla con tu Anki. Es independiente de los flags de auditoría.</p></div>${learningNoteButton(q)}</div>
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
         <div>
@@ -5184,6 +5495,7 @@
 
     bindPostAnswerUncertainButton(feedbackMeta, q, selected);
     bindReviewFlagButtons(target);
+    bindLearningNoteButtons(target);
   }
 
   function renderFeedback(q, selected, isCorrect, onNext, timedOut = false, reviewOnly = false, uncertainOptions = [], feedbackMeta = {}) {
@@ -5254,6 +5566,7 @@
       ${hasEditorialText(q.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(cleanEditorialText(q.exam_pearl))}</p></div>` : ''}
       ${hasEditorialText(q.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(cleanEditorialText(q.memory_hook))}</p></div>` : ''}
       ${quickReference}
+      <div class="learning-note-action"><div><strong>¿Qué te falta entender o recordar?</strong><p class="muted">Guarda una duda personal para resolverla después y compararla con tu Anki. Es independiente de los flags de auditoría.</p></div>${learningNoteButton(q)}</div>
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
         <div>
@@ -5270,6 +5583,7 @@
 
     bindPostAnswerUncertainButton(feedbackMeta, q, selected);
     bindReviewFlagButtons(target);
+    bindLearningNoteButtons(target);
     if (!reviewOnly && onNext) {
       document.getElementById('next-feedback').onclick = onNext;
       const topNext = document.getElementById('next-study-top');
@@ -5719,6 +6033,7 @@
       sessionId:row.id,
       partial:Boolean(row.is_partial),
       questions:selectedQuestions,
+      originalQuestionIds:row.question_ids || selectedQuestions.map(question => question.id),
       index:0,
       responses,
       scratch:state.scratch || {},
@@ -5924,6 +6239,241 @@
     URL.revokeObjectURL(url);
   }
 
+
+  function learningNoteEntries(type = 'all', view = 'open') {
+    const source = view === 'history'
+      ? learningNoteHistory.filter(row => learningNoteStatus(row) !== 'OPEN')
+      : learningNotes;
+    return source
+      .filter(row => type === 'all' || row.note_type === type)
+      .map(note => ({ note, q:questions.find(question => question.id === note.question_id) }))
+      .filter(entry => entry.q);
+  }
+
+  function questionAttemptSummary(questionId) {
+    const rows = attemptsForQuestion(questionId).slice().sort((a,b) => new Date(b.answered_at || 0) - new Date(a.answered_at || 0));
+    const latest = rows[0] || null;
+    return {
+      count:rows.length,
+      correct:rows.filter(row => row.is_correct).length,
+      latest,
+      everUncertain:rows.some(row => row.was_uncertain || String(row.uncertainty_note || '').includes('NO_SE_EXPLICITO')),
+    };
+  }
+
+  function topicLearningContext(q) {
+    const sameTopic = questions.filter(item => String(item.rentability_topic_id || item.topic || '') === String(q.rentability_topic_id || q.topic || ''));
+    const ids = new Set(sameTopic.map(item => item.id));
+    const seenIds = new Set(attempts.filter(attempt => ids.has(attempt.question_id)).map(attempt => attempt.question_id));
+    const coverage = sameTopic.length ? seenIds.size / sameTopic.length : 0;
+    return {
+      seen:seenIds.size,
+      total:sameTopic.length,
+      coverage,
+      started:seenIds.size > 0,
+      completed:sameTopic.length > 0 && seenIds.size >= sameTopic.length,
+    };
+  }
+
+  function learningNoteExportRows(type = 'all') {
+    return learningNoteEntries(type, 'open').map(({ note, q }) => {
+      const attempt = questionAttemptSummary(q.id);
+      const topic = topicLearningContext(q);
+      const latest = attempt.latest;
+      const tier = topicTierLabel(q.rentability_tier || q.rentability_status || 'SIN_CLASIFICAR');
+      const scoreRaw = q.exam_rentability_score ?? q.rentability_score ?? q.topic_score ?? q.rentability_topic_score;
+      const score = scoreRaw == null || scoreRaw === '' ? NaN : Number(scoreRaw);
+      const orderHint = topic.started
+        ? 'PRIMERAS_NUEVAS_DEL_MAZO_DENTRO_DE_SU_TIER; si ya existe tarjeta, conservar GUID e historial y priorizar mediante mazo filtrado o reposicionamiento seguro'
+        : 'UBICAR_SEGUN_RENTABILIDAD_Y_PUNTAJE_DEL_TEMA';
+      return {
+        note_id:note.id,
+        note_type:note.note_type,
+        note_type_label:learningNoteMeta(note.note_type).label,
+        note_text:note.note_text,
+        question_id:q.id,
+        year:q.year,
+        test:q.test,
+        question_number:q.question_number,
+        area:canonicalArea(q.canonical_area || q.area),
+        specialty:cleanTaxonomyLabel(q.canonical_specialty || q.specialty) || 'General',
+        topic:cleanTaxonomyLabel(q.rentability_topic_label || q.topic) || 'Sin tema',
+        canonical_entity:cleanTaxonomyLabel(q.canonical_entity || q.subtopic),
+        rentability_tier:tier,
+        rentability_score:Number.isFinite(score) ? score : '',
+        topic_seen_questions:topic.seen,
+        topic_total_questions:topic.total,
+        topic_coverage_pct:Math.round(topic.coverage * 100),
+        topic_already_started:topic.started ? 'SI' : 'NO',
+        anki_order_hint:orderHint,
+        anki_position_strategy:topic.started
+          ? 'EARLY_NEW_WITHIN_TIER; CONCEPT_NEIGHBOR_ONLY_WITH_VERIFIED_COLPKG'
+          : 'RENTABILITY_TIER_THEN_SCORE',
+        question_has_open_review_flag:reviewFlagFor(q.id) ? 'SI' : 'NO',
+        attempts_count:attempt.count,
+        attempts_correct:attempt.correct,
+        latest_selected_answer:latest?.selected_answer || '',
+        latest_is_correct:latest ? (latest.is_correct ? 'SI' : 'NO') : '',
+        latest_response_time_ms:latest?.response_time_ms || '',
+        latest_was_uncertain:latest?.was_uncertain ? 'SI' : 'NO',
+        latest_uncertainty_note:latest?.uncertainty_note || '',
+        question:q.question,
+        official_answer:q.official_answer,
+        official_answer_text:q.official_answer_text,
+        option_a:q.option_a,
+        option_b:q.option_b,
+        option_c:q.option_c,
+        option_d:q.option_d,
+        option_e:q.option_e,
+        why_not_a:cleanEditorialText(q.why_not_a),
+        why_not_b:cleanEditorialText(q.why_not_b),
+        why_not_c:cleanEditorialText(q.why_not_c),
+        why_not_d:cleanEditorialText(q.why_not_d),
+        why_not_e:cleanEditorialText(q.why_not_e),
+        audit_status:q.audit_status || q.medical_review_status || '',
+        audit_current_assessment:cleanEditorialText(q.audit_current_assessment),
+        audit_current_answer:cleanEditorialText(q.audit_current_answer),
+        correct_explanation:cleanEditorialText(q.correct_explanation),
+        comparison_framework:cleanEditorialText(q.comparison_framework),
+        abbreviations:cleanEditorialText(q.abbreviations),
+        common_trap:cleanEditorialText(q.common_trap),
+        exam_pearl:cleanEditorialText(q.exam_pearl),
+        content_revision:note.content_revision || questionContentRevision(q.id),
+        note_created_at:note.created_at,
+        note_updated_at:note.updated_at,
+      };
+    });
+  }
+
+  function learningNotesProtocolText() {
+    return `# PROTOCOLO DE RESOLUCIÓN DE NOTAS Y DELTA ANKI\n\n` +
+      `Aplicación exportadora: Residentado v${APP_VERSION}\nFecha de exportación: ${new Date().toISOString()}\n\n` +
+      `## Objetivo\nResolver cada duda personal, verificar si el conocimiento ya está cubierto en la exportación Anki más reciente y producir solo las tarjetas o actualizaciones realmente necesarias.\n\n` +
+      `## Fuentes y vigencia\n1. Aplicar las instrucciones vigentes del Contexto Maestro del proyecto; si son posteriores a este protocolo, prevalecen.\n2. Para medicina: normativa peruana vigente → CONAREME/ASPEFAM más reciente sobre el mismo concepto → guía internacional vigente → literatura científica → academias auditadas.\n3. Conservar separadas la clave histórica y el criterio médico actual.\n4. Toda dosis, valor normal, punto de corte, esquema o norma temporal debe verificarse y registrar fecha/fuente.\n\n` +
+      `## Entradas obligatorias\n- Este paquete de notas.\n- La exportación más reciente de todos los mazos con GUID para deduplicar y preservar cambios personales.\n- Un .colpkg actualizado cuando se requiera modificar de forma segura el orden real de nuevas, la programación o tarjetas ya estudiadas.\n\n` +
+      `## Decisión por nota\nClasificar cada nota como: ALREADY_COVERED, UPDATE_EXISTING_CARD, CREATE_NEW_CARD o RESOLVED_WITHOUT_ANKI. No crear una tarjeta por nota de forma automática. Deduplicar semánticamente contra todos los mazos por concepto, dato pivote y regla decisoria.\n\n` +
+      `## Estándar de tarjeta\n- Una sola decisión recuperable; contexto mínimo; respuesta nuclear primero.\n- No copiar el caso histórico ni las alternativas.\n- Debe ser transferible y normalmente respondible en 5–15 segundos.\n- Clasificar individualmente como RM_2026::Nuclear o RM_2026::General.\n- Conservar GUID y programación al actualizar tarjetas existentes.\n\n` +
+      `## Orden de incorporación\n- Respetar rentabilidad: MUY ALTA → ALTA → MEDIA → BAJA y, dentro del tier, puntaje descendente.\n- Si topic_already_started=SI, las tarjetas nuevas deben quedar entre las primeras nuevas pendientes del mazo/tier correspondiente, no al final global.\n- Cuando exista un orden conceptual estable en la colección, ubicarlas cerca de las tarjetas relacionadas solo si puede verificarse y aplicarse de forma segura sobre un .colpkg actualizado; si no, usar la prioridad temprana dentro del tier.\n- Si ya existe una tarjeta estudiada, no reiniciarla ni destruir FSRS/historial; actualizar conservando GUID y usar una prioridad segura (etiqueta/mazo filtrado o reposicionamiento compatible).\n- Para manipular programación u orden real con seguridad, solicitar y trabajar sobre un .colpkg actualizado; nunca asumir que una importación fue aplicada sin una exportación posterior de verificación.\n\n` +
+      `## Entregables esperados\n1. Resolución breve y verificable de cada duda.\n2. Matriz por note_id con decisión Anki, GUID relacionado, mazo, prioridad y fuente.\n3. Delta importable o .colpkg modificado, según el alcance.\n4. Informe de duplicados/actualizaciones/nuevas y control de calidad.\n5. Archivo de cierre con note_id, outcome, batch_id, summary, anki_guid y anki_deck para trazabilidad.\n`;
+  }
+
+  function learningNotesPackageText(type = 'all') {
+    const rows = learningNoteExportRows(type);
+    const lines = [learningNotesProtocolText(), `\n## NOTAS ABIERTAS (${rows.length})\n`];
+    rows.forEach((row,index) => {
+      lines.push(`### ${index+1}. ${row.question_id} — ${row.note_type_label}`);
+      lines.push(`- note_id: ${row.note_id}`);
+      lines.push(`- Duda: ${String(row.note_text || '').replace(/\s+/g,' ').trim()}`);
+      lines.push(`- Tema: ${row.area} → ${row.specialty} → ${row.topic}${row.canonical_entity ? ` → ${row.canonical_entity}` : ''}`);
+      lines.push(`- Flag de auditoría abierto en paralelo: ${row.question_has_open_review_flag}`);
+      lines.push(`- Rentabilidad: ${row.rentability_tier}${row.rentability_score === '' ? '' : ` (${row.rentability_score})`}`);
+      lines.push(`- Cobertura personal del tema: ${row.topic_seen_questions}/${row.topic_total_questions} (${row.topic_coverage_pct}%) · tema iniciado: ${row.topic_already_started}`);
+      lines.push(`- Indicación preliminar de orden: ${row.anki_order_hint}`);
+      lines.push(`- Historial personal: ${row.attempts_count} intentos; ${row.attempts_correct} correctos${row.latest_was_uncertain==='SI'?' · última recuperación dudosa':''}`);
+      lines.push(`- Enunciado fuente: ${String(row.question || '').replace(/\s+/g,' ').trim()}`);
+      lines.push(`- Alternativas: ${['A','B','C','D','E'].map(letter => `${letter}. ${row[`option_${letter.toLowerCase()}`] || '—'}`).join(' | ')}`);
+      lines.push(`- Clave histórica: ${row.official_answer}. ${row.official_answer_text}`);
+      if (row.audit_status) lines.push(`- Estado de auditoría: ${row.audit_status}`);
+      if (row.audit_current_answer) lines.push(`- Criterio actual auditado: ${row.audit_current_answer}`);
+      if (row.audit_current_assessment) lines.push(`- Caveat/valoración vigente: ${row.audit_current_assessment.replace(/\s+/g,' ').trim()}`);
+      if (row.correct_explanation) lines.push(`- Explicación disponible: ${row.correct_explanation.replace(/\s+/g,' ').trim()}`);
+      if (row.comparison_framework) lines.push(`- Comparación/referencia: ${row.comparison_framework.replace(/\s+/g,' ').trim()}`);
+      lines.push('');
+    });
+    return lines.join('\n').trim();
+  }
+
+  function downloadTextFile(filename, text, mime = 'text/plain;charset=utf-8') {
+    const url = URL.createObjectURL(new Blob([text], { type:mime }));
+    const link = document.createElement('a');
+    link.href = url; link.download = filename;
+    document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+  }
+
+  async function copyLearningNotesPackage(type = 'all') {
+    const text = learningNotesPackageText(type);
+    if (!learningNoteExportRows(type).length) return;
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const area = document.createElement('textarea'); area.value = text; document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove();
+    }
+    alert('Paquete de notas copiado. Incluye el protocolo Anki y el contexto de cada duda.');
+  }
+
+  function downloadLearningNotesMarkdown(type = 'all') {
+    if (!learningNoteExportRows(type).length) return;
+    downloadTextFile(`notas_aprendizaje_anki_${isoDateLocal()}.md`, '\ufeff' + learningNotesPackageText(type), 'text/markdown;charset=utf-8');
+  }
+
+  function downloadLearningNotesCsv(type = 'all') {
+    const data = learningNoteExportRows(type);
+    if (!data.length) return;
+    const headers = Object.keys(data[0]);
+    const csv = '\ufeff' + [headers, ...data.map(row => headers.map(header => row[header]))]
+      .map(row => row.map(csvCell).join(',')).join('\r\n');
+    downloadTextFile(`notas_aprendizaje_${isoDateLocal()}.csv`, csv, 'text/csv;charset=utf-8');
+  }
+
+  function showResolveLearningNoteDialog(questionId, afterSave = null) {
+    const note = learningNoteFor(questionId);
+    const q = questions.find(item => item.id === questionId);
+    if (!note || !q) return;
+    const modal = document.createElement('div');
+    modal.className = 'review-flag-modal';
+    modal.innerHTML = `<div class="review-flag-dialog" role="dialog" aria-modal="true"><div class="review-flag-dialog-head"><div><h2>Registrar resolución</h2><p class="muted">Cierra la nota conservando la decisión tomada para Anki.</p></div><button class="btn small ghost" data-resolve-note-close>✕</button></div>
+      <label class="learning-note-label">Resultado<select id="resolve-note-action" class="input">${Object.entries(LEARNING_NOTE_OUTCOMES).map(([key,label]) => `<option value="${key}">${esc(label)}</option>`).join('')}</select></label>
+      <label class="learning-note-label">Identificador del lote<input id="resolve-note-batch" class="input" placeholder="Ejemplo: NOTAS_ANKI_20260805_01"></label>
+      <label class="learning-note-label">GUID Anki relacionado, si existe<input id="resolve-note-guid" class="input"></label>
+      <label class="learning-note-label">Mazo<input id="resolve-note-deck" class="input" placeholder="RM_2026::Nuclear o RM_2026::General"></label>
+      <label class="learning-note-label">Resumen<textarea id="resolve-note-summary" class="input review-flag-note" maxlength="3000" placeholder="Qué se aclaró y qué acción se tomó."></textarea></label>
+      <div class="dialog-actions"><button class="btn ghost" data-resolve-note-close>Cancelar</button><button id="resolve-note-save" class="btn primary">Guardar y cerrar</button></div></div>`;
+    document.body.appendChild(modal);
+    const close = () => modal.remove();
+    modal.querySelectorAll('[data-resolve-note-close]').forEach(btn => btn.onclick = close);
+    modal.onclick = ev => { if (ev.target === modal) close(); };
+    document.getElementById('resolve-note-save').onclick = async () => {
+      const ok = await closeQuestionLearningNote(questionId, 'RESOLVED', {
+        ankiAction:document.getElementById('resolve-note-action').value,
+        batchId:document.getElementById('resolve-note-batch').value,
+        ankiGuid:document.getElementById('resolve-note-guid').value,
+        ankiDeck:document.getElementById('resolve-note-deck').value,
+        summary:document.getElementById('resolve-note-summary').value,
+      });
+      if (ok) { close(); if (typeof afterSave === 'function') afterSave(); }
+    };
+  }
+
+  function renderLearningNotesPage(type = 'all', view = 'open') {
+    clearTimer(); scrollPageTop();
+    const entries = learningNoteEntries(type, view);
+    const isHistory = view === 'history';
+    const closedCount = learningNoteHistory.filter(row => learningNoteStatus(row) !== 'OPEN').length;
+    const counts = Object.fromEntries(Object.keys(LEARNING_NOTE_TYPES).map(key => [key, learningNotes.filter(row => row.note_type === key).length]));
+    app.innerHTML = `<main class="shell">${topbar('Notas de aprendizaje', true)}
+      <section class="panel review-flags-hero learning-notes-hero"><div><h2>${isHistory?'Historial de notas':'Dudas personales para resolver'}</h2><p class="muted">Estas notas no indican que la pregunta esté mal. Sirven para exportar tus vacíos, resolverlos y deduplicarlos contra tu Anki actualizado.</p></div>${isHistory?'':`<div class="review-flags-actions"><button id="copy-learning-notes" class="btn primary" ${entries.length?'':'disabled'}>Copiar paquete</button><button id="download-learning-notes-md" class="btn" ${entries.length?'':'disabled'}>Descargar paquete .md</button><button id="download-learning-notes-csv" class="btn" ${entries.length?'':'disabled'}>CSV</button></div>`}</section>
+      ${cloudConfigured && !learningNotesAvailable ? `<div class="banner"><strong>Activa esta función:</strong> ejecuta <code>${LEARNING_NOTES_MIGRATION}</code> en Supabase.</div>` : ''}
+      <div class="review-flags-tabs"><button class="btn ${isHistory?'ghost':'primary'}" data-learning-notes-view="open">Pendientes (${learningNotes.length})</button><button class="btn ${isHistory?'primary':'ghost'}" data-learning-notes-view="history">Historial (${closedCount})</button></div>
+      <section class="kpis review-flags-kpis"><div class="kpi"><div class="value">${learningNotes.length}</div><div class="label">Pendientes</div></div><div class="kpi"><div class="value">${counts.drug||0}</div><div class="label">Fármacos</div></div><div class="kpi"><div class="value">${counts.cutoff||0}</div><div class="label">Valores/dosis</div></div><div class="kpi"><div class="value">${closedCount}</div><div class="label">Cerradas</div></div></section>
+      <section class="panel review-flags-list-panel"><div class="section-head review-flags-filter-head"><div><h2>${isHistory?'Notas cerradas':'Notas abiertas'}</h2><p class="muted">Al exportar se adjuntan el contexto de la pregunta, tu progreso, la rentabilidad y el protocolo para crear o actualizar tarjetas.</p></div><label class="review-flags-filter"><span>Mostrar</span><select id="learning-notes-type" class="input"><option value="all">Todos</option>${Object.entries(LEARNING_NOTE_TYPES).map(([key,meta]) => `<option value="${key}" ${type===key?'selected':''}>${meta.icon} ${esc(meta.label)}</option>`).join('')}</select></label></div>
+        <div class="review-flag-card-list">${entries.length ? entries.map(({note,q}) => {
+          const meta = learningNoteMeta(note.note_type); const topic = topicLearningContext(q);
+          return `<article class="review-flag-card learning-note-card ${isHistory?'closed':''}"><div class="review-flag-card-head"><div class="meta-line"><span class="tag ${isHistory?'':'warn'}">${meta.icon} ${esc(meta.label)}</span>${questionSourceTag(q)}<span class="tag">${esc(q.id)}</span><span class="tag">${esc(topicTierLabel(q.rentability_tier || q.rentability_status || 'SIN_CLASIFICAR'))}</span></div>${isHistory?'':`<div class="review-flag-card-actions"><button class="btn small" data-edit-learning-note="${esc(q.id)}">Editar</button><button class="btn small primary" data-resolve-learning-note="${esc(q.id)}">Registrar resolución</button><button class="btn small danger ghost-danger" data-dismiss-learning-note="${esc(q.id)}">Quitar</button></div>`}</div><div class="review-flag-user-note"><strong>Tu duda</strong><p>${esc(note.note_text)}</p></div><p class="review-flag-question">${esc(q.question)}</p><p class="muted review-flag-taxonomy">${esc([q.area,q.specialty,q.topic].filter(Boolean).join(' → '))} · cobertura personal ${topic.seen}/${topic.total} (${Math.round(topic.coverage*100)}%)</p>${isHistory?`<div class="review-flag-resolution"><div><span>Resultado</span><strong>${esc(LEARNING_NOTE_OUTCOMES[note.anki_action] || learningNoteStatus(note))}</strong></div>${note.resolved_by_batch_id?`<div><span>Lote</span><strong>${esc(note.resolved_by_batch_id)}</strong></div>`:''}${note.anki_guid?`<div><span>GUID</span><strong>${esc(note.anki_guid)}</strong></div>`:''}${note.resolution_summary?`<p>${esc(note.resolution_summary)}</p>`:''}</div>`:''}</article>`;
+        }).join('') : `<div class="empty">${isHistory?'No hay notas cerradas con este filtro.':'No hay notas pendientes con este filtro.'}</div>`}</div>
+      </section></main>`;
+    attachTopbar();
+    document.querySelectorAll('[data-learning-notes-view]').forEach(btn => btn.onclick = () => renderLearningNotesPage(type, btn.dataset.learningNotesView));
+    document.getElementById('learning-notes-type').onchange = ev => renderLearningNotesPage(ev.target.value, view);
+    document.getElementById('copy-learning-notes')?.addEventListener('click', () => copyLearningNotesPackage(type));
+    document.getElementById('download-learning-notes-md')?.addEventListener('click', () => downloadLearningNotesMarkdown(type));
+    document.getElementById('download-learning-notes-csv')?.addEventListener('click', () => downloadLearningNotesCsv(type));
+    document.querySelectorAll('[data-edit-learning-note]').forEach(btn => btn.onclick = () => showLearningNoteDialog(btn.dataset.editLearningNote, () => renderLearningNotesPage(type, view)));
+    document.querySelectorAll('[data-resolve-learning-note]').forEach(btn => btn.onclick = () => showResolveLearningNoteDialog(btn.dataset.resolveLearningNote, () => renderLearningNotesPage(type, view)));
+    document.querySelectorAll('[data-dismiss-learning-note]').forEach(btn => btn.onclick = async () => {
+      if (!confirm('¿Quitar esta nota? Quedará en el historial como descartada.')) return;
+      if (await closeQuestionLearningNote(btn.dataset.dismissLearningNote, 'DISMISSED')) renderLearningNotesPage(type, view);
+    });
+  }
+
   function renderReviewFlagsPage(type = 'all', view = 'open') {
     clearTimer();
     scrollPageTop();
@@ -6083,7 +6633,7 @@
   }
 
   function topicCoverageTableMarkup(topics = []) {
-    return `<div class="table-wrap"><table class="topic-coverage-table"><thead><tr><th>Tema</th><th>Rentabilidad</th><th class="num">Vistas</th><th class="num">Total</th><th class="num">Cobertura</th><th class="num">Dudas</th><th class="num">Vencidas</th></tr></thead><tbody>${topics.map(topic => `<tr class="clickable-row" data-topic-coverage-key="${esc(topic.key)}" tabindex="0"><td><strong>${esc(topic.label)}</strong><small>${esc(topic.area)} · ${esc(topic.specialty)}</small></td><td><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<small>${Math.round(topic.score)}</small>` : ''}</td><td class="num">${topic.seen}</td><td class="num">${topic.total}</td><td class="num">${Math.round(topic.coverage*100)}%</td><td class="num">${topic.uncertainAttempts}</td><td class="num">${topic.overdue}</td></tr>`).join('')}</tbody></table></div>`;
+    return `<div class="table-wrap"><table class="topic-coverage-table"><thead><tr><th class="num coverage-rank">N.º</th><th>Tema</th><th>Rentabilidad</th><th class="num">Vistas</th><th class="num">Total</th><th class="num">Cobertura</th><th class="num">Dudas</th><th class="num">Vencidas</th></tr></thead><tbody>${topics.map((topic,index) => `<tr class="clickable-row" data-topic-coverage-key="${esc(topic.key)}" tabindex="0"><td class="num coverage-rank">${index+1}</td><td><strong>${esc(topic.label)}</strong><small>${esc(topic.area)} · ${esc(topic.specialty)}</small></td><td><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<small>${Math.round(topic.score)}</small>` : ''}</td><td class="num">${topic.seen}</td><td class="num">${topic.total}</td><td class="num">${Math.round(topic.coverage*100)}%</td><td class="num">${topic.uncertainAttempts}</td><td class="num">${topic.overdue}</td></tr>`).join('')}</tbody></table></div>`;
   }
 
   function specialtyCoverageMarkup(groups = []) {

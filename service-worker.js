@@ -1,6 +1,6 @@
 importScripts('./version.js');
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-1-1';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-2-0';
 const ASSETS = [
   './',
   './index.html',
