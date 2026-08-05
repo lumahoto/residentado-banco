@@ -1,5 +1,19 @@
 # Changelog - Residentado
 
+## v1.3.0 - 2026-08-05
+
+Release funcional construido sobre v1.2.0. Conserva sus funciones y todos los guardrails de v1.1.1.
+
+- integra `public.tts_topic_catalog` como fuente autoritativa online de disponibilidad TTS;
+- carga el catálogo una vez por sincronización y no por fila o vista;
+- conserva respaldo local V061 con 274 temas y TTS_001–089 disponibles;
+- actualiza Tu mapa actual de debilidades con código y estado TTS;
+- añade columna TTS a Mi Estado → Cobertura canónica;
+- añade conteo TTS en la vista agrupada por especialidad;
+- añade estado y pedido TTS en el detalle de tema;
+- mantiene Mi Estado calculado localmente y sin polling;
+- no modifica corpus, progreso, sesiones, memoria, flags ni notas.
+
 ## v1.2.0 - 2026-08-05
 
 Release funcional construido sobre v1.1.1. Conserva todos los guardrails de sesiones y añade:

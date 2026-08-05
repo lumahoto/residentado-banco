@@ -1,643 +1,3399 @@
 {
-  "catalogVersion": "V001-W4",
-  "generatedAt": "2026-08-04T17:05:00-05:00",
+  "catalogVersion": "V061",
+  "generatedAt": "2026-08-05T17:00:00-05:00",
   "taxonomyVersion": "POST_SEGUNDA_AUDITORIA_274_20260804",
   "topics": [
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-ENFERMEDADES-GLOMERULARES",
       "topicLabel": "Enfermedades glomerulares",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_037",
+      "version": "V040",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 37.3,
+      "parts": [
+        {
+          "code": "TTS_037A",
+          "title": "TTS_037A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_037B",
+          "title": "TTS_037B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_037C",
+          "title": "TTS_037C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_037D",
+          "title": "TTS_037D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_037E",
+          "title": "TTS_037E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_037F",
+          "title": "TTS_037F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_037G",
+          "title": "TTS_037G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V040",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-INFECCIONES-DEL-SISTEMA-NERVIOSO-CENTRAL",
       "topicLabel": "Infecciones del sistema nervioso central",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_038",
+      "version": "V041",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 31.8,
+      "parts": [
+        {
+          "code": "TTS_038A",
+          "title": "TTS_038A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_038B",
+          "title": "TTS_038B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_038C",
+          "title": "TTS_038C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_038D",
+          "title": "TTS_038D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_038E",
+          "title": "TTS_038E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_038F",
+          "title": "TTS_038F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_038G",
+          "title": "TTS_038G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V041",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-METABOLISMO-MINERAL-Y-OSEO",
       "topicLabel": "Metabolismo mineral y óseo",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_039",
+      "version": "V042",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 36.2,
+      "parts": [
+        {
+          "code": "TTS_039A",
+          "title": "TTS_039A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_039B",
+          "title": "TTS_039B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_039C",
+          "title": "TTS_039C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_039D",
+          "title": "TTS_039D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_039E",
+          "title": "TTS_039E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_039F",
+          "title": "TTS_039F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_039G",
+          "title": "TTS_039G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V042",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-CIRUGIA-PATOLOGIA-APENDICULAR",
       "topicLabel": "Patología apendicular",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_040",
+      "version": "V043",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 32.1,
+      "parts": [
+        {
+          "code": "TTS_040A",
+          "title": "TTS_040A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_040B",
+          "title": "TTS_040B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_040C",
+          "title": "TTS_040C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_040D",
+          "title": "TTS_040D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_040E",
+          "title": "TTS_040E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_040F",
+          "title": "TTS_040F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_040G",
+          "title": "TTS_040G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V043",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-COMPLICACIONES-DEL-EMBARAZO-TEMPRANO",
       "topicLabel": "Complicaciones del embarazo temprano",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_041",
+      "version": "V044",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 36.3,
+      "parts": [
+        {
+          "code": "TTS_041A",
+          "title": "TTS_041A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_041B",
+          "title": "TTS_041B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_041C",
+          "title": "TTS_041C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_041D",
+          "title": "TTS_041D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_041E",
+          "title": "TTS_041E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_041F",
+          "title": "TTS_041F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_041G",
+          "title": "TTS_041G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V044",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-CIRUGIA-PATOLOGIA-BILIAR",
       "topicLabel": "Patología biliar",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_042",
+      "version": "V045",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 31.9,
+      "parts": [
+        {
+          "code": "TTS_042A",
+          "title": "TTS_042A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_042B",
+          "title": "TTS_042B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_042C",
+          "title": "TTS_042C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_042D",
+          "title": "TTS_042D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_042E",
+          "title": "TTS_042E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_042F",
+          "title": "TTS_042F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_042G",
+          "title": "TTS_042G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V045",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-TRASTORNOS-MENSTRUALES-OVULATORIOS-E-INFERTILIDAD",
       "topicLabel": "Trastornos menstruales, ovulatorios e infertilidad",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_043",
+      "version": "V046",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 34.6,
+      "parts": [
+        {
+          "code": "TTS_043A",
+          "title": "TTS_043A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_043B",
+          "title": "TTS_043B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_043C",
+          "title": "TTS_043C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_043D",
+          "title": "TTS_043D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_043E",
+          "title": "TTS_043E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_043F",
+          "title": "TTS_043F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_043G",
+          "title": "TTS_043G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V046",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-NEUROLOGIA-GENERAL",
       "topicLabel": "Neurología general",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_044",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 43.1,
+      "parts": [
+        {
+          "code": "TTS_044A",
+          "title": "TTS_044A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_044B",
+          "title": "TTS_044B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_044C",
+          "title": "TTS_044C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_044D",
+          "title": "TTS_044D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_044E",
+          "title": "TTS_044E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_044F",
+          "title": "TTS_044F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_044G",
+          "title": "TTS_044G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-ENFERMEDADES-MEDICAS-Y-QUIRURGICAS-EN-EL-EMBARAZO",
       "topicLabel": "Enfermedades médicas y quirúrgicas en el embarazo",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_045",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 44.7,
+      "parts": [
+        {
+          "code": "TTS_045A",
+          "title": "TTS_045A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_045B",
+          "title": "TTS_045B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_045C",
+          "title": "TTS_045C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_045D",
+          "title": "TTS_045D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_045E",
+          "title": "TTS_045E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_045F",
+          "title": "TTS_045F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_045G",
+          "title": "TTS_045G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-INFECCIONES-VIRALES-DE-VIA-AEREA-INFERIOR",
       "topicLabel": "Infecciones virales de vía aérea inferior",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_046",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 41.7,
+      "parts": [
+        {
+          "code": "TTS_046A",
+          "title": "TTS_046A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_046B",
+          "title": "TTS_046B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_046C",
+          "title": "TTS_046C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_046D",
+          "title": "TTS_046D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_046E",
+          "title": "TTS_046E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_046F",
+          "title": "TTS_046F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_046G",
+          "title": "TTS_046G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-ENFERMEDADES-TROPICALES-Y-TRANSMITIDAS-POR-VECTORES",
       "topicLabel": "Enfermedades tropicales y transmitidas por vectores",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_047",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 50.7,
+      "parts": [
+        {
+          "code": "TTS_047A",
+          "title": "TTS_047A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_047B",
+          "title": "TTS_047B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_047C",
+          "title": "TTS_047C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_047D",
+          "title": "TTS_047D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_047E",
+          "title": "TTS_047E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_047F",
+          "title": "TTS_047F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_047G",
+          "title": "TTS_047G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-PUERPERIO-Y-COMPLICACIONES-PUERPERALES",
       "topicLabel": "Puerperio y complicaciones puerperales",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_048",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 38.3,
+      "parts": [
+        {
+          "code": "TTS_048A",
+          "title": "TTS_048A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_048B",
+          "title": "TTS_048B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_048C",
+          "title": "TTS_048C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_048D",
+          "title": "TTS_048D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_048E",
+          "title": "TTS_048E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_048F",
+          "title": "TTS_048F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_048G",
+          "title": "TTS_048G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-INFECCIONES-GASTROINTESTINALES",
       "topicLabel": "Infecciones gastrointestinales",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_049",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 38.5,
+      "parts": [
+        {
+          "code": "TTS_049A",
+          "title": "TTS_049A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_049B",
+          "title": "TTS_049B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_049C",
+          "title": "TTS_049C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_049D",
+          "title": "TTS_049D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_049E",
+          "title": "TTS_049E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_049F",
+          "title": "TTS_049F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_049G",
+          "title": "TTS_049G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-INFECCIONES-RESPIRATORIAS-Y-OTORRINOLARINGOLOGICAS",
       "topicLabel": "Infecciones respiratorias y otorrinolaringológicas",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_050",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 35.6,
+      "parts": [
+        {
+          "code": "TTS_050A",
+          "title": "TTS_050A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_050B",
+          "title": "TTS_050B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_050C",
+          "title": "TTS_050C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_050D",
+          "title": "TTS_050D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_050E",
+          "title": "TTS_050E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_050F",
+          "title": "TTS_050F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_050G",
+          "title": "TTS_050G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-INFECTOLOGIA-GENERAL",
       "topicLabel": "Infectología general",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_051",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 45.9,
+      "parts": [
+        {
+          "code": "TTS_051A",
+          "title": "TTS_051A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_051B",
+          "title": "TTS_051B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_051C",
+          "title": "TTS_051C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_051D",
+          "title": "TTS_051D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_051E",
+          "title": "TTS_051E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_051F",
+          "title": "TTS_051F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_051G",
+          "title": "TTS_051G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-CLIMATERIO-MENOPAUSIA-Y-TERAPIA-HORMONAL",
       "topicLabel": "Climaterio, menopausia y terapia hormonal",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_052",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 33.4,
+      "parts": [
+        {
+          "code": "TTS_052A",
+          "title": "TTS_052A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_052B",
+          "title": "TTS_052B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_052C",
+          "title": "TTS_052C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_052D",
+          "title": "TTS_052D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_052E",
+          "title": "TTS_052E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_052F",
+          "title": "TTS_052F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_052G",
+          "title": "TTS_052G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-FARMACOLOGIA-CLINICA-E-INTERACCIONES",
       "topicLabel": "Farmacología clínica e interacciones",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_053",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 35.8,
+      "parts": [
+        {
+          "code": "TTS_053A",
+          "title": "TTS_053A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_053B",
+          "title": "TTS_053B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_053C",
+          "title": "TTS_053C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_053D",
+          "title": "TTS_053D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_053E",
+          "title": "TTS_053E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_053F",
+          "title": "TTS_053F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_053G",
+          "title": "TTS_053G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-ENDOCRINOLOGIA-PEDIATRICA-GENERAL",
       "topicLabel": "Endocrinología pediátrica general",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_054",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 33.2,
+      "parts": [
+        {
+          "code": "TTS_054A",
+          "title": "TTS_054A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_054B",
+          "title": "TTS_054B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_054C",
+          "title": "TTS_054C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_054D",
+          "title": "TTS_054D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_054E",
+          "title": "TTS_054E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_054F",
+          "title": "TTS_054F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_054G",
+          "title": "TTS_054G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-ENFERMEDAD-VASCULAR-PULMONAR",
       "topicLabel": "Enfermedad vascular pulmonar",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_055",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 38.3,
+      "parts": [
+        {
+          "code": "TTS_055A",
+          "title": "TTS_055A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_055B",
+          "title": "TTS_055B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_055C",
+          "title": "TTS_055C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_055D",
+          "title": "TTS_055D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_055E",
+          "title": "TTS_055E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_055F",
+          "title": "TTS_055F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_055G",
+          "title": "TTS_055G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-INFECCION-URINARIA-Y-ANOMALIAS-DEL-TRACTO-URINARIO",
       "topicLabel": "Infección urinaria y anomalías del tracto urinario",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_056",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 34.0,
+      "parts": [
+        {
+          "code": "TTS_056A",
+          "title": "TTS_056A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_056B",
+          "title": "TTS_056B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_056C",
+          "title": "TTS_056C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_056D",
+          "title": "TTS_056D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_056E",
+          "title": "TTS_056E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_056F",
+          "title": "TTS_056F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_056G",
+          "title": "TTS_056G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-DOLOR-PELVICO-Y-ENDOMETRIOSIS",
       "topicLabel": "Dolor pélvico y endometriosis",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_057",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 30.5,
+      "parts": [
+        {
+          "code": "TTS_057A",
+          "title": "TTS_057A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_057B",
+          "title": "TTS_057B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_057C",
+          "title": "TTS_057C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_057D",
+          "title": "TTS_057D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_057E",
+          "title": "TTS_057E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_057F",
+          "title": "TTS_057F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_057G",
+          "title": "TTS_057G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-HEPATOPATIA-CRONICA-Y-CIRROSIS",
       "topicLabel": "Hepatopatía crónica y cirrosis",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_058",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 29.0,
+      "parts": [
+        {
+          "code": "TTS_058A",
+          "title": "TTS_058A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_058B",
+          "title": "TTS_058B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_058C",
+          "title": "TTS_058C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_058D",
+          "title": "TTS_058D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_058E",
+          "title": "TTS_058E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_058F",
+          "title": "TTS_058F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_058G",
+          "title": "TTS_058G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-HEMORRAGIA-POSPARTO-Y-ALUMBRAMIENTO",
       "topicLabel": "Hemorragia posparto y alumbramiento",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_059",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 34.5,
+      "parts": [
+        {
+          "code": "TTS_059A",
+          "title": "TTS_059A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_059B",
+          "title": "TTS_059B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_059C",
+          "title": "TTS_059C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_059D",
+          "title": "TTS_059D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_059E",
+          "title": "TTS_059E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_059F",
+          "title": "TTS_059F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_059G",
+          "title": "TTS_059G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-CIRUGIA-PEDIATRICA-GENERAL",
       "topicLabel": "Cirugía pediátrica general",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_060",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 42.1,
+      "parts": [
+        {
+          "code": "TTS_060A",
+          "title": "TTS_060A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_060B",
+          "title": "TTS_060B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_060C",
+          "title": "TTS_060C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_060D",
+          "title": "TTS_060D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_060E",
+          "title": "TTS_060E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_060F",
+          "title": "TTS_060F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_060G",
+          "title": "TTS_060G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-NEUMONIA-PEDIATRICA",
       "topicLabel": "Neumonía pediátrica",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_061",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 29.5,
+      "parts": [
+        {
+          "code": "TTS_061A",
+          "title": "TTS_061A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_061B",
+          "title": "TTS_061B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_061C",
+          "title": "TTS_061C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_061D",
+          "title": "TTS_061D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_061E",
+          "title": "TTS_061E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_061F",
+          "title": "TTS_061F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_061G",
+          "title": "TTS_061G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-NEFROLOGIA-Y-UROLOGIA-PEDIATRICA",
       "topicLabel": "Nefrología y urología pediátrica",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_062",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 36.5,
+      "parts": [
+        {
+          "code": "TTS_062A",
+          "title": "TTS_062A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_062B",
+          "title": "TTS_062B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_062C",
+          "title": "TTS_062C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_062D",
+          "title": "TTS_062D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_062E",
+          "title": "TTS_062E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_062F",
+          "title": "TTS_062F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_062G",
+          "title": "TTS_062G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-PREMATURIDAD-Y-RUPTURA-DE-MEMBRANAS",
       "topicLabel": "Prematuridad y ruptura de membranas",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_063",
+      "version": "V047",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 30.6,
+      "parts": [
+        {
+          "code": "TTS_063A",
+          "title": "TTS_063A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_063B",
+          "title": "TTS_063B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_063C",
+          "title": "TTS_063C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_063D",
+          "title": "TTS_063D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_063E",
+          "title": "TTS_063E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_063F",
+          "title": "TTS_063F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_063G",
+          "title": "TTS_063G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V047",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-ADAPTACION-Y-REANIMACION-NEONATAL",
       "topicLabel": "Adaptación y reanimación neonatal",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_064",
+      "version": "V048",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 30.3,
+      "parts": [
+        {
+          "code": "TTS_064A",
+          "title": "TTS_064A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_064B",
+          "title": "TTS_064B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_064C",
+          "title": "TTS_064C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_064D",
+          "title": "TTS_064D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_064E",
+          "title": "TTS_064E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_064F",
+          "title": "TTS_064F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_064G",
+          "title": "TTS_064G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V048",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-ASMA-Y-SIBILANCIAS-RECURRENTES",
       "topicLabel": "Asma y sibilancias recurrentes",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_065",
+      "version": "V049",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 31.3,
+      "parts": [
+        {
+          "code": "TTS_065A",
+          "title": "TTS_065A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_065B",
+          "title": "TTS_065B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_065C",
+          "title": "TTS_065C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_065D",
+          "title": "TTS_065D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_065E",
+          "title": "TTS_065E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_065F",
+          "title": "TTS_065F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_065G",
+          "title": "TTS_065G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V049",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-TOXICOLOGIA-GENERAL",
       "topicLabel": "Toxicología general",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_066",
+      "version": "V050",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 29.7,
+      "parts": [
+        {
+          "code": "TTS_066A",
+          "title": "TTS_066A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_066B",
+          "title": "TTS_066B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_066C",
+          "title": "TTS_066C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_066D",
+          "title": "TTS_066D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_066E",
+          "title": "TTS_066E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_066F",
+          "title": "TTS_066F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_066G",
+          "title": "TTS_066G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V050",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-CIRUGIA-OBSTRUCCION-INTESTINAL-Y-MOTILIDAD",
       "topicLabel": "Obstrucción intestinal y motilidad",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_067",
+      "version": "V051",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 32.9,
+      "parts": [
+        {
+          "code": "TTS_067A",
+          "title": "TTS_067A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_067B",
+          "title": "TTS_067B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_067C",
+          "title": "TTS_067C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_067D",
+          "title": "TTS_067D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_067E",
+          "title": "TTS_067E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_067F",
+          "title": "TTS_067F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_067G",
+          "title": "TTS_067G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V051",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-CIRUGIA-ENFERMEDAD-DIVERTICULAR",
       "topicLabel": "Enfermedad diverticular",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_068",
+      "version": "V052",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 29.6,
+      "parts": [
+        {
+          "code": "TTS_068A",
+          "title": "TTS_068A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_068B",
+          "title": "TTS_068B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_068C",
+          "title": "TTS_068C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_068D",
+          "title": "TTS_068D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_068E",
+          "title": "TTS_068E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_068F",
+          "title": "TTS_068F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_068G",
+          "title": "TTS_068G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V052",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-CIRUGIA-HERNIAS-Y-PARED-ABDOMINAL",
       "topicLabel": "Hernias y pared abdominal",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_069",
+      "version": "V053",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 28.9,
+      "parts": [
+        {
+          "code": "TTS_069A",
+          "title": "TTS_069A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_069B",
+          "title": "TTS_069B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_069C",
+          "title": "TTS_069C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_069D",
+          "title": "TTS_069D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_069E",
+          "title": "TTS_069E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_069F",
+          "title": "TTS_069F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_069G",
+          "title": "TTS_069G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V053",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-PROLAPSO-Y-SOPORTE-DEL-PISO-PELVICO",
       "topicLabel": "Prolapso y soporte del piso pélvico",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_070",
+      "version": "V054",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 28.9,
+      "parts": [
+        {
+          "code": "TTS_070A",
+          "title": "TTS_070A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_070B",
+          "title": "TTS_070B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_070C",
+          "title": "TTS_070C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_070D",
+          "title": "TTS_070D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_070E",
+          "title": "TTS_070E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_070F",
+          "title": "TTS_070F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_070G",
+          "title": "TTS_070G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V054",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-ANEMIAS-CARENCIALES",
       "topicLabel": "Anemias carenciales",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_071",
+      "version": "V055",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 29.6,
+      "parts": [
+        {
+          "code": "TTS_071A",
+          "title": "TTS_071A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_071B",
+          "title": "TTS_071B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_071C",
+          "title": "TTS_071C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_071D",
+          "title": "TTS_071D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_071E",
+          "title": "TTS_071E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_071F",
+          "title": "TTS_071F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_071G",
+          "title": "TTS_071G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V055",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-SINDROMES-CROMOSOMICOS-Y-GENETICOS",
       "topicLabel": "Síndromes cromosómicos y genéticos",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_072",
+      "version": "V056",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 29.5,
+      "parts": [
+        {
+          "code": "TTS_072A",
+          "title": "TTS_072A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_072B",
+          "title": "TTS_072B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_072C",
+          "title": "TTS_072C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_072D",
+          "title": "TTS_072D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_072E",
+          "title": "TTS_072E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_072F",
+          "title": "TTS_072F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_072G",
+          "title": "TTS_072G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V056",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-HEMORRAGIA-OBSTETRICA-ANTEPARTO-E-INTRAPARTO",
       "topicLabel": "Hemorragia obstétrica anteparto e intraparto",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_073",
+      "version": "V057_C2",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 21.2,
+      "parts": [
+        {
+          "code": "TTS_073A",
+          "title": "TTS_073A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_073B",
+          "title": "TTS_073B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_073C",
+          "title": "TTS_073C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_073D",
+          "title": "TTS_073D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_073E",
+          "title": "TTS_073E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_073F",
+          "title": "TTS_073F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_073G",
+          "title": "TTS_073G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V057_C2",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-TRASTORNOS-DEL-ESTADO-DE-ANIMO",
       "topicLabel": "Trastornos del estado de ánimo",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_074",
+      "version": "V057_C2",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 21.3,
+      "parts": [
+        {
+          "code": "TTS_074A",
+          "title": "TTS_074A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_074B",
+          "title": "TTS_074B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_074C",
+          "title": "TTS_074C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_074D",
+          "title": "TTS_074D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_074E",
+          "title": "TTS_074E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_074F",
+          "title": "TTS_074F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_074G",
+          "title": "TTS_074G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V057_C2",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-PATOLOGIA-MAMARIA",
       "topicLabel": "Patología mamaria",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_075",
+      "version": "V057_C2",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 19.9,
+      "parts": [
+        {
+          "code": "TTS_075A",
+          "title": "TTS_075A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_075B",
+          "title": "TTS_075B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_075C",
+          "title": "TTS_075C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_075D",
+          "title": "TTS_075D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_075E",
+          "title": "TTS_075E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_075F",
+          "title": "TTS_075F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_075G",
+          "title": "TTS_075G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V057_C2",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-NEOPLASIAS-HEMATOLOGICAS",
       "topicLabel": "Neoplasias hematológicas",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_076",
+      "version": "V057_C2",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 20.4,
+      "parts": [
+        {
+          "code": "TTS_076A",
+          "title": "TTS_076A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_076B",
+          "title": "TTS_076B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_076C",
+          "title": "TTS_076C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_076D",
+          "title": "TTS_076D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_076E",
+          "title": "TTS_076E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_076F",
+          "title": "TTS_076F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_076G",
+          "title": "TTS_076G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V057_C2",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-PARASITOLOGIA-PEDIATRICA",
       "topicLabel": "Parasitología pediátrica",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_077",
+      "version": "V058_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 19.9,
+      "parts": [
+        {
+          "code": "TTS_077A",
+          "title": "TTS_077A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_077B",
+          "title": "TTS_077B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_077C",
+          "title": "TTS_077C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_077D",
+          "title": "TTS_077D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_077E",
+          "title": "TTS_077E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_077F",
+          "title": "TTS_077F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_077G",
+          "title": "TTS_077G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V058_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-ENFERMEDAD-CEREBROVASCULAR",
       "topicLabel": "Enfermedad cerebrovascular",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_078",
+      "version": "V058_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 18.2,
+      "parts": [
+        {
+          "code": "TTS_078A",
+          "title": "TTS_078A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_078B",
+          "title": "TTS_078B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_078C",
+          "title": "TTS_078C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_078D",
+          "title": "TTS_078D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_078E",
+          "title": "TTS_078E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_078F",
+          "title": "TTS_078F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_078G",
+          "title": "TTS_078G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V058_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-CIRUGIA-TRAUMA-GENITOURINARIO",
       "topicLabel": "Trauma genitourinario",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_079",
+      "version": "V058_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 18.0,
+      "parts": [
+        {
+          "code": "TTS_079A",
+          "title": "TTS_079A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_079B",
+          "title": "TTS_079B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_079C",
+          "title": "TTS_079C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_079D",
+          "title": "TTS_079D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_079E",
+          "title": "TTS_079E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_079F",
+          "title": "TTS_079F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_079G",
+          "title": "TTS_079G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V058_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-CIRUGIA-LESIONES-DE-PARTES-BLANDAS-Y-ARTICULACIONES",
       "topicLabel": "Lesiones de partes blandas y articulaciones",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_080",
+      "version": "V058_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 18.3,
+      "parts": [
+        {
+          "code": "TTS_080A",
+          "title": "TTS_080A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_080B",
+          "title": "TTS_080B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_080C",
+          "title": "TTS_080C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_080D",
+          "title": "TTS_080D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_080E",
+          "title": "TTS_080E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_080F",
+          "title": "TTS_080F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_080G",
+          "title": "TTS_080G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V058_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-CIRUGIA-ENFERMEDADES-ANORRECTALES-BENIGNAS",
       "topicLabel": "Enfermedades anorrectales benignas",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_081",
+      "version": "V059_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 19.2,
+      "parts": [
+        {
+          "code": "TTS_081A",
+          "title": "TTS_081A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_081B",
+          "title": "TTS_081B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_081C",
+          "title": "TTS_081C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_081D",
+          "title": "TTS_081D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_081E",
+          "title": "TTS_081E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_081F",
+          "title": "TTS_081F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_081G",
+          "title": "TTS_081G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V059_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-FISIOLOGIA-DEL-EMBARAZO-Y-ATENCION-PRENATAL",
       "topicLabel": "Fisiología del embarazo y atención prenatal",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_082",
+      "version": "V059_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 18.4,
+      "parts": [
+        {
+          "code": "TTS_082A",
+          "title": "TTS_082A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_082B",
+          "title": "TTS_082B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_082C",
+          "title": "TTS_082C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_082D",
+          "title": "TTS_082D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_082E",
+          "title": "TTS_082E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_082F",
+          "title": "TTS_082F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_082G",
+          "title": "TTS_082G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V059_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-MICRONUTRIENTES",
       "topicLabel": "Micronutrientes",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_083",
+      "version": "V059_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 18.3,
+      "parts": [
+        {
+          "code": "TTS_083A",
+          "title": "TTS_083A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_083B",
+          "title": "TTS_083B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_083C",
+          "title": "TTS_083C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_083D",
+          "title": "TTS_083D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_083E",
+          "title": "TTS_083E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_083F",
+          "title": "TTS_083F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_083G",
+          "title": "TTS_083G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V059_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-EVALUACION-Y-BIENESTAR-FETAL",
       "topicLabel": "Evaluación y bienestar fetal",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_084",
+      "version": "V059_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 17.9,
+      "parts": [
+        {
+          "code": "TTS_084A",
+          "title": "TTS_084A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_084B",
+          "title": "TTS_084B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_084C",
+          "title": "TTS_084C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_084D",
+          "title": "TTS_084D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_084E",
+          "title": "TTS_084E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_084F",
+          "title": "TTS_084F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_084G",
+          "title": "TTS_084G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V059_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-CIRUGIA-LUXACIONES",
       "topicLabel": "Luxaciones",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_085",
+      "version": "V060_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 14.5,
+      "parts": [
+        {
+          "code": "TTS_085A",
+          "title": "TTS_085A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_085B",
+          "title": "TTS_085B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_085C",
+          "title": "TTS_085C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_085D",
+          "title": "TTS_085D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_085E",
+          "title": "TTS_085E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_085F",
+          "title": "TTS_085F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_085G",
+          "title": "TTS_085G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V060_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-EMERGENCIAS-Y-CUIDADOS-CRITICOS",
       "topicLabel": "Emergencias y cuidados críticos",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_086",
+      "version": "V060_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 14.1,
+      "parts": [
+        {
+          "code": "TTS_086A",
+          "title": "TTS_086A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_086B",
+          "title": "TTS_086B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_086C",
+          "title": "TTS_086C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_086D",
+          "title": "TTS_086D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_086E",
+          "title": "TTS_086E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_086F",
+          "title": "TTS_086F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_086G",
+          "title": "TTS_086G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V060_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-NEUMOLOGIA-GENERAL",
       "topicLabel": "Neumología general",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_087",
+      "version": "V060_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 13.0,
+      "parts": [
+        {
+          "code": "TTS_087A",
+          "title": "TTS_087A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_087B",
+          "title": "TTS_087B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_087C",
+          "title": "TTS_087C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_087D",
+          "title": "TTS_087D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_087E",
+          "title": "TTS_087E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_087F",
+          "title": "TTS_087F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_087G",
+          "title": "TTS_087G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V060_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-EPILEPSIA-Y-CRISIS-EPILEPTICAS",
       "topicLabel": "Epilepsia y crisis epilépticas",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_088",
+      "version": "V060_C1",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 13.6,
+      "parts": [
+        {
+          "code": "TTS_088A",
+          "title": "TTS_088A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_088B",
+          "title": "TTS_088B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_088C",
+          "title": "TTS_088C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_088D",
+          "title": "TTS_088D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_088E",
+          "title": "TTS_088E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_088F",
+          "title": "TTS_088F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_088G",
+          "title": "TTS_088G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V060_C1",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-PREMATURIDAD-Y-SUS-COMPLICACIONES",
       "topicLabel": "Prematuridad y sus complicaciones",
       "rentabilityTier": "ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_089",
+      "version": "V061",
+      "updatedAt": "2026-08-05",
+      "estimatedMinutes": 20.2,
+      "parts": [
+        {
+          "code": "TTS_089A",
+          "title": "TTS_089A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_089B",
+          "title": "TTS_089B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_089C",
+          "title": "TTS_089C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_089D",
+          "title": "TTS_089D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_089E",
+          "title": "TTS_089E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_089F",
+          "title": "TTS_089F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_089G",
+          "title": "TTS_089G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V061",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-SALUD-PUBLICA-SALUD-FAMILIAR-COMUNITARIA-Y-ATENCION-PRIMARIA",
@@ -2865,475 +5621,2149 @@
       "rentabilityTier": "MUY_ALTA",
       "status": "COMPLETE",
       "primaryCode": "TTS_001",
-      "version": "V002",
-      "updatedAt": "2026-08-02T23:59:00-05:00",
-      "estimatedMinutes": null,
+      "version": "V004",
+      "updatedAt": "2026-08-02",
+      "estimatedMinutes": 41.0,
       "parts": [
         {
           "code": "TTS_001A",
-          "title": "Definición, clasificación y diagnóstico",
-          "file": "TTS_001A.txt",
+          "title": "TTS_001A",
+          "file": "",
           "estimatedMinutes": null,
-          "coverage": [
-            "Definición",
-            "Clasificación",
-            "Diagnóstico"
-          ]
+          "coverage": []
         },
         {
           "code": "TTS_001B",
-          "title": "Tratamiento no insulínico",
-          "file": "TTS_001B.txt",
+          "title": "TTS_001B",
+          "file": "",
           "estimatedMinutes": null,
-          "coverage": [
-            "Tratamiento farmacológico",
-            "Fármacos no insulínicos"
-          ]
+          "coverage": []
         },
         {
           "code": "TTS_001C",
-          "title": "Insulinoterapia y seguimiento",
-          "file": "TTS_001C.txt",
+          "title": "TTS_001C",
+          "file": "",
           "estimatedMinutes": null,
-          "coverage": [
-            "Insulinoterapia",
-            "Metas",
-            "Seguimiento"
-          ]
+          "coverage": []
         },
         {
           "code": "TTS_001D",
-          "title": "Emergencias hiperglucémicas",
-          "file": "TTS_001D.txt",
+          "title": "TTS_001D",
+          "file": "",
           "estimatedMinutes": null,
-          "coverage": [
-            "Cetoacidosis diabética",
-            "Estado hiperosmolar",
-            "Manejo de emergencias"
-          ]
+          "coverage": []
         }
       ],
-      "missingCoverage": []
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V004",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-TRASTORNOS-TIROIDEOS",
       "topicLabel": "Trastornos tiroideos",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_002",
+      "version": "V004",
+      "updatedAt": "2026-08-02",
+      "estimatedMinutes": 39.6,
+      "parts": [
+        {
+          "code": "TTS_002A",
+          "title": "TTS_002A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_002B",
+          "title": "TTS_002B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_002C",
+          "title": "TTS_002C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_002D",
+          "title": "TTS_002D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V004",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-CIRUGIA-TRAUMA-TORACICO",
       "topicLabel": "Trauma torácico",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_003",
+      "version": "V005",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 33.3,
+      "parts": [
+        {
+          "code": "TTS_003A",
+          "title": "TTS_003A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_003B",
+          "title": "TTS_003B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_003C",
+          "title": "TTS_003C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_003D",
+          "title": "TTS_003D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V005",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-ENFERMEDADES-EXANTEMATICAS-Y-PREVENIBLES-POR-VACUNAS",
       "topicLabel": "Enfermedades exantemáticas y prevenibles por vacunas",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_004",
+      "version": "V006",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 30.8,
+      "parts": [
+        {
+          "code": "TTS_004A",
+          "title": "TTS_004A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_004B",
+          "title": "TTS_004B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_004C",
+          "title": "TTS_004C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_004D",
+          "title": "TTS_004D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V006",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-ENFERMEDADES-OBSTRUCTIVAS-DE-LA-VIA-AEREA",
       "topicLabel": "Enfermedades obstructivas de la vía aérea",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_005",
+      "version": "V007",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 29.8,
+      "parts": [
+        {
+          "code": "TTS_005A",
+          "title": "TTS_005A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_005B",
+          "title": "TTS_005B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_005C",
+          "title": "TTS_005C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_005D",
+          "title": "TTS_005D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_005E",
+          "title": "TTS_005E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V007",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-INFECCIONES-RESPIRATORIAS",
       "topicLabel": "Infecciones respiratorias",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_006",
+      "version": "V008",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 29.6,
+      "parts": [
+        {
+          "code": "TTS_006A",
+          "title": "TTS_006A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_006B",
+          "title": "TTS_006B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_006C",
+          "title": "TTS_006C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_006D",
+          "title": "TTS_006D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_006E",
+          "title": "TTS_006E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V008",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-INFECCIONES-DURANTE-EL-EMBARAZO",
       "topicLabel": "Infecciones durante el embarazo",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_007",
+      "version": "V009",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 35.1,
+      "parts": [
+        {
+          "code": "TTS_007A",
+          "title": "TTS_007A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_007B",
+          "title": "TTS_007B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_007C",
+          "title": "TTS_007C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_007D",
+          "title": "TTS_007D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_007E",
+          "title": "TTS_007E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V009",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-SINDROMES-CORONARIOS-Y-CARDIOPATIA-ISQUEMICA",
       "topicLabel": "Síndromes coronarios y cardiopatía isquémica",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_008",
+      "version": "V010",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 39.7,
+      "parts": [
+        {
+          "code": "TTS_008A",
+          "title": "TTS_008A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_008B",
+          "title": "TTS_008B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_008C",
+          "title": "TTS_008C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_008D",
+          "title": "TTS_008D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_008E",
+          "title": "TTS_008E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V010",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-ARRITMIAS-Y-TRASTORNOS-DE-CONDUCCION",
       "topicLabel": "Arritmias y trastornos de conducción",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_009",
+      "version": "V012",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 49.4,
+      "parts": [
+        {
+          "code": "TTS_009A",
+          "title": "TTS_009A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_009B",
+          "title": "TTS_009B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_009C",
+          "title": "TTS_009C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_009D",
+          "title": "TTS_009D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_009E",
+          "title": "TTS_009E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_009F",
+          "title": "TTS_009F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_009G",
+          "title": "TTS_009G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V012",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-PATOLOGIA-UTERINA-Y-SANGRADO",
       "topicLabel": "Patología uterina y sangrado",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_010",
+      "version": "V013",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 44.4,
+      "parts": [
+        {
+          "code": "TTS_010A",
+          "title": "TTS_010A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_010B",
+          "title": "TTS_010B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_010C",
+          "title": "TTS_010C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_010D",
+          "title": "TTS_010D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_010E",
+          "title": "TTS_010E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_010F",
+          "title": "TTS_010F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V013",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-ICTERICIA-Y-COLESTASIS-NEONATAL",
       "topicLabel": "Ictericia y colestasis neonatal",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_011",
+      "version": "V014",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 55.7,
+      "parts": [
+        {
+          "code": "TTS_011A",
+          "title": "TTS_011A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_011B",
+          "title": "TTS_011B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_011C",
+          "title": "TTS_011C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_011D",
+          "title": "TTS_011D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_011E",
+          "title": "TTS_011E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_011F",
+          "title": "TTS_011F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V014",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-SHOCK-Y-SEPSIS",
       "topicLabel": "Shock y sepsis",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_012",
+      "version": "V015",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 54.1,
+      "parts": [
+        {
+          "code": "TTS_012A",
+          "title": "TTS_012A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_012B",
+          "title": "TTS_012B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_012C",
+          "title": "TTS_012C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_012D",
+          "title": "TTS_012D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_012E",
+          "title": "TTS_012E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_012F",
+          "title": "TTS_012F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_012G",
+          "title": "TTS_012G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V015",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-TRASTORNOS-HIPERTENSIVOS-DEL-EMBARAZO",
       "topicLabel": "Trastornos hipertensivos del embarazo",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_013",
+      "version": "V016",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 53.6,
+      "parts": [
+        {
+          "code": "TTS_013A",
+          "title": "TTS_013A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_013B",
+          "title": "TTS_013B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_013C",
+          "title": "TTS_013C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_013D",
+          "title": "TTS_013D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_013E",
+          "title": "TTS_013E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_013F",
+          "title": "TTS_013F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_013G",
+          "title": "TTS_013G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V016",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-CEFALEAS-Y-DOLOR-FACIAL",
       "topicLabel": "Cefaleas y dolor facial",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_014",
+      "version": "V017",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 59.8,
+      "parts": [
+        {
+          "code": "TTS_014A",
+          "title": "TTS_014A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_014B",
+          "title": "TTS_014B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_014C",
+          "title": "TTS_014C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_014D",
+          "title": "TTS_014D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_014E",
+          "title": "TTS_014E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_014F",
+          "title": "TTS_014F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_014G",
+          "title": "TTS_014G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V017",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-SALUD-PUBLICA-EPIDEMIOLOGIA-APLICADA-Y-VIGILANCIA",
       "topicLabel": "Epidemiología aplicada y vigilancia",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_015",
+      "version": "V018",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 43.1,
+      "parts": [
+        {
+          "code": "TTS_015A",
+          "title": "TTS_015A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_015B",
+          "title": "TTS_015B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_015C",
+          "title": "TTS_015C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_015D",
+          "title": "TTS_015D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_015E",
+          "title": "TTS_015E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_015F",
+          "title": "TTS_015F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_015G",
+          "title": "TTS_015G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V018",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-ANEMIAS",
       "topicLabel": "Anemias",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_016",
+      "version": "V019",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 40.9,
+      "parts": [
+        {
+          "code": "TTS_016A",
+          "title": "TTS_016A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_016B",
+          "title": "TTS_016B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_016C",
+          "title": "TTS_016C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_016D",
+          "title": "TTS_016D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_016E",
+          "title": "TTS_016E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_016F",
+          "title": "TTS_016F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_016G",
+          "title": "TTS_016G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V019",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-INFECCIONES-BACTERIANAS-Y-ANTIMICROBIANOS",
       "topicLabel": "Infecciones bacterianas y antimicrobianos",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_019",
+      "version": "V022",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 46.1,
+      "parts": [
+        {
+          "code": "TTS_019A",
+          "title": "TTS_019A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_019B",
+          "title": "TTS_019B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_019C",
+          "title": "TTS_019C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_019D",
+          "title": "TTS_019D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_019E",
+          "title": "TTS_019E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_019F",
+          "title": "TTS_019F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_019G",
+          "title": "TTS_019G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V022",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-HIPERTENSION-ARTERIAL-Y-EMERGENCIAS-HIPERTENSIVAS",
       "topicLabel": "Hipertensión arterial y emergencias hipertensivas",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_020",
+      "version": "V023",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 31.0,
+      "parts": [
+        {
+          "code": "TTS_020A",
+          "title": "TTS_020A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_020B",
+          "title": "TTS_020B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_020C",
+          "title": "TTS_020C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_020D",
+          "title": "TTS_020D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_020E",
+          "title": "TTS_020E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_020F",
+          "title": "TTS_020F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_020G",
+          "title": "TTS_020G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V023",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-VULVOVAGINITIS-E-INFECCIONES-DE-TRANSMISION-SEXUAL",
       "topicLabel": "Vulvovaginitis e infecciones de transmisión sexual",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_021",
+      "version": "V024",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 28.6,
+      "parts": [
+        {
+          "code": "TTS_021A",
+          "title": "TTS_021A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_021B",
+          "title": "TTS_021B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_021C",
+          "title": "TTS_021C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_021D",
+          "title": "TTS_021D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_021E",
+          "title": "TTS_021E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_021F",
+          "title": "TTS_021F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_021G",
+          "title": "TTS_021G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V024",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-INFECCIONES-NEONATALES-Y-CONGENITAS",
       "topicLabel": "Infecciones neonatales y congénitas",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_022",
+      "version": "V025",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 29.5,
+      "parts": [
+        {
+          "code": "TTS_022A",
+          "title": "TTS_022A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_022B",
+          "title": "TTS_022B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_022C",
+          "title": "TTS_022C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_022D",
+          "title": "TTS_022D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_022E",
+          "title": "TTS_022E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_022F",
+          "title": "TTS_022F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_022G",
+          "title": "TTS_022G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V025",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-LESION-RENAL-AGUDA-Y-ENFERMEDAD-RENAL-CRONICA",
       "topicLabel": "Lesión renal aguda y enfermedad renal crónica",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_017",
+      "version": "V020",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 49.3,
+      "parts": [
+        {
+          "code": "TTS_017A",
+          "title": "TTS_017A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_017B",
+          "title": "TTS_017B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_017C",
+          "title": "TTS_017C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_017D",
+          "title": "TTS_017D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_017E",
+          "title": "TTS_017E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_017F",
+          "title": "TTS_017F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_017G",
+          "title": "TTS_017G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V020",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-TRASTORNOS-HIDROELECTROLITICOS-Y-ACIDO-BASE",
       "topicLabel": "Trastornos hidroelectrolíticos y ácido-base",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_018",
+      "version": "V021",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 32.5,
+      "parts": [
+        {
+          "code": "TTS_018A",
+          "title": "TTS_018A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_018B",
+          "title": "TTS_018B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_018C",
+          "title": "TTS_018C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_018D",
+          "title": "TTS_018D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_018E",
+          "title": "TTS_018E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_018F",
+          "title": "TTS_018F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_018G",
+          "title": "TTS_018G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V021",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-GASTROENTEROLOGIA-Y-HEPATOLOGIA-GENERAL",
       "topicLabel": "Gastroenterología y hepatología general",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_023",
+      "version": "V026",
+      "updatedAt": "2026-08-03",
+      "estimatedMinutes": 30.7,
+      "parts": [
+        {
+          "code": "TTS_023A",
+          "title": "TTS_023A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_023B",
+          "title": "TTS_023B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_023C",
+          "title": "TTS_023C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_023D",
+          "title": "TTS_023D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_023E",
+          "title": "TTS_023E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_023F",
+          "title": "TTS_023F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_023G",
+          "title": "TTS_023G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V026",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-PATOLOGIA-RESPIRATORIA-NEONATAL",
       "topicLabel": "Patología respiratoria neonatal",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_024",
+      "version": "V027",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 31.9,
+      "parts": [
+        {
+          "code": "TTS_024A",
+          "title": "TTS_024A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_024B",
+          "title": "TTS_024B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_024C",
+          "title": "TTS_024C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_024D",
+          "title": "TTS_024D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_024E",
+          "title": "TTS_024E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_024F",
+          "title": "TTS_024F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_024G",
+          "title": "TTS_024G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V027",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-TRABAJO-DE-PARTO-DISTOCIAS-Y-PARTO",
       "topicLabel": "Trabajo de parto, distocias y parto",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_025",
+      "version": "V028",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 31.9,
+      "parts": [
+        {
+          "code": "TTS_025A",
+          "title": "TTS_025A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_025B",
+          "title": "TTS_025B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_025C",
+          "title": "TTS_025C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_025D",
+          "title": "TTS_025D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_025E",
+          "title": "TTS_025E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_025F",
+          "title": "TTS_025F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_025G",
+          "title": "TTS_025G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V028",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-CIRUGIA-TRAUMA-ABDOMINAL",
       "topicLabel": "Trauma abdominal",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_026",
+      "version": "V029",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 28.9,
+      "parts": [
+        {
+          "code": "TTS_026A",
+          "title": "TTS_026A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_026B",
+          "title": "TTS_026B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_026C",
+          "title": "TTS_026C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_026D",
+          "title": "TTS_026D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_026E",
+          "title": "TTS_026E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_026F",
+          "title": "TTS_026F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_026G",
+          "title": "TTS_026G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V029",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-NEOPLASIA-CERVICAL-Y-PREVENCION",
       "topicLabel": "Neoplasia cervical y prevención",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_027",
+      "version": "V030",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 35.9,
+      "parts": [
+        {
+          "code": "TTS_027A",
+          "title": "TTS_027A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_027B",
+          "title": "TTS_027B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_027C",
+          "title": "TTS_027C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_027D",
+          "title": "TTS_027D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_027E",
+          "title": "TTS_027E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_027F",
+          "title": "TTS_027F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_027G",
+          "title": "TTS_027G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V030",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-SALUD-PUBLICA-GESTION-Y-SISTEMAS-DE-SALUD",
       "topicLabel": "Gestión y sistemas de salud",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_028",
+      "version": "V031",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 34.7,
+      "parts": [
+        {
+          "code": "TTS_028A",
+          "title": "TTS_028A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_028B",
+          "title": "TTS_028B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_028C",
+          "title": "TTS_028C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_028D",
+          "title": "TTS_028D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_028E",
+          "title": "TTS_028E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_028F",
+          "title": "TTS_028F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_028G",
+          "title": "TTS_028G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V031",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-MALFORMACIONES-Y-OBSTRUCCION-GASTROINTESTINAL",
       "topicLabel": "Malformaciones y obstrucción gastrointestinal",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_029",
+      "version": "V032",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 29.8,
+      "parts": [
+        {
+          "code": "TTS_029A",
+          "title": "TTS_029A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_029B",
+          "title": "TTS_029B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_029C",
+          "title": "TTS_029C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_029D",
+          "title": "TTS_029D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_029E",
+          "title": "TTS_029E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_029F",
+          "title": "TTS_029F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_029G",
+          "title": "TTS_029G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V032",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-TUBERCULOSIS",
       "topicLabel": "Tuberculosis",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_030",
+      "version": "V033",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 35.0,
+      "parts": [
+        {
+          "code": "TTS_030A",
+          "title": "TTS_030A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_030B",
+          "title": "TTS_030B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_030C",
+          "title": "TTS_030C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_030D",
+          "title": "TTS_030D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_030E",
+          "title": "TTS_030E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_030F",
+          "title": "TTS_030F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_030G",
+          "title": "TTS_030G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V033",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-METABOLISMO-HEMATOLOGIA-Y-CRECIMIENTO-NEONATAL",
       "topicLabel": "Metabolismo, hematología y crecimiento neonatal",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_031",
+      "version": "V034",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 36.1,
+      "parts": [
+        {
+          "code": "TTS_031A",
+          "title": "TTS_031A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_031B",
+          "title": "TTS_031B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_031C",
+          "title": "TTS_031C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_031D",
+          "title": "TTS_031D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_031E",
+          "title": "TTS_031E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_031F",
+          "title": "TTS_031F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_031G",
+          "title": "TTS_031G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V034",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-DISFUNCION-URINARIA-Y-FISTULAS",
       "topicLabel": "Disfunción urinaria y fístulas",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_032",
+      "version": "V035",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 33.6,
+      "parts": [
+        {
+          "code": "TTS_032A",
+          "title": "TTS_032A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_032B",
+          "title": "TTS_032B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_032C",
+          "title": "TTS_032C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_032D",
+          "title": "TTS_032D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_032E",
+          "title": "TTS_032E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_032F",
+          "title": "TTS_032F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_032G",
+          "title": "TTS_032G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V035",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-INFECCIONES-DEL-TRACTO-GENITAL-SUPERIOR",
       "topicLabel": "Infecciones del tracto genital superior",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_033",
+      "version": "V036",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 34.2,
+      "parts": [
+        {
+          "code": "TTS_033A",
+          "title": "TTS_033A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_033B",
+          "title": "TTS_033B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_033C",
+          "title": "TTS_033C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_033D",
+          "title": "TTS_033D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_033E",
+          "title": "TTS_033E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_033F",
+          "title": "TTS_033F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_033G",
+          "title": "TTS_033G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V036",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-GINECOLOGIA-Y-OBSTETRICIA-ANTICONCEPCION",
       "topicLabel": "Anticoncepción",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_034",
+      "version": "V037",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 45.7,
+      "parts": [
+        {
+          "code": "TTS_034A",
+          "title": "TTS_034A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_034B",
+          "title": "TTS_034B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_034C",
+          "title": "TTS_034C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_034D",
+          "title": "TTS_034D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_034E",
+          "title": "TTS_034E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_034F",
+          "title": "TTS_034F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_034G",
+          "title": "TTS_034G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V037",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-MEDICINA-INTERNA-TRASTORNOS-SUPRARRENALES",
       "topicLabel": "Trastornos suprarrenales",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_035",
+      "version": "V038",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 33.7,
+      "parts": [
+        {
+          "code": "TTS_035A",
+          "title": "TTS_035A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_035B",
+          "title": "TTS_035B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_035C",
+          "title": "TTS_035C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_035D",
+          "title": "TTS_035D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_035E",
+          "title": "TTS_035E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_035F",
+          "title": "TTS_035F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_035G",
+          "title": "TTS_035G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V038",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     },
     {
       "topicId": "RENTV2-PEDIATRIA-CONVULSIONES-FEBRILES",
       "topicLabel": "Convulsiones febriles",
       "rentabilityTier": "MUY_ALTA",
-      "status": "PENDING",
-      "primaryCode": null,
-      "version": null,
-      "updatedAt": null,
-      "estimatedMinutes": null,
-      "parts": [],
-      "missingCoverage": []
+      "status": "COMPLETE",
+      "primaryCode": "TTS_036",
+      "version": "V039",
+      "updatedAt": "2026-08-04",
+      "estimatedMinutes": 35.1,
+      "parts": [
+        {
+          "code": "TTS_036A",
+          "title": "TTS_036A",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_036B",
+          "title": "TTS_036B",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_036C",
+          "title": "TTS_036C",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_036D",
+          "title": "TTS_036D",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_036E",
+          "title": "TTS_036E",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_036F",
+          "title": "TTS_036F",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        },
+        {
+          "code": "TTS_036G",
+          "title": "TTS_036G",
+          "file": "",
+          "estimatedMinutes": null,
+          "coverage": []
+        }
+      ],
+      "missingCoverage": [],
+      "sourceStatus": "COMPLETADA_V039",
+      "sourcePackage": "PAQUETE_TTS_ACUMULATIVO_V061_20260805.zip"
     }
   ]
 }
