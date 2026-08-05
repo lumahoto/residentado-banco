@@ -218,6 +218,40 @@
     };
   }
 
+  // FIX-SESSION-004: compare only meaningful progress; volatile timestamps must not create false conflicts.
+  function meaningfulSessionState(value = {}) {
+    const state = normalizeState(value);
+    return {
+      schemaVersion: state.schemaVersion,
+      currentIndex: state.currentIndex,
+      responses: state.responses,
+      scratch: state.scratch,
+      marked: state.marked,
+      optionOrders: state.optionOrders,
+      durations: state.durations,
+      answerTimes: state.answerTimes,
+      timeSpent: state.timeSpent,
+      lockedQuestionIds: state.lockedQuestionIds,
+      attemptIdsByQuestion: state.attemptIdsByQuestion,
+      clientAttemptIdsByQuestion: state.clientAttemptIdsByQuestion,
+      remainingSeconds: state.remainingSeconds,
+      totalRemaining: state.totalRemaining,
+      breakTaken: state.breakTaken,
+    };
+  }
+
+  function stableStringify(value) {
+    if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+    if (value && typeof value === 'object') {
+      return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+    }
+    return JSON.stringify(value);
+  }
+
+  function sessionStateFingerprint(value = {}) {
+    return stableStringify(meaningfulSessionState(value));
+  }
+
   function normalizeSessionRow(row = {}) {
     const questionIds = Array.isArray(row.question_ids) ? row.question_ids.filter(Boolean) : [];
     const state = normalizeState(row.state || {});
@@ -243,12 +277,19 @@
     for (const row of remoteRows.map(normalizeSessionRow)) byId.set(row.id, { ...row, syncStatus: 'synced' });
     for (const localRaw of localRows.map(normalizeSessionRow)) {
       const current = byId.get(localRaw.id);
-      const localPending = ['pending', 'conflict', 'offline'].includes(localRaw.syncStatus);
+      if (!current) {
+        byId.set(localRaw.id, localRaw);
+        continue;
+      }
+
+      const localPending = ['pending', 'conflict', 'offline', 'offline_create', 'recovery_local'].includes(localRaw.syncStatus);
       const localRevision = Number(localRaw.state_revision || 0);
-      const remoteRevision = Number(current?.state_revision || 0);
+      const remoteRevision = Number(current.state_revision || 0);
       const localUpdated = new Date(localRaw.localUpdatedAt || localRaw.updated_at || 0).getTime();
-      const remoteUpdated = new Date(current?.updated_at || 0).getTime();
-      if (!current || localPending || localRevision > remoteRevision || (localRevision === remoteRevision && localUpdated > remoteUpdated)) {
+      const remoteUpdated = new Date(current.updated_at || 0).getTime();
+
+      // FIX-SESSION-004: a stale local shadow must never hide a newer server revision.
+      if (localRevision > remoteRevision || (localRevision === remoteRevision && localPending && localUpdated > remoteUpdated)) {
         byId.set(localRaw.id, localRaw);
       }
     }
@@ -292,6 +333,8 @@
     studyToState,
     stateToStudy,
     normalizeSessionRow,
+    meaningfulSessionState,
+    sessionStateFingerprint,
     mergeSessionRows,
     buildSessionSummary,
   };
