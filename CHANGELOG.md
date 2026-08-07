@@ -1,5 +1,17 @@
 # Changelog - Residentado
 
+## v1.3.1 - 2026-08-06
+
+Release compatible construido sobre v1.3.0. No modifica sesiones, intentos, memoria, notas, preguntas ni Supabase.
+
+- sustituye la exportación simple de observaciones por un único CSV autosuficiente para auditoría y parche;
+- consulta directamente a Supabase, solo al pulsar exportar, las filas completas actuales de `question_review_flags` y `questions`;
+- exporta dinámicamente todas las columnas existentes, con prefijos `flag__` y `question__`;
+- añade metadatos de lote, versión, fuente autoritativa, conteos y revisión/hash para control de concurrencia;
+- impide exportar si no hay sesión autenticada o Supabase devuelve IDs incompletos;
+- conserva el contenido exacto de campos multilínea dentro de celdas CSV entrecomilladas;
+- elimina de la interfaz de flags la copia de texto y deja un solo botón de CSV completo.
+
 ## v1.3.0 - 2026-08-05
 
 Release funcional construido sobre v1.2.0. Conserva sus funciones y todos los guardrails de v1.1.1.

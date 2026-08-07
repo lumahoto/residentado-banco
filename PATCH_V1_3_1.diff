@@ -1,0 +1,292 @@
+--- /mnt/data/work_v130_original/app.js	2026-08-05 22:55:28.000000000 +0000
++++ app.js	2026-08-07 01:56:50.835631631 +0000
+@@ -1,7 +1,7 @@
+ (() => {
+   const app = document.getElementById('app');
+   const cfg = window.APP_CONFIG || {};
+-  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.3.0';
++  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.3.1';
+   const LEARNING_NOTES_MIGRATION = 'MIGRATIONS/20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql';
+   const TTS_CATALOG_TABLE = 'tts_topic_catalog';
+   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
+@@ -6240,42 +6240,174 @@
+     return `"${text.replaceAll('"', '""')}"`;
+   }
+ 
+-  function downloadReviewFlagsCsv(type = 'all', view = 'open') {
++  function patchCsvValue(value) {
++    if (value == null) return '';
++    if (typeof value === 'object') {
++      try { return JSON.stringify(value); }
++      catch { return String(value); }
++    }
++    return String(value);
++  }
++
++  function patchCsvCell(value) {
++    const text = patchCsvValue(value).replace(/\r\n/g, '\n');
++    return `"${text.replaceAll('"', '""')}"`;
++  }
++
++  function orderedUnionKeys(rows = []) {
++    const keys = [];
++    const seen = new Set();
++    (rows || []).forEach(row => Object.keys(row || {}).forEach(key => {
++      if (seen.has(key)) return;
++      seen.add(key);
++      keys.push(key);
++    }));
++    return keys;
++  }
++
++  function uniqueNonEmpty(values = []) {
++    return [...new Set((values || []).map(value => String(value || '').trim()).filter(Boolean))];
++  }
++
++  async function fetchAuthoritativeRowsByIds(table, idColumn, ids, chunkSize = 100) {
++    const wanted = uniqueNonEmpty(ids);
++    const rows = [];
++    for (let index = 0; index < wanted.length; index += chunkSize) {
++      const chunk = wanted.slice(index, index + chunkSize);
++      const { data, error } = await supa.from(table).select('*').in(idColumn, chunk);
++      if (error) return { data:null, error };
++      rows.push(...(data || []));
++    }
++    return { data:rows, error:null };
++  }
++
++  function compactExportTimestamp(date = new Date()) {
++    return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
++  }
++
++  async function downloadReviewFlagsCsv(type = 'all', view = 'open') {
+     const entries = reviewFlagEntries(type, view);
+     if (!entries.length) return;
+-    const rows = [
+-      ['estado','flag','id','año','prueba','numero_pregunta','area','especialidad','tema','entidad','observacion_usuario','enunciado','content_revision','creado_en','actualizado_en','resuelto_en','patch_id','resumen_resolucion','registro_anterior'],
+-      ...entries.map(({ flag, q }) => [
+-        reviewFlagStateMeta(flag).label,
+-        reviewFlagMeta(flag.flag_type).label,
+-        q.id,
+-        q.year,
+-        q.test,
+-        q.question_number,
+-        q.area,
+-        q.specialty,
+-        q.topic,
+-        q.subtopic,
+-        flag.user_note,
+-        q.question,
+-        flag.content_revision,
+-        flag.created_at,
+-        flag.updated_at,
+-        flag.resolved_at,
+-        flag.resolved_by_patch_id,
+-        flag.resolution_summary,
+-        flag.previous_flag_id,
+-      ]),
+-    ];
+-    const csv = '\ufeff' + rows.map(row => row.map(csvCell).join(',')).join('\r\n');
+-    const url = URL.createObjectURL(new Blob([csv], { type:'text/csv;charset=utf-8' }));
+-    const link = document.createElement('a');
+-    link.href = url;
+-    link.download = `${view === 'history' ? 'historial_observaciones' : 'preguntas_marcadas_revision'}_${isoDateLocal()}.csv`;
+-    document.body.appendChild(link);
+-    link.click();
+-    link.remove();
+-    URL.revokeObjectURL(url);
++    if (!cloudConfigured || !supa || !user) {
++      alert('La exportación completa requiere conexión autenticada a Supabase. No se generó un archivo basado solo en caché local.');
++      return;
++    }
++
++    const button = document.getElementById('download-review-flags');
++    const previousLabel = button?.textContent || '';
++    if (button) {
++      button.disabled = true;
++      button.textContent = 'Consultando Supabase…';
++    }
++
++    try {
++      const flagIds = uniqueNonEmpty(entries.map(({ flag }) => flag?.id));
++      const questionIds = uniqueNonEmpty(entries.map(({ q, flag }) => q?.id || flag?.question_id));
++      if (flagIds.length !== entries.length) throw new Error('Uno o más flags no tienen identificador persistente.');
++
++      const [flagsResult, questionsResult] = await Promise.all([
++        fetchAuthoritativeRowsByIds('question_review_flags', 'id', flagIds),
++        fetchAuthoritativeRowsByIds('questions', 'id', questionIds),
++      ]);
++      if (flagsResult.error) throw new Error(`No se pudieron descargar los flags actuales: ${flagsResult.error.message}`);
++      if (questionsResult.error) throw new Error(`No se pudieron descargar las preguntas actuales: ${questionsResult.error.message}`);
++
++      const authoritativeFlags = flagsResult.data || [];
++      const authoritativeQuestions = questionsResult.data || [];
++      const flagsById = new Map(authoritativeFlags.map(row => [String(row.id), row]));
++      const questionsById = new Map(authoritativeQuestions.map(row => [String(row.id), row]));
++      const missingFlagIds = flagIds.filter(id => !flagsById.has(id));
++      const missingQuestionIds = questionIds.filter(id => !questionsById.has(id));
++      if (missingFlagIds.length || missingQuestionIds.length) {
++        const details = [
++          missingFlagIds.length ? `flags faltantes: ${missingFlagIds.join(', ')}` : '',
++          missingQuestionIds.length ? `preguntas faltantes: ${missingQuestionIds.join(', ')}` : '',
++        ].filter(Boolean).join(' · ');
++        throw new Error(`Supabase devolvió un conjunto incompleto (${details}).`);
++      }
++
++      const exportedAt = new Date();
++      const exportBatchId = `REVIEW-PATCH-${compactExportTimestamp(exportedAt)}-${Math.random().toString(36).slice(2,8).toUpperCase()}`;
++      const orderedFlags = flagIds.map(id => flagsById.get(id));
++      const orderedQuestions = questionIds.map(id => questionsById.get(id));
++      const flagColumns = orderedUnionKeys(orderedFlags);
++      const questionColumns = orderedUnionKeys(orderedQuestions);
++      const metadataColumns = [
++        'export__schema_version',
++        'export__batch_id',
++        'export__generated_at',
++        'export__app_version',
++        'export__source',
++        'export__view',
++        'export__filter',
++        'export__is_complete',
++        'export__requested_flag_count',
++        'export__exported_flag_count',
++        'export__requested_question_count',
++        'export__exported_question_count',
++        'export__dataset_revision',
++        'export__flag_question_revision_match',
++        'export__flag_content_revision',
++        'export__question_record_version',
++        'export__question_content_sha256',
++        'export__question_updated_at',
++      ];
++      const headers = [
++        ...metadataColumns,
++        ...flagColumns.map(column => `flag__${column}`),
++        ...questionColumns.map(column => `question__${column}`),
++      ];
++
++      const rows = entries.map(({ flag:localFlag, q:localQuestion }) => {
++        const flag = flagsById.get(String(localFlag.id));
++        const question = questionsById.get(String(flag.question_id || localQuestion.id));
++        const flagRevision = String(flag.content_revision || '');
++        const questionRevision = String(question.record_version || question.content_revision || '');
++        const revisionMatch = flagRevision && questionRevision
++          ? (flagRevision === questionRevision ? 'SI' : 'NO')
++          : 'NO_DETERMINABLE';
++        const metadata = {
++          export__schema_version:'residentado-review-patch-csv-v1',
++          export__batch_id:exportBatchId,
++          export__generated_at:exportedAt.toISOString(),
++          export__app_version:APP_VERSION,
++          export__source:'SUPABASE_AUTHORITATIVE',
++          export__view:view,
++          export__filter:type,
++          export__is_complete:'SI',
++          export__requested_flag_count:flagIds.length,
++          export__exported_flag_count:authoritativeFlags.length,
++          export__requested_question_count:questionIds.length,
++          export__exported_question_count:authoritativeQuestions.length,
++          export__dataset_revision:datasetManifest?.dataset_revision || '',
++          export__flag_question_revision_match:revisionMatch,
++          export__flag_content_revision:flagRevision,
++          export__question_record_version:questionRevision,
++          export__question_content_sha256:question.content_sha256 || '',
++          export__question_updated_at:question.updated_at || '',
++        };
++        return [
++          ...metadataColumns.map(column => metadata[column]),
++          ...flagColumns.map(column => flag[column]),
++          ...questionColumns.map(column => question[column]),
++        ];
++      });
++
++      const csv = '\ufeff' + [headers, ...rows]
++        .map(row => row.map(patchCsvCell).join(','))
++        .join('\r\n');
++      const filename = `${view === 'history' ? 'residentado_historial_auditoria_completo' : 'residentado_revision_para_patch'}_${isoDateLocal()}_${compactExportTimestamp(exportedAt).slice(9,15)}.csv`;
++      downloadTextFile(filename, csv, 'text/csv;charset=utf-8');
++      alert(`CSV completo generado desde Supabase: ${rows.length} flags y ${questionIds.length} preguntas. Fuente: SUPABASE_AUTHORITATIVE.`);
++    } catch (error) {
++      console.error('No se pudo generar el CSV completo para auditoría y parche.', error);
++      alert(`No se generó el CSV: ${error?.message || error}`);
++    } finally {
++      if (button) {
++        button.disabled = false;
++        button.textContent = previousLabel;
++      }
++    }
+   }
+ 
+ 
+@@ -6524,7 +6656,7 @@
+     app.innerHTML = `<main class="shell">${topbar('Preguntas para revisar', true)}
+       <section class="panel review-flags-hero">
+         <div><h2>${isHistory ? 'Historial de auditoría' : 'Auditoría personal del banco'}</h2><p class="muted">${isHistory ? 'Las observaciones cerradas se conservan para saber qué se parchó, cuándo y con qué identificador.' : 'Los flags son independientes de tus respuestas y memoria. Al registrar un parche salen de esta cola, pero no se borran.'}</p></div>
+-        <div class="review-flags-actions"><button id="copy-review-flags" class="btn primary" type="button" ${entries.length?'':'disabled'}>Copiar ${isHistory ? 'historial' : 'lista'}</button><button id="download-review-flags" class="btn" type="button" ${entries.length?'':'disabled'}>Descargar CSV</button></div>
++        <div class="review-flags-actions"><button id="download-review-flags" class="btn primary" type="button" ${entries.length?'':'disabled'}>${isHistory ? 'Exportar historial completo CSV' : 'Exportar CSV completo para auditoría y parche'}</button></div>
+       </section>
+       <div class="review-flags-tabs" role="tablist" aria-label="Estado de observaciones">
+         <button class="btn ${isHistory ? 'ghost' : 'primary'}" type="button" data-review-view="open">Pendientes (${reviewFlags.length})</button>
+@@ -6538,7 +6670,7 @@
+         <div class="kpi"><div class="value">${closedCount}</div><div class="label">Historial</div></div>
+       </section>
+       <section class="panel review-flags-list-panel">
+-        <div class="section-head review-flags-filter-head"><div><h2>${isHistory ? 'Observaciones cerradas' : 'Lista marcada'}</h2><p class="muted">${isHistory ? 'Una nueva marca sobre la misma pregunta crea otro registro enlazado.' : 'Una pregunta conserva un solo motivo activo; puedes cambiarlo desde la corrección.'}</p></div>
++        <div class="section-head review-flags-filter-head"><div><h2>${isHistory ? 'Observaciones cerradas' : 'Lista marcada'}</h2><p class="muted">${isHistory ? 'La exportación consulta Supabase e incluye cada flag y la fila completa vigente de su pregunta.' : 'El CSV consulta Supabase al descargar, incluye todas las columnas actuales de flags y preguntas y no usa solo la caché local.'}</p></div>
+           <label class="review-flags-filter"><span>Mostrar</span><select id="review-flags-type" class="input"><option value="all" ${type==='all'?'selected':''}>Todos</option><option value="statement" ${type==='statement'?'selected':''}>Revisar enunciado</option><option value="explanation" ${type==='explanation'?'selected':''}>Revisar explicación</option><option value="general" ${type==='general'?'selected':''}>Revisar</option></select></label>
+         </div>
+         <div class="review-flag-card-list">${entries.length ? entries.map(({ flag, q }) => {
+@@ -6565,7 +6697,6 @@
+     attachTopbar();
+     document.querySelectorAll('[data-review-view]').forEach(btn => btn.onclick = () => renderReviewFlagsPage(type, btn.dataset.reviewView));
+     document.getElementById('review-flags-type').onchange = ev => renderReviewFlagsPage(ev.target.value, view);
+-    document.getElementById('copy-review-flags').onclick = () => copyReviewFlagsReport(type, view);
+     document.getElementById('download-review-flags').onclick = () => downloadReviewFlagsCsv(type, view);
+     document.querySelectorAll('[data-resolve-review-flag-list]').forEach(btn => {
+       btn.onclick = () => showResolveReviewFlagDialog(btn.dataset.resolveReviewFlagList, () => renderReviewFlagsPage(type, view));
+--- /mnt/data/work_v130_original/version.js	2026-08-05 22:55:28.000000000 +0000
++++ version.js	2026-08-07 01:56:50.836017544 +0000
+@@ -1,9 +1,9 @@
+ (function (root) {
+   'use strict';
+   root.RESIDENTADO_BUILD = Object.freeze({
+-    version: '1.3.0',
+-    cacheName: 'residentado-v1-3-0',
+-    releaseDate: '2026-08-05',
+-    releaseId: 'REL-20260805-V1.3.0',
++    version: '1.3.1',
++    cacheName: 'residentado-v1-3-1',
++    releaseDate: '2026-08-06',
++    releaseId: 'REL-20260806-V1.3.1',
+   });
+ })(typeof self !== 'undefined' ? self : globalThis);
+--- /mnt/data/work_v130_original/service-worker.js	2026-08-05 22:55:28.000000000 +0000
++++ service-worker.js	2026-08-07 01:56:50.836073647 +0000
+@@ -1,6 +1,6 @@
+ importScripts('./version.js');
+ 
+-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-3-0';
++const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-3-1';
+ const ASSETS = [
+   './',
+   './index.html',
+--- /mnt/data/work_v130_original/CHANGELOG.md	2026-08-05 22:55:28.000000000 +0000
++++ CHANGELOG.md	2026-08-07 01:56:50.836125434 +0000
+@@ -1,5 +1,17 @@
+ # Changelog - Residentado
+ 
++## v1.3.1 - 2026-08-06
++
++Release compatible construido sobre v1.3.0. No modifica sesiones, intentos, memoria, notas, preguntas ni Supabase.
++
++- sustituye la exportación simple de observaciones por un único CSV autosuficiente para auditoría y parche;
++- consulta directamente a Supabase, solo al pulsar exportar, las filas completas actuales de `question_review_flags` y `questions`;
++- exporta dinámicamente todas las columnas existentes, con prefijos `flag__` y `question__`;
++- añade metadatos de lote, versión, fuente autoritativa, conteos y revisión/hash para control de concurrencia;
++- impide exportar si no hay sesión autenticada o Supabase devuelve IDs incompletos;
++- conserva el contenido exacto de campos multilínea dentro de celdas CSV entrecomilladas;
++- elimina de la interfaz de flags la copia de texto y deja un solo botón de CSV completo.
++
+ ## v1.3.0 - 2026-08-05
+ 
+ Release funcional construido sobre v1.2.0. Conserva sus funciones y todos los guardrails de v1.1.1.
