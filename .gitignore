@@ -1,0 +1,23 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+*.bak
+.vscode/
+.idea/
+
+# Python / tests
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Node / browser tooling
+node_modules/
+playwright-report/
+test-results/
+
+# Local build outputs
+residentado-runtime-v*.zip
+*.log
