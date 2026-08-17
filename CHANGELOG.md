@@ -1,5 +1,18 @@
 # Changelog - Residentado
 
+## v1.3.4 - 2026-08-17
+
+Hotfix de ciclo de vida de sesiones conflictivas sobre v1.3.3. No modifica el plan de estudio, cobertura, memoria, retención ni selección de preguntas.
+
+- evita lanzar un guardado activo redundante justo antes de «Terminar y revisar respuestas»; el cierre persiste directamente el estado final con control optimista de revisión;
+- durante un cierre explícito, un PT409 ya no muestra la alerta bloqueante que decía que se continuaría en una recuperación; el flujo termina y navega a revisión como fue solicitado;
+- deduplica recuperaciones de forma persistente en IndexedDB, no solo mediante un `Map` válido durante una ejecución;
+- detecta sombras locales `conflict` huérfanas cuyo UUID ya no existe en Supabase; antes de retirarlas verifica o crea una recuperación equivalente y elimina operaciones obsoletas del outbox;
+- si una recuperación fue cerrada explícitamente, retira de forma optimista la sesión fuente que quedó activa por el conflicto usando `status=abandoned`, sin modificar su estado clínico/progreso y conservando la copia de recuperación;
+- elimina la sombra conflictiva local y sus operaciones pendientes después de preservar/comparar el progreso, evitando que la misma sesión vuelva a aparecer o vuelva a generar cadenas de duplicados;
+- conserva PT409, control por `state_revision`, UUID independiente para recuperaciones, lease entre pestañas e IndexedDB no destructivo;
+- no requiere migración SQL ni cambios manuales en Supabase.
+
 ## v1.3.3 - 2026-08-17
 
 Actualización metodológica preexamen basada en el progreso real exportado el 17/08/2026 y en una disponibilidad declarada de 6–7 h/día para preguntas + 2 h/día de Anki.

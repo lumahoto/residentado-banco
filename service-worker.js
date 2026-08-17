@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.3.3: plan adaptativo de cobertura final + reparación de memoria + cierre de sesiones fantasma.
+// v1.3.4: cierre robusto de recuperaciones y limpieza de sombras conflictivas huérfanas.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-3-3';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-3-4';
 const ASSETS = [
   './',
   './index.html',
