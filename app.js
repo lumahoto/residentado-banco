@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.3.2';
+  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.3.4';
   const LEARNING_NOTES_MIGRATION = 'MIGRATIONS/20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql';
   const TTS_CATALOG_TABLE = 'tts_topic_catalog';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
@@ -255,10 +255,117 @@
     };
   }
 
+  function recoveryRootSessionId(row = {}) {
+    const recovery = row?.config?.recovery || {};
+    return recovery.rootSessionId || recovery.sourceSessionId || row?.id || null;
+  }
+
+  function recoveryReferencesSource(candidate = {}, sourceRow = {}) {
+    if (!candidate?.config?.recovery || !sourceRow?.id) return false;
+    const recovery = candidate.config.recovery || {};
+    const sourceRoot = recoveryRootSessionId(sourceRow);
+    return recovery.sourceSessionId === sourceRow.id
+      || recovery.rootSessionId === sourceRow.id
+      || (sourceRoot && recovery.rootSessionId === sourceRoot);
+  }
+
+  async function localRecoveryFor(sourceRow, { allowCompleted = false, equivalentState = true } = {}) {
+    if (!sessionStore || !sourceRow?.id) return null;
+    const rows = sessionStore.getSessionsForUser
+      ? await sessionStore.getSessionsForUser(user?.id || sourceRow.user_id)
+      : await sessionStore.getAllSessions();
+    const sourceFingerprint = equivalentState ? sessionStateFingerprint(sourceRow.state || {}) : null;
+    return (rows || [])
+      .filter(candidate => candidate?.id !== sourceRow.id)
+      .filter(candidate => recoveryReferencesSource(candidate, sourceRow))
+      .filter(candidate => candidate.status === 'active' || (allowCompleted && candidate.status === 'completed'))
+      .filter(candidate => !equivalentState || sessionStateFingerprint(candidate.state || {}) === sourceFingerprint)
+      .sort((a,b) => new Date(b.completed_at || b.updated_at || b.localUpdatedAt || 0) - new Date(a.completed_at || a.updated_at || a.localUpdatedAt || 0))[0] || null;
+  }
+
+  async function clearSessionOutbox(sessionId) {
+    if (!sessionStore?.listOutbox || !sessionStore?.deleteOutbox || !sessionId) return;
+    const rows = await sessionStore.listOutbox();
+    for (const item of rows || []) {
+      const payload = item?.payload || {};
+      const payloadSessionId = payload.sessionId || payload.id || payload?.updatePayload?.id || null;
+      if (String(payloadSessionId || '') === String(sessionId)) await sessionStore.deleteOutbox(item.id);
+    }
+  }
+
+  async function retireLocalConflictShadow(row) {
+    if (!row?.id || !sessionStore) return;
+    await clearSessionOutbox(row.id);
+    await sessionStore.deleteSession(row.id);
+    sessionSyncBlocked.delete(row.id);
+    activeSessions = activeSessions.filter(item => item.id !== row.id);
+  }
+
+  async function retireRecoverySourceAfterClose(recoveryRow) {
+    const recovery = recoveryRow?.config?.recovery || {};
+    const sourceIds = [...new Set([recovery.sourceSessionId, recovery.rootSessionId].filter(Boolean))]
+      .filter(sourceId => sourceId !== recoveryRow?.id);
+    if (!sourceIds.length) return null;
+
+    // La copia de recuperación ya conserva el progreso local. Al cerrarla de forma
+    // explícita, las fuentes que quedaron activas solo por la cadena de conflicto dejan
+    // de tener una función útil. Se conserva su estado remoto intacto y solo se
+    // transicionan a `abandoned`, con control optimista de revisión.
+    let lastResult = null;
+    for (const sourceId of sourceIds) {
+      await clearSessionOutbox(sourceId);
+      const localSource = await sessionStore?.getSession?.(sourceId);
+      if (localSource?.syncStatus === 'conflict') await retireLocalConflictShadow(localSource);
+      if (!cloudConfigured || !user || !navigator.onLine) continue;
+
+      const { data:remote, error:readError } = await supa.from('practice_sessions').select('*').eq('id', sourceId).maybeSingle();
+      if (readError || !remote || remote.status !== 'active') {
+        if (remote && remote.status !== 'active') await saveSessionShadow({ ...remote, syncStatus:'synced', syncError:null }, 'synced');
+        lastResult = remote || lastResult;
+        continue;
+      }
+
+      const now = sessionNowIso();
+      const expectedRevision = Number(remote.state_revision || 0);
+      const { data, error } = await supa.from('practice_sessions')
+        .update({
+          status:'abandoned',
+          closed_reason:'superseded_by_completed_recovery',
+          updated_at:now,
+          last_synced_at:now,
+          client_app_version:APP_VERSION,
+          state_revision:expectedRevision + 1,
+        })
+        .eq('id', sourceId)
+        .eq('status', 'active')
+        .eq('state_revision', expectedRevision)
+        .select()
+        .maybeSingle();
+      if (!error && data) {
+        await saveSessionShadow({ ...data, syncStatus:'synced', syncError:null }, 'synced');
+        activeSessions = activeSessions.filter(item => item.id !== sourceId);
+        lastResult = data;
+      }
+    }
+    return lastResult;
+  }
+
   async function persistRecoverySession(sourceRow, reason = 'revision_conflict') {
     if (!sourceRow?.id) return null;
     const existingId = recoveryCreatedForSession.get(sourceRow.id);
-    if (existingId) return sessionStore?.getSession ? sessionStore.getSession(existingId) : activeSessions.find(row => row.id === existingId);
+    if (existingId) {
+      const mapped = sessionStore?.getSession ? await sessionStore.getSession(existingId) : activeSessions.find(row => row.id === existingId);
+      if (mapped?.status === 'active') return mapped;
+      recoveryCreatedForSession.delete(sourceRow.id);
+    }
+
+    // FIX-SESSION-012: la deduplicación de recuperaciones debe sobrevivir recargas.
+    // El Map anterior solo evitaba duplicados dentro de una misma ejecución.
+    const existingRecovery = await localRecoveryFor(sourceRow, { allowCompleted:false, equivalentState:true });
+    if (existingRecovery) {
+      recoveryCreatedForSession.set(sourceRow.id, existingRecovery.id);
+      return existingRecovery;
+    }
 
     let recovery = buildRecoverySessionRow(sourceRow, reason);
     recoveryCreatedForSession.set(sourceRow.id, recovery.id);
@@ -659,7 +766,7 @@
       sessionSyncBlocked.delete(recovery.id);
     }
 
-    if (!conflictNoticeShown.has(row.id)) {
+    if (!options.duringClose && !conflictNoticeShown.has(row.id)) {
       conflictNoticeShown.add(row.id);
       alert(recovery
         ? 'Se detectó una revisión distinta de esta sesión. Tu progreso local se conservó en una copia de recuperación y continuarás allí sin sobrescribir la otra copia.'
@@ -753,6 +860,17 @@
     if (!owner) return null;
     sessionSaveChain = sessionSaveChain.catch(() => null).then(() => syncSessionOwner(currentSessionOwner() || owner));
     return sessionSaveChain;
+  }
+
+  async function drainPendingSessionSaveWithoutWrite() {
+    // Al cerrar explícitamente una sesión no lanzamos un guardado activo adicional.
+    // Ese guardado era capaz de descubrir primero el PT409, crear una recuperación y
+    // mostrar una alerta de "continuarás allí" justo antes de que el usuario pidiera
+    // cerrar. Esperamos solamente cualquier escritura que ya estuviera en vuelo y el
+    // cierre final persiste el estado completo con control optimista de revisión.
+    clearTimeout(sessionSaveTimer);
+    sessionSaveTimer = null;
+    try { await sessionSaveChain; } catch {}
   }
 
   function beginSessionActivity() {
@@ -2545,13 +2663,43 @@
     const resolved = new Set();
     for (const local of conflictRows) {
       const remote = remoteById.get(local.id);
-      if (!remote || remote.status === 'active') continue;
 
-      // Si el servidor ya cerró la sesión, la sombra local conflictiva no debe seguir
-      // apareciendo como reanudable. Los intentos respondidos se guardan aparte.
-      await saveSessionShadow({ ...remote, syncStatus:'synced', syncError:null }, 'synced');
-      resolved.add(local.id);
-      sessionSyncBlocked.delete(local.id);
+      if (!remote) {
+        // FIX-SESSION-013: una sombra `conflict` sin fila remota es un huérfano.
+        // Antes de retirarla se exige evidencia persistente de recuperación equivalente;
+        // si no existe, se crea una sola copia con UUID nuevo. Luego se elimina también
+        // cualquier operación obsoleta del outbox para que el fantasma no resucite.
+        let preserved = await localRecoveryFor(local, { allowCompleted:true, equivalentState:true });
+        if (!preserved) preserved = await persistRecoverySession(local, 'orphan_conflict_shadow');
+        if (preserved) {
+          await retireLocalConflictShadow(local);
+          resolved.add(local.id);
+        }
+        continue;
+      }
+
+      if (remote.status !== 'active') {
+        // Si el servidor ya cerró la sesión, la sombra local conflictiva no debe seguir
+        // apareciendo como reanudable. Los intentos respondidos se guardan aparte.
+        await saveSessionShadow({ ...remote, syncStatus:'synced', syncError:null }, 'synced');
+        await clearSessionOutbox(local.id);
+        resolved.add(local.id);
+        sessionSyncBlocked.delete(local.id);
+        continue;
+      }
+
+      // Si la fuente remota continúa activa pero ya existe una recuperación completada
+      // equivalente, el usuario ya cerró explícitamente la copia preservada. Retiramos
+      // de forma optimista la fuente remota para impedir que vuelva a aparecer.
+      const completedRecovery = await localRecoveryFor(local, { allowCompleted:true, equivalentState:true });
+      if (completedRecovery?.status === 'completed') {
+        await retireRecoverySourceAfterClose(completedRecovery);
+        const { data:refetched } = await supa.from('practice_sessions').select('*').eq('id', local.id).maybeSingle();
+        if (!refetched || refetched.status !== 'active') {
+          await retireLocalConflictShadow(local);
+          resolved.add(local.id);
+        }
+      }
     }
 
     return localRows.filter(row => !(resolved.has(row.id) && row.status === 'active' && row.syncStatus === 'conflict'));
@@ -5066,10 +5214,12 @@
       const synced = { ...data, syncStatus:'synced' };
       await saveSessionShadow(synced, 'synced');
       upsertSessionInMemory(synced);
+      if (synced.config?.recovery) await retireRecoverySourceAfterClose(synced);
       return synced;
     }
 
     saveLocalSessions();
+    if (completed.config?.recovery) await retireRecoverySourceAfterClose(completed);
     return completed;
   }
 
@@ -5082,7 +5232,7 @@
       clearTimer();
       saveStudyDuration();
       endSessionActivity();
-      await flushCurrentSessionSave();
+      await drainPendingSessionSaveWithoutWrite();
       const savedAttempts = await ensureStudyAttempts(currentStudy, answeredQuestions);
       const state = studyStateSnapshot();
       await finalizeSessionRow(currentStudy, state, { partial:true });
@@ -5114,7 +5264,7 @@
     try {
       saveStudyDuration();
       endSessionActivity();
-      await flushCurrentSessionSave();
+      await drainPendingSessionSaveWithoutWrite();
       const study = currentStudy;
       const answeredQuestions = study.questions.filter(q => responseCountsAsAnswered(study.responses?.[q.id]));
       const savedStudyAttempts = await ensureStudyAttempts(study, answeredQuestions);
