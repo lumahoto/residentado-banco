@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.3.2: hotfix de reconciliación de sesiones; sin cambios al motor de programación.
+// v1.3.3: plan adaptativo de cobertura final + reparación de memoria + cierre de sesiones fantasma.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-3-2';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-3-3';
 const ASSETS = [
   './',
   './index.html',

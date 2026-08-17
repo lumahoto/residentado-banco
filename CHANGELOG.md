@@ -1,5 +1,28 @@
 # Changelog - Residentado
 
+## v1.3.3 - 2026-08-17
+
+Actualización metodológica preexamen basada en el progreso real exportado el 17/08/2026 y en una disponibilidad declarada de 6–7 h/día para preguntas + 2 h/día de Anki.
+
+- elimina la **deuda histórica acumulada** como controlador del plan diario; los días de viaje ya no generan una deuda imposible de recuperar antes del examen;
+- sustituye el calendario rígido por dos estados operativos: **Cobertura intensiva** hasta 10 días antes del examen y **Consolidación final** después;
+- calcula el objetivo de preguntas nuevas a partir de las preguntas válidas aún no vistas y de los días restantes hasta el cierre de primera vuelta;
+- crea `new_coverage`: primera vuelta estrictamente por rentabilidad **MUY_ALTA → ALTA → MEDIA → BAJA**, con prioridad adaptativa dentro de cada tier;
+- limita el bloque de repasos para que el backlog vencido no pueda volver a desplazar la cobertura nueva;
+- crea un bloque `fragile` basado en último error, duda o rendimiento reciente inestable;
+- `questionPriority` deja de arrastrar para siempre errores y lentitud antiguos: debilidad/velocidad se calculan con las últimas 5 exposiciones y `wrong_fast` con las últimas 3;
+- el bloque de velocidad solo incluye preguntas cuya **última** respuesta correcta sigue por encima de su objetivo; al volverse fluida sale automáticamente de esa cola;
+- impide que los bloques automáticos del mismo día reutilicen preguntas ya contestadas ese día;
+- elimina el fallback silencioso de colas vacías hacia `priority`, fuente de repeticiones inesperadas;
+- mantiene 93 % de retención para MUY_ALTA/ALTA durante cobertura intensiva; desde 28/08 sube MUY_ALTA/ALTA a 95 %, MEDIA a 93 % y deja BAJA en 90 %;
+- preserva el comportamiento histórico de retención hasta 17/08 para que la reconstrucción de memoria sea determinista;
+- `question_memory_state` se reconcilia contra `attempts` incluso cuando `last_attempt_at` coincide, corrigiendo drift de contadores/estabilidad;
+- un intento reenviado por sincronización ya no puede evolucionar la memoria por segunda vez;
+- resuelve sombras locales `conflict` cuyo registro remoto ya está cerrado y evita crear una nueva recuperación al cerrar una sesión que el servidor ya considera cerrada;
+- Mi Estado utiliza como denominador principal las preguntas **válidas/no observadas**, coherente con el corpus que usa el scheduler;
+- no requiere migración ni cambios manuales en Supabase.
+
+
 ## v1.3.2 - 2026-08-17
 
 Hotfix mínimo de sesiones sobre v1.3.1. **No modifica el algoritmo de memoria, `questionPriority`, `smartPool`, intervalos, retención objetivo, deuda ni metas del plan.**

@@ -629,14 +629,27 @@
     if (owner.kind === 'exam') owner.holder.state = normalizeSessionState(savedRow.state || owner.holder.state);
   }
 
-  async function handleSessionRevisionConflict(owner, row, error) {
+  async function handleSessionRevisionConflict(owner, row, error, options = {}) {
     // FIX-SESSION-002/003/004: stop stale writes, preserve local progress, and continue on a new revision-safe session.
     sessionSyncBlocked.add(row.id);
+    const { data:remote } = await supa.from('practice_sessions').select('*').eq('id', row.id).maybeSingle();
+
+    // v1.3.3: durante "Terminar / cerrar parcial", los intentos ya fueron persistidos
+    // antes de cerrar. Si el servidor confirma que la sesión ya está cerrada, crear
+    // otra recuperación activa solo produce una sesión fantasma.
+    if (options.duringClose && remote && remote.status !== 'active') {
+      const syncedRemote = { ...remote, syncStatus:'synced', syncError:null };
+      await saveSessionShadow(syncedRemote, 'synced');
+      sessionSyncBlocked.delete(row.id);
+      upsertSessionInMemory(syncedRemote);
+      activeSessions = activeSessions.filter(item => item.id !== row.id);
+      return syncedRemote;
+    }
+
     const conflicted = { ...row, syncStatus:'conflict', syncError:error?.message || 'SESSION_REVISION_CONFLICT_OR_NOT_ACTIVE' };
     await saveSessionShadow(conflicted, 'conflict');
     const recovery = await persistRecoverySession(conflicted, 'revision_conflict');
 
-    const { data:remote } = await supa.from('practice_sessions').select('*').eq('id', row.id).maybeSingle();
     if (remote) await saveSessionShadow({ ...remote, syncStatus:'synced' }, 'synced');
 
     if (owner && recovery) {
@@ -1877,8 +1890,31 @@
       || (date < PHASES[0].start ? PHASES[0] : PHASES[PHASES.length-1]);
   }
 
-  function targetRetention(date = isoDateLocal()) {
+  function targetRetention(date = isoDateLocal(), q = null) {
     const phase = currentPhase(date);
+
+    // v1.3.3 — retención por etapa y rentabilidad.
+    // Se preserva exactamente el comportamiento histórico hasta 2026-08-17 para que
+    // la reconstrucción determinista de memoria no reescriba el pasado.
+    if (date >= '2026-08-18') {
+      const tier = explicitRentabilityTier(q);
+      const high = tier.includes('MUY_ALTA') || tier.includes('MUY ALTA') || tier.startsWith('ALTA');
+
+      // Cobertura intensiva: proteger lo más rentable sin inflar todavía todos los repasos.
+      if (date <= '2026-08-27') {
+        if (high) return 0.93;
+        if (tier.includes('MEDIA')) return 0.91;
+        return 0.90;
+      }
+
+      // Últimos 9 días: máxima exigencia en MUY_ALTA/ALTA, intermedia en MEDIA.
+      if (date <= '2026-09-05') {
+        if (high) return 0.95;
+        if (tier.includes('MEDIA')) return 0.93;
+        return 0.90;
+      }
+    }
+
     if (phase.key === 'preexam') return 0.95;
     if (phase.key === 'close_gaps') return 0.93;
     return 0.90;
@@ -1970,7 +2006,7 @@
       consecutive += 1;
     }
 
-    const retention = targetRetention(isoDateLocal(now));
+    const retention = targetRetention(isoDateLocal(now), q);
     let intervalDays = stability * (Math.log(retention) / Math.log(0.9));
     if (rating === 1) {
       const wrongAndUncertain = Boolean(attempt.was_uncertain) && !attempt.is_correct;
@@ -2008,21 +2044,44 @@
     } else saveLocalMemory();
   }
 
+  function memoryStateComparable(state = {}) {
+    const dueMs = new Date(state.due_at || 0).getTime();
+    const lastMs = new Date(state.last_attempt_at || 0).getTime();
+    return {
+      difficulty:Number(state.difficulty || 0).toFixed(3),
+      stability_days:Number(state.stability_days || 0).toFixed(4),
+      due_at:Number.isFinite(dueMs) ? dueMs : 0,
+      consecutive_correct:Number(state.consecutive_correct || 0),
+      lapses:Number(state.lapses || 0),
+      last_result:state.last_result === true || state.last_result === 'true',
+      last_response_time_ms:Number(state.last_response_time_ms || 0),
+      speed_state:String(state.speed_state || ''),
+      last_attempt_at:Number.isFinite(lastMs) ? lastMs : 0,
+      last_interval_days:Number(state.last_interval_days || 0).toFixed(4),
+    };
+  }
+
+  function memoryStatesMateriallyDiffer(a, b) {
+    return JSON.stringify(memoryStateComparable(a)) !== JSON.stringify(memoryStateComparable(b));
+  }
+
   async function reconcileMemoryFromAttempts() {
+    // v1.3.3 — attempts es la fuente de verdad del scheduler.
+    // Reconstruye cada pregunta de forma determinista y corrige también drift con la
+    // misma last_attempt_at (el reconciliador previo solo detectaba memoria atrasada).
     rebuildMemoryMap();
     const byQ = new Map();
     for (const a of attempts) {
       if (!byQ.has(a.question_id)) byQ.set(a.question_id, []);
       byQ.get(a.question_id).push(a);
     }
+
     const rebuilt = [];
     for (const [qid, list] of byQ.entries()) {
       const q = questions.find(x => x.id === qid);
       if (!q) continue;
       list.sort((a,b) => new Date(a.answered_at) - new Date(b.answered_at));
-      const existing = memoryByQuestion.get(qid);
-      const latest = list[list.length-1];
-      if (existing?.last_attempt_at && new Date(existing.last_attempt_at) >= new Date(latest.answered_at)) continue;
+
       let state = null;
       for (const a of list) {
         const normalized = {
@@ -2032,9 +2091,17 @@
         };
         state = evolveMemory(state, normalized, q);
       }
-      if (state) rebuilt.push(state);
+
+      const existing = memoryByQuestion.get(qid);
+      if (state && (!existing || memoryStatesMateriallyDiffer(existing, state))) rebuilt.push(state);
     }
-    await upsertMemoryRows(rebuilt);
+
+    // Chunk pequeño y único al cargar. Evita 922 escrituras individuales.
+    const CHUNK = 250;
+    for (let i = 0; i < rebuilt.length; i += CHUNK) {
+      await upsertMemoryRows(rebuilt.slice(i, i + CHUNK));
+    }
+    if (rebuilt.length) console.info(`Memoria reconciliada desde intentos: ${rebuilt.length} pregunta(s).`);
   }
 
   function applyTtsCatalog(raw, source = 'unknown') {
@@ -2465,6 +2532,31 @@
     return { data:all, error:null };
   }
 
+  async function resolveClosedRemoteConflictShadows(localRows = []) {
+    if (!cloudConfigured || !user || !sessionStore) return localRows;
+    const conflictRows = localRows.filter(row => row.status === 'active' && row.syncStatus === 'conflict' && row.id);
+    if (!conflictRows.length) return localRows;
+
+    const ids = [...new Set(conflictRows.map(row => row.id))];
+    const { data, error } = await supa.from('practice_sessions').select('*').in('id', ids);
+    if (error) return localRows;
+
+    const remoteById = new Map((data || []).map(row => [row.id, row]));
+    const resolved = new Set();
+    for (const local of conflictRows) {
+      const remote = remoteById.get(local.id);
+      if (!remote || remote.status === 'active') continue;
+
+      // Si el servidor ya cerró la sesión, la sombra local conflictiva no debe seguir
+      // apareciendo como reanudable. Los intentos respondidos se guardan aparte.
+      await saveSessionShadow({ ...remote, syncStatus:'synced', syncError:null }, 'synced');
+      resolved.add(local.id);
+      sessionSyncBlocked.delete(local.id);
+    }
+
+    return localRows.filter(row => !(resolved.has(row.id) && row.status === 'active' && row.syncStatus === 'conflict'));
+  }
+
   async function loadCloudData() {
     clearTimer();
     app.innerHTML = `<div class="splash"><div class="logo-mark">R</div><p>Sincronizando cambios…</p></div>`;
@@ -2524,9 +2616,10 @@
       fetchCompletedSessionsPage(0),
     ]);
     historyHasMore = firstHistoryPage.hasMore;
-    const localSessionRows = sessionStore?.getSessionsForUser
+    const localSessionRowsRaw = sessionStore?.getSessionsForUser
       ? await sessionStore.getSessionsForUser(user.id)
       : (sessionStore ? await sessionStore.getAllSessions() : []);
+    const localSessionRows = await resolveClosedRemoteConflictShadows(localSessionRowsRaw);
     const recoveryRows = await preserveStaleLocalSessionCopies(sRes.error ? [] : (sRes.data || []), localSessionRows);
     const localRowsWithRecoveries = [...localSessionRows, ...recoveryRows];
     const localActive = localRowsWithRecoveries.filter(row => row.status === 'active');
@@ -2789,14 +2882,17 @@
   function attemptsForQuestion(qid) { return attempts.filter(a => a.question_id === qid); }
 
   function extendedQuestionStats(q) {
-    const qa = attemptsForQuestion(q.id);
-    const positive = qa.map(a => Number(a.response_time_ms || 0)).filter(v => v > 0);
-    const correct = qa.filter(a => a.is_correct).length;
-    const wrong = qa.length - correct;
+    const qa = attemptsForQuestion(q.id)
+      .slice()
+      .sort((a,b) => new Date(a.answered_at) - new Date(b.answered_at));
+    const recent = qa.slice(-5);
+    const positive = recent.map(a => Number(a.response_time_ms || 0)).filter(v => v > 0);
+    const correct = recent.filter(a => a.is_correct).length;
+    const wrong = recent.length - correct;
     const avgMs = positive.length ? positive.reduce((s,v)=>s+v,0)/positive.length : null;
     const targetMs = effectiveTargetSeconds(q) * 1000;
-    const fluent = qa.filter(a => a.is_correct && Number(a.response_time_ms || 0) <= Number(a.target_seconds || targetMs / 1000) * 1000).length;
-    return { seen:qa.length, correct, wrong, avgMs, fluent };
+    const fluent = recent.filter(a => a.is_correct && Number(a.response_time_ms || 0) <= Number(a.target_seconds || targetMs / 1000) * 1000).length;
+    return { seen:qa.length, recentN:recent.length, correct, wrong, avgMs, fluent };
   }
 
   function rentabilityWeight(q) {
@@ -2820,7 +2916,7 @@
     const latestAttempt = qAttempts.length
       ? qAttempts.slice().sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0]
       : null;
-    const retention = targetRetention(isoDateLocal(now));
+    const retention = targetRetention(isoDateLocal(now), q);
     const duePressure = state
       ? Math.max(0, retention - recall) * 8 + Math.max(0, (now - new Date(state.due_at)) / 86400000) * 0.35
       : 2.2;
@@ -2829,13 +2925,45 @@
     const speed = s.avgMs ? Math.max(0, (s.avgMs / 1000 - targetSeconds) / 15) : 0.8;
     const rent = rentabilityWeight(q) * 2.6;
     const unseen = s.seen ? 0 : 1.2;
-    const wrongFast = qAttempts.some(a => a.speed_bucket === 'wrong_fast') ? 1.2 : 0;
+    const wrongFast = qAttempts.slice(-3).some(a => a.speed_bucket === 'wrong_fast') ? 1.2 : 0;
     const uncertainty = latestAttempt?.was_uncertain
       ? (latestAttempt.is_correct ? 1.4 : 2.6)
       : 0;
     const wrongUncertainBoost = latestAttempt?.was_uncertain && !latestAttempt?.is_correct ? 1.4 : 0;
     const observedPenalty = observed(q) ? -2.5 : 0;
     return duePressure + weakness + speed + rent + unseen + wrongFast + uncertainty + wrongUncertainBoost + observedPenalty;
+  }
+
+  function rentabilityTierRank(q) {
+    const tier = explicitRentabilityTier(q);
+    if (tier.includes('MUY_ALTA') || tier.includes('MUY ALTA')) return 4;
+    if (tier.startsWith('ALTA')) return 3;
+    if (tier.includes('MEDIA')) return 2;
+    if (tier.includes('BAJA')) return 1;
+    return 0;
+  }
+
+  function unseenCoveragePool(now = new Date()) {
+    const seen = new Set(attempts.map(a => a.question_id));
+    const unseen = questions.filter(q => !observed(q) && !seen.has(q.id));
+    const ordered = [];
+    for (const rank of [4,3,2,1,0]) {
+      ordered.push(...sortByPriority(unseen.filter(q => rentabilityTierRank(q) === rank), now, { diversifyYears:true, tolerance:0.75 }));
+    }
+    return ordered;
+  }
+
+  function latestAttemptsMap() {
+    const latest = new Map();
+    for (const attempt of attempts) {
+      const prev = latest.get(attempt.question_id);
+      if (!prev || new Date(attempt.answered_at) > new Date(prev.answered_at)) latest.set(attempt.question_id, attempt);
+    }
+    return latest;
+  }
+
+  function attemptedTodayIds(dateIso = isoDateLocal()) {
+    return new Set(attempts.filter(a => isoDateLocal(a.answered_at) === dateIso).map(a => a.question_id));
   }
 
   function smartPool(kind = 'priority') {
@@ -2854,6 +2982,22 @@
       const unseen = nonObserved.filter(q => !attempts.some(a => a.question_id === q.id));
       return sortByPriority(unseen, now, { diversifyYears:true, tolerance:0.75 });
     }
+    if (kind === 'new_coverage') {
+      // Primera vuelta: MUY_ALTA → ALTA → MEDIA → BAJA, y dentro de cada tier
+      // conserva el orden adaptativo por prioridad/rentabilidad.
+      return unseenCoveragePool(now);
+    }
+    if (kind === 'fragile') {
+      const latest = latestAttemptsMap();
+      const fragile = nonObserved.filter(q => {
+        const a = latest.get(q.id);
+        if (!a) return false;
+        if (!a.is_correct || a.was_uncertain) return true;
+        const qa = attemptsForQuestion(q.id).slice(-3);
+        return qa.length >= 2 && qa.filter(x => x.is_correct).length / qa.length < 0.67;
+      });
+      return sortByPriority(fragile, now, { diversifyYears:true, tolerance:0.45 });
+    }
     if (kind === 'errors') {
       const ids = new Set(attempts.filter(a => !a.is_correct).map(a => a.question_id));
       return sortByPriority(nonObserved.filter(q => ids.has(q.id)), now, { diversifyYears:true, tolerance:0.5 });
@@ -2871,10 +3015,17 @@
       );
     }
     if (kind === 'speed') {
+      const latest = latestAttemptsMap();
+      const ratio = q => {
+        const a = latest.get(q.id);
+        const target = Number(a?.target_seconds || effectiveTargetSeconds(q));
+        return target > 0 ? (Number(a?.response_time_ms || 0) / 1000) / target : 0;
+      };
       return nonObserved.filter(q => {
-        const s = extendedQuestionStats(q);
-        return s.seen && (s.avgMs || 0) > effectiveTargetSeconds(q) * 1000;
-      }).sort((a,b) => (extendedQuestionStats(b).avgMs||0) - (extendedQuestionStats(a).avgMs||0));
+        const a = latest.get(q.id);
+        if (!a || !a.is_correct || a.was_uncertain) return false;
+        return ratio(q) > 1;
+      }).sort((a,b) => ratio(b) - ratio(a));
     }
     if (kind === 'high') {
       const high = nonObserved.filter(isHighRentability);
@@ -3313,48 +3464,121 @@
 
   function dailyActual(dateIso) { return attempts.filter(a => isoDateLocal(a.answered_at) === dateIso).length; }
 
-  function cumulativeDebt(todayIso = isoDateLocal()) {
-    const start = profile?.plan_start_date || DEFAULT_PROFILE.plan_start_date;
-    const yesterday = new Date(parseLocalDate(todayIso).getTime() - 86400000);
-    const endIso = isoDateLocal(yesterday);
-    if (endIso < start) return 0;
-    let expected = 0;
-    for (let d = parseLocalDate(start); d <= parseLocalDate(endIso); d = new Date(d.getTime()+86400000)) expected += currentPhase(isoDateLocal(d)).target;
-    const actual = attempts.filter(a => {
-      const ad = isoDateLocal(a.answered_at);
-      return ad >= start && ad <= endIso;
-    }).length;
-    return Math.max(0, expected - actual);
+  function planCoverageSnapshot(now = new Date()) {
+    const valid = questions.filter(q => !observed(q));
+    const seen = new Set(attempts.map(a => a.question_id));
+    const unseen = valid.filter(q => !seen.has(q.id));
+    const due = valid.filter(q => {
+      const st = memoryByQuestion.get(q.id);
+      return st?.due_at && new Date(st.due_at) <= now;
+    });
+    const highDue = due.filter(q => rentabilityTierRank(q) >= 3);
+    const highUnseen = unseen.filter(q => rentabilityTierRank(q) >= 3);
+    const valuableUnseen = unseen.filter(q => rentabilityTierRank(q) >= 2);
+    return {
+      validTotal:valid.length,
+      seenValid:valid.length - unseen.length,
+      unseenTotal:unseen.length,
+      highUnseen:highUnseen.length,
+      valuableUnseen:valuableUnseen.length,
+      dueTotal:due.length,
+      highDue:highDue.length,
+    };
+  }
+
+  function coverageDeadlineIso() {
+    const exam = profile?.exam_date || DEFAULT_PROFILE.exam_date;
+    return shiftLocalDate(exam, -10);
   }
 
   function buildTodayPlan() {
     const today = isoDateLocal();
-    const phase = currentPhase(today);
-    const debt = cumulativeDebt(today);
-    const recovery = Math.min(60, Math.ceil(debt / 4));
-    const done = dailyActual(today);
-    let specs;
-    if (phase.key === 'expansion') specs = [['due',35,'🧠 Repasos prioritarios'],['priority',35,'🎯 Alta prioridad personal'],['new',90,'📚 Preguntas nuevas'],['speed',20,'⚡ Velocidad ≤25 s']];
-    else if (phase.key === 'travel_review') specs = [['due',45,'🧠 Repasos vencidos'],['errors',35,'❌ Errores y conceptos frágiles'],['speed',20,'⚡ Velocidad'],['new',20,'📚 Nuevas si queda capacidad']];
-    else if (phase.key === 'max_expansion') specs = [['due',45,'🧠 Repasos'],['priority',45,'🎯 Alta prioridad'],['new',110,'📚 Preguntas nuevas'],['speed',20,'⚡ Velocidad']];
-    else if (phase.key === 'travel_maintenance') specs = [['due',40,'🧠 Repasos que no pueden esperar'],['priority',30,'🎯 Alta prioridad'],['speed',20,'⚡ Velocidad'],['new',10,'📚 Nuevas opcionales']];
-    else if (phase.key === 'close_gaps') specs = [['due',50,'🧠 Repasos'],['priority',80,'🔥 Cierre de brechas'],['speed',30,'⚡ Automatización'],['high',60,'🎯 Temas rentables']];
-    else if (phase.key === 'preexam') specs = [['due',50,'🧠 Mantener memoria'],['priority',40,'🔥 Debilidades críticas'],['speed',30,'⚡ Velocidad'],['mixed',40,'📝 Bloque mixto tipo examen']];
-    else specs = [];
-    if (recovery && specs.length) specs[1][1] += recovery;
+    const now = new Date();
+    const stats = planCoverageSnapshot(now);
+    const exam = profile?.exam_date || DEFAULT_PROFILE.exam_date;
+    const daysExam = Math.max(0, daysUntil(exam));
+    const deadline = coverageDeadlineIso();
+    const coverageDaysLeft = Math.max(1, Math.floor(daysBetween(today, deadline)) + 1);
+    const coverageSprint = today <= deadline && stats.unseenTotal > 0;
+
+    let specs = [];
+    let phase;
+
+    if (daysExam <= 0) {
+      phase = { key:'exam', name:'Día del examen', objective:'Ejecutar. No aprender temas grandes nuevos.' };
+    } else if (coverageSprint) {
+      // El volumen nuevo se deriva de lo que falta y de una fecha de cierre de primera
+      // vuelta situada 10 días antes del examen. No existe deuda histórica por viajes.
+      const newTarget = Math.min(140, Math.max(1, Math.ceil(stats.unseenTotal / coverageDaysLeft)));
+
+      // El backlog MUY_ALTA/ALTA se intenta normalizar en ~5 días sin permitir que
+      // vuelva a desplazar la cobertura nueva.
+      const dueTarget = stats.dueTotal
+        ? Math.min(110, Math.max(50, Math.ceil((stats.highDue + Math.max(0, stats.dueTotal - stats.highDue) * 0.35) / 5)))
+        : 0;
+
+      const fragileTarget = Math.min(25, smartPool('fragile').length);
+      const speedTarget = Math.min(20, smartPool('speed').length);
+
+      specs = [
+        ['due', dueTarget, '🧠 Repasos rentables'],
+        ['new_coverage', newTarget, '🚀 Cobertura nueva'],
+        ['fragile', fragileTarget, '🧩 Errores y dudas'],
+        ['speed', speedTarget, '⚡ Automatización'],
+      ];
+      phase = {
+        key:'coverage_sprint',
+        name:'Cobertura intensiva',
+        objective:`Cerrar la primera vuelta útil antes del ${new Date(parseLocalDate(deadline)).toLocaleDateString('es-PE',{day:'2-digit',month:'2-digit'})}, priorizando ALTA antes de MEDIA.`,
+      };
+    } else {
+      const residualNew = stats.valuableUnseen > 0
+        ? Math.min(60, stats.valuableUnseen)
+        : Math.min(20, stats.unseenTotal);
+      const dueTarget = stats.dueTotal ? Math.min(120, Math.max(70, Math.ceil(stats.dueTotal / 3))) : 0;
+      const fragileTarget = Math.min(40, smartPool('fragile').length);
+      const speedTarget = Math.min(20, smartPool('speed').length);
+      const mixedTarget = residualNew > 0 ? 60 : 80;
+
+      specs = [
+        ['due', dueTarget, '🧠 Mantener memoria'],
+        ['mixed', mixedTarget, '📝 Bloque mixto tipo examen'],
+        ['fragile', fragileTarget, '🔥 Errores y dudas'],
+        ['speed', speedTarget, '⚡ Automatización'],
+        ['new_coverage', residualNew, '📚 Cobertura residual'],
+      ];
+      phase = {
+        key:'final_consolidation',
+        name:'Consolidación final',
+        objective:'Convertir cobertura en rendimiento: memoria rentable, errores/dudas, velocidad y bloques tipo examen.',
+      };
+    }
 
     const pilotLimited = questions.length < 200;
-    const tasks = specs.map(([kind,plannedCount,label], idx) => {
+    const tasks = specs.filter(([,plannedCount]) => plannedCount > 0).map(([kind,plannedCount,label], idx) => {
       const mode = `auto_${kind}`;
       const completed = attempts.filter(a => isoDateLocal(a.answered_at) === today && a.study_mode === mode).length;
       const poolKind = kind === 'mixed' ? 'priority' : kind;
-      const available = smartPool(poolKind).length;
+      const available = smartPool(poolKind).filter(q => !attemptedTodayIds(today).has(q.id)).length;
       const count = pilotLimited ? Math.min(plannedCount, completed + available) : plannedCount;
       return { id:`task_${idx}`, kind, mode, label, count, completed:Math.min(completed,count), remaining:Math.max(0,count-completed) };
     }).filter(t => t.count > 0);
-    const adjustedTarget = pilotLimited ? tasks.reduce((sum,t)=>sum+t.count,0) : phase.target + recovery;
+
+    const adjustedTarget = tasks.reduce((sum,t)=>sum+t.count,0);
+    const done = tasks.reduce((sum,t)=>sum+t.completed,0);
+    const otherToday = Math.max(0, dailyActual(today) - done);
     const next = tasks.find(t => t.remaining > 0) || null;
-    return { today, phase, debt, recovery, done, adjustedTarget, tasks, next };
+    const maxCoverageCapacity = coverageDaysLeft * 140;
+    const coverageRisk = coverageSprint && stats.unseenTotal > maxCoverageCapacity;
+
+    return {
+      today, phase, done, otherToday, adjustedTarget, tasks, next,
+      coverageDeadline:deadline,
+      coverageDaysLeft,
+      coverageRisk,
+      stats,
+      daysExam,
+    };
   }
 
   function topicRoadmap() {
@@ -3372,17 +3596,28 @@
   }
 
   function readinessIndicator() {
-    const recent = attempts.filter(a => {
-      const q = questions.find(x=>x.id===a.question_id); return q && !observed(q);
-    }).slice(-100);
+    const validQuestions = questions.filter(q => !observed(q));
+    const validIds = new Set(validQuestions.map(q => q.id));
+    const recent = attempts.filter(a => validIds.has(a.question_id)).slice(-100);
     const acc = recent.length ? recent.filter(a=>a.is_correct).length/recent.length : 0;
-    const speed = recent.length ? recent.filter(a=>a.is_correct && Number(a.response_time_ms||0) <= Number(profile?.target_response_seconds||25)*1000).length/recent.length : 0;
-    const coverage = questions.length ? new Set(attempts.map(a=>a.question_id)).size/questions.length : 0;
-    const relevantStates = memoryStates.filter(s => questions.some(q=>q.id===s.question_id && !observed(q)));
+    const speed = recent.length ? recent.filter(a=>a.is_correct && Number(a.response_time_ms||0) <= Number(a.target_seconds || profile?.target_response_seconds||25)*1000).length/recent.length : 0;
+
+    const seen = new Set(attempts.filter(a => validIds.has(a.question_id)).map(a=>a.question_id));
+    const high = validQuestions.filter(q => rentabilityTierRank(q) >= 3);
+    const medium = validQuestions.filter(q => rentabilityTierRank(q) === 2);
+    const highCoverage = high.length ? high.filter(q => seen.has(q.id)).length / high.length : 1;
+    const mediumCoverage = medium.length ? medium.filter(q => seen.has(q.id)).length / medium.length : 1;
+    const usefulCoverage = 0.72 * highCoverage + 0.28 * mediumCoverage;
+
+    const relevantStates = memoryStates.filter(s => {
+      const q = questions.find(q => q.id === s.question_id);
+      return q && !observed(q) && rentabilityTierRank(q) >= 2;
+    });
     const overdue = relevantStates.filter(s=>new Date(s.due_at)<=new Date()).length;
     const reviewControl = relevantStates.length ? 1-overdue/relevantStates.length : 0;
-    const value = Math.round(100*(0.40*acc + 0.25*speed + 0.20*coverage + 0.15*reviewControl));
-    return { value, acc, speed, coverage, reviewControl, recentN:recent.length };
+
+    const value = Math.round(100*(0.35*acc + 0.15*speed + 0.30*usefulCoverage + 0.20*reviewControl));
+    return { value, acc, speed, coverage:usefulCoverage, highCoverage, mediumCoverage, reviewControl, recentN:recent.length };
   }
 
   function sevenDayPace() {
@@ -3394,12 +3629,14 @@
 
   function pressureStatus(plan) {
     if (!plan.adjustedTarget) return { cls:'ok', label:'DÍA DEL EXAMEN' };
-    const hour = new Date().getHours() + new Date().getMinutes()/60;
-    const expectedFraction = clamp((hour-8)/14, 0.05, 1);
-    const expectedNow = plan.adjustedTarget * expectedFraction;
+    if (plan.coverageRisk) return { cls:'bad', label:'COBERTURA EN RIESGO' };
     if (plan.done >= plan.adjustedTarget) return { cls:'ok', label:'META CUMPLIDA' };
-    if (plan.debt > plan.phase.target*1.5 || plan.done < expectedNow*0.65) return { cls:'bad', label:'PLAN EN RIESGO' };
-    return { cls:'warn', label:'EN RUTA, PERO EXIGENTE' };
+
+    const hour = new Date().getHours() + new Date().getMinutes()/60;
+    const expectedFraction = clamp((hour - 8) / 12, 0, 1);
+    const expectedNow = plan.adjustedTarget * expectedFraction;
+    if (expectedFraction > 0.35 && plan.done < expectedNow * 0.55) return { cls:'warn', label:'RITMO BAJO HOY' };
+    return { cls:'ok', label:plan.phase.key === 'coverage_sprint' ? 'COBERTURA INTENSIVA' : 'CONSOLIDACIÓN' };
   }
 
   function activeSessionUpdatedAt(row = {}) {
@@ -3451,10 +3688,15 @@
   function launchAutoTask(task) {
     if (!task) return renderMessage('Plan de hoy', 'La checklist principal está completa. Puedes adelantar trabajo desde Practicar.');
     const poolKind = task.kind === 'mixed' ? 'priority' : task.kind;
-    let pool = smartPool(poolKind);
-    if (!pool.length) pool = smartPool('priority');
+    const usedToday = attemptedTodayIds();
+    let pool = smartPool(poolKind).filter(q => !usedToday.has(q.id));
+
+    // Una cola especializada vacía no debe degradar silenciosamente a "priority":
+    // eso era una fuente de repeticiones inesperadas. Solo mixed puede usar priority.
+    if (!pool.length && task.kind === 'mixed') pool = smartPool('priority').filter(q => !usedToday.has(q.id));
+
     const count = Math.min(task.remaining, pool.length);
-    if (!count) return renderMessage('Sin preguntas disponibles', 'El piloto actual no tiene suficientes preguntas para esta tarea. El motor funcionará con el banco completo.');
+    if (!count) return renderMessage('Sin preguntas disponibles', 'No quedan preguntas elegibles para este bloque hoy. Continúa con la siguiente tarea o usa Practicar.');
     const selected = pool.slice(0, count);
     const feedback = task.kind === 'mixed' ? 'end' : 'immediate';
     launchStudy(selected, {
@@ -3890,7 +4132,7 @@
     const dueCount = smartPool('due').length;
     const slowCount = smartPool('speed').length;
     const daysExam = daysUntil(profile?.exam_date || DEFAULT_PROFILE.exam_date);
-    const daysReady = daysUntil(profile?.readiness_target_date || DEFAULT_PROFILE.readiness_target_date);
+    const daysReady = daysUntil(plan.coverageDeadline || coverageDeadlineIso());
     const pace7 = sevenDayPace();
     const completion = plan.adjustedTarget ? Math.min(100, Math.round(plan.done/plan.adjustedTarget*100)) : 100;
     // Las sesiones automáticas pertenecen al checklist del día en que se crearon.
@@ -3909,14 +4151,14 @@
       ${questions.length < 200 ? `<div class="banner"><strong>Piloto de 20 preguntas:</strong> la carga diaria se escala temporalmente al contenido disponible. Las metas completas se activarán al importar el banco maestro.</div>` : ''}
 
       <section class="briefing panel">
-        <div class="briefing-main"><span class="status-pill ${status.cls}">${status.label}</span><h2>Plan 75+/80 · ${esc(plan.phase.name)}</h2><p>${esc(plan.phase.objective)}</p><div class="briefing-dates"><span><strong>${Math.max(0,daysExam)}</strong> días al examen</span><span><strong>${Math.max(0,daysReady)}</strong> días a la meta de estar listo</span></div></div>
-        <div class="goal compact-goal"><small>Preparación estimada*</small><div class="big">${ready.value}%</div><small>*indicador interno, no predicción de nota</small></div>
+        <div class="briefing-main"><span class="status-pill ${status.cls}">${status.label}</span><h2>Plan 75+/80 · ${esc(plan.phase.name)}</h2><p>${esc(plan.phase.objective)}</p><div class="briefing-dates"><span><strong>${Math.max(0,daysExam)}</strong> días al examen</span><span><strong>${Math.max(0,daysReady)}</strong> días para cerrar primera vuelta útil</span></div></div>
+        <div class="goal compact-goal"><small>Preparación operativa*</small><div class="big">${ready.value}%</div><small>*indicador interno, no predicción de nota</small></div>
       </section>
 
       <section class="plan-progress panel">
-        <div class="plan-progress-head"><div><strong>HOY</strong><div class="muted">${plan.done} de ${plan.adjustedTarget} preguntas objetivo${plan.recovery?` · incluye +${plan.recovery} de recuperación`:''}</div></div><div class="plan-percent">${completion}%</div></div>
+        <div class="plan-progress-head"><div><strong>HOY</strong><div class="muted">${plan.done} de ${plan.adjustedTarget} preguntas planificadas${plan.otherToday?` · ${plan.otherToday} adicionales ya hechas`:''}</div></div><div class="plan-percent">${completion}%</div></div>
         <div class="meter"><div style="width:${completion}%"></div></div>
-        <div class="plan-meta"><span>Deuda acumulada: <strong>${plan.debt}</strong></span><span>Ritmo 7 días: <strong>${pace7.toFixed(0)}/día</strong></span><span>Repasos vencidos: <strong>${dueCount}</strong></span><span>Lentas: <strong>${slowCount}</strong></span></div>
+        <div class="plan-meta"><span>Por ver válidas: <strong>${plan.stats.unseenTotal}</strong></span><span>ALTA/MUY_ALTA por ver: <strong>${plan.stats.highUnseen}</strong></span><span>Vencidas rentables: <strong>${plan.stats.highDue}</strong></span><span>Ritmo 7 días: <strong>${pace7.toFixed(0)}/día</strong></span><span>Lentas: <strong>${slowCount}</strong></span></div>
       </section>
 
       ${priorityReadingAlertMarkup(readingAlert, 'dashboard-reading')}
@@ -4810,7 +5052,12 @@
       }
       if (!data) {
         const conflictSource = { ...row, state:normalizedState, answered_count:answeredCount, active_time_ms:completed.active_time_ms, paused_time_ms:completed.paused_time_ms };
-        const recovered = await handleSessionRevisionConflict({ kind:holder === currentExam ? 'exam' : 'study', holder, row, state:normalizedState }, conflictSource, { message:'SESSION_REVISION_CONFLICT_OR_NOT_ACTIVE', code:'PT409' });
+        const recovered = await handleSessionRevisionConflict(
+          { kind:holder === currentExam ? 'exam' : 'study', holder, row, state:normalizedState },
+          conflictSource,
+          { message:'SESSION_REVISION_CONFLICT_OR_NOT_ACTIVE', code:'PT409' },
+          { duringClose:true }
+        );
         if (retryAfterConflict && recovered?.id && holder?.row?.id === recovered.id) {
           return finalizeSessionRow(holder, normalizedState, { partial, retryAfterConflict:false });
         }
@@ -5704,6 +5951,14 @@
       const q = questions.find(x => x.id === attempt.question_id);
       if (!q) continue;
       const prev = memoryByQuestion.get(q.id) || null;
+      const attemptAt = new Date(attempt.answered_at || 0);
+      const prevAt = prev?.last_attempt_at ? new Date(prev.last_attempt_at) : null;
+
+      // v1.3.3 — idempotencia: un upsert/reintento del mismo intento no puede
+      // volver a hacer evolucionar la memoria. Los intentos tardíos se reparan
+      // determinísticamente en reconcileMemoryFromAttempts().
+      if (prevAt && Number.isFinite(prevAt.getTime()) && Number.isFinite(attemptAt.getTime()) && attemptAt <= prevAt) continue;
+
       const evolved = evolveMemory(prev, attempt, q);
       memoryByQuestion.set(q.id, evolved);
       nextRows.push(evolved);
@@ -5884,6 +6139,11 @@
       specific_questions:'Preguntas específicas',
       topic_coverage:'Cobertura por tema',
       topic_unseen:'No vistas del tema',
+      auto_due:'Plan · repasos',
+      auto_new_coverage:'Plan · cobertura nueva',
+      auto_fragile:'Plan · errores y dudas',
+      auto_speed:'Plan · automatización',
+      auto_mixed:'Plan · bloque mixto',
     };
     if (labels[mode]) return labels[mode];
     if (String(mode).startsWith('practice_')) return `Práctica · ${String(mode).replace('practice_','').replaceAll('_',' ')}`;
@@ -6904,37 +7164,41 @@
 
   function renderStats(topicSort = 'rentability', coverageView = 'topics') {
     clearTimer();
+    const statsQuestions = questions.filter(q => !observed(q));
+    const statsIds = new Set(statsQuestions.map(q => q.id));
+    const statsAttempts = attempts.filter(a => statsIds.has(a.question_id));
+    const statsMemory = memoryStates.filter(row => statsIds.has(row.question_id));
     const coverage = W3Tools.buildCoverageSnapshot
-      ? W3Tools.buildCoverageSnapshot(questions, attempts, memoryStates, new Date())
-      : { totalQuestions:questions.length, seenQuestions:overallStats().answered, correctEverQuestions:new Set(attempts.filter(a=>a.is_correct).map(a=>a.question_id)).size, totalTopics:0, touchedTopics:0, completeTopics:0, topics:[] };
+      ? W3Tools.buildCoverageSnapshot(statsQuestions, statsAttempts, statsMemory, new Date())
+      : { totalQuestions:statsQuestions.length, seenQuestions:new Set(statsAttempts.map(a=>a.question_id)).size, correctEverQuestions:new Set(statsAttempts.filter(a=>a.is_correct).map(a=>a.question_id)).size, totalTopics:0, touchedTopics:0, completeTopics:0, topics:[] };
     const timeSummary = W3Tools.buildTimeSummary
-      ? W3Tools.buildTimeSummary(attempts, completedSessions, questions.length, new Date())
-      : { todayQuestions:dailyActual(isoDateLocal()), activeMsToday:attempts.filter(a=>isoDateLocal(a.answered_at)===isoDateLocal()).reduce((sum,a)=>sum+Number(a.response_time_ms||0),0), pacePerDay:sevenDayPace(), unseenQuestions:Math.max(0,questions.length-overallStats().answered), projectedDays:null };
+      ? W3Tools.buildTimeSummary(statsAttempts, completedSessions, statsQuestions.length, new Date())
+      : { todayQuestions:dailyActual(isoDateLocal()), activeMsToday:statsAttempts.filter(a=>isoDateLocal(a.answered_at)===isoDateLocal()).reduce((sum,a)=>sum+Number(a.response_time_ms||0),0), pacePerDay:sevenDayPace(), unseenQuestions:Math.max(0,statsQuestions.length-new Set(statsAttempts.map(a=>a.question_id)).size), projectedDays:null };
     const coverageTopics = enrichCoverageTopics(coverage.topics);
     const availableTts = availableTtsCount();
     const sortedTopics = W3Tools.sortTopics ? W3Tools.sortTopics(coverageTopics, topicSort) : coverageTopics;
     const specialtyGroups = buildSpecialtyCoverageGroups(coverageTopics);
     const normalizedCoverageView = coverageView === 'specialties' ? 'specialties' : 'topics';
     const byArea = new Map();
-    for (const q of questions) {
+    for (const q of statsQuestions) {
       const area = q.canonical_area || q.area || 'Sin área';
       if (!byArea.has(area)) byArea.set(area, { questions:0, attempts:0, correct:0 });
       byArea.get(area).questions++;
     }
-    for (const a of attempts) {
+    for (const a of statsAttempts) {
       const q = questions.find(x => x.id === a.question_id); if (!q) continue;
       const area = q.canonical_area || q.area || 'Sin área';
       const g = byArea.get(area); g.attempts++; if (a.is_correct) g.correct++;
     }
-    const hard = questions.map(q => ({ q, s:questionStats(q.id) })).filter(x => x.s.seen).sort((a,b) => (b.s.wrong/b.s.seen)-(a.s.wrong/a.s.seen)).slice(0,10);
+    const hard = statsQuestions.map(q => ({ q, s:questionStats(q.id) })).filter(x => x.s.seen).sort((a,b) => (b.s.wrong/b.s.seen)-(a.s.wrong/a.s.seen)).slice(0,10);
     const s = overallStats();
-    const overdueCount = memoryStates.filter(row => row.due_at && new Date(row.due_at) <= new Date()).length;
+    const overdueCount = statsMemory.filter(row => row.due_at && new Date(row.due_at) <= new Date()).length;
 
     app.innerHTML = `<main class="shell">${topbar('Mi estado', true)}
       <section class="panel stats-report-link"><div><h2>Informe dinámico de debilidades</h2><p class="muted">Separa cobertura, debilidad y rentabilidad. La cobertura se calcula localmente con el corpus y los intentos ya cargados.</p></div><div class="stats-link-actions"><button id="stats-weakness-report" class="btn primary">Ver informe</button><button id="stats-history" class="btn">🕘 Historial y ritmo</button></div></section>
 
       <section class="kpis coverage-kpis">
-        <div class="kpi"><div class="value">${coverage.seenQuestions}/${coverage.totalQuestions}</div><div class="label">Preguntas vistas ≥1 vez</div></div>
+        <div class="kpi"><div class="value">${coverage.seenQuestions}/${coverage.totalQuestions}</div><div class="label">Preguntas válidas vistas ≥1 vez</div><small>Excluye ${questions.length-statsQuestions.length} observadas</small></div>
         <div class="kpi"><div class="value">${coverage.correctEverQuestions}/${coverage.totalQuestions}</div><div class="label">Acertadas ≥1 vez</div></div>
         <div class="kpi"><div class="value">${coverage.touchedTopics}/${coverage.totalTopics}</div><div class="label">Temas tocados</div></div>
         <div class="kpi"><div class="value">${coverage.completeTopics}/${coverage.totalTopics}</div><div class="label">Temas con cobertura completa</div></div>
