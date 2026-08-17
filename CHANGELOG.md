@@ -1,5 +1,19 @@
 # Changelog - Residentado
 
+## v1.3.2 - 2026-08-17
+
+Hotfix mínimo de sesiones sobre v1.3.1. **No modifica el algoritmo de memoria, `questionPriority`, `smartPool`, intervalos, retención objetivo, deuda ni metas del plan.**
+
+- vincula cada sesión automática al día concreto del checklist mediante `planDate`;
+- mantiene compatibilidad con sesiones automáticas antiguas infiriendo su día desde `created_at`;
+- las copias de recuperación conservan el día del plan de la sesión origen, aunque la recuperación se cree en una fecha posterior;
+- una sesión automática de un día anterior deja de convertir la tarea de hoy en «Continuar»;
+- las sesiones automáticas antiguas se conservan en «Sesiones en curso» para recuperación o cierre, sin desplazar la selección adaptativa del día actual;
+- al iniciar la tarea de hoy, las preguntas vuelven a seleccionarse con el `smartPool` original usando intentos, memoria, vencimiento, debilidad, velocidad y rentabilidad actuales;
+- tras preservar una copia local divergente como recuperación, la fila remota canónica deja de quedar ocultada por una sombra marcada `conflict` con el mismo ID;
+- no añade cooldown fijo ni excluye preguntas por un número arbitrario de días;
+- no requiere cambios en Supabase ni migraciones.
+
 ## v1.3.1 - 2026-08-06
 
 Release compatible construido sobre v1.3.0. No modifica sesiones, intentos, memoria, notas, preguntas ni Supabase.

@@ -1,6 +1,7 @@
 importScripts('./version.js');
+// v1.3.2: hotfix de reconciliación de sesiones; sin cambios al motor de programación.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-3-1';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-3-2';
 const ASSETS = [
   './',
   './index.html',
