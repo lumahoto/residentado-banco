@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.3.1';
+  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.3.2';
   const LEARNING_NOTES_MIGRATION = 'MIGRATIONS/20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql';
   const TTS_CATALOG_TABLE = 'tts_topic_catalog';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
@@ -223,12 +223,16 @@
     const now = sessionNowIso();
     const sourceId = sourceRow.id;
     const previousRecovery = sourceRow.config?.recovery || {};
+    // La recuperación de una sesión automática conserva el día del plan original.
+    // Sin esto, una copia creada hoy de una sesión de ayer podría parecer una tarea de hoy.
+    const preservedPlanDate = isDailyAutoSession(sourceRow) ? sessionPlanDate(sourceRow) : null;
     return {
       ...sourceRow,
       id:makeUuid(),
       title:`${String(sourceRow.title || 'Sesión').replace(/ · recuperación local$/i, '')} · recuperación local`,
       config:{
         ...(sourceRow.config || {}),
+        ...(preservedPlanDate ? { planDate:preservedPlanDate } : {}),
         recovery:{
           rootSessionId:previousRecovery.rootSessionId || previousRecovery.sourceSessionId || sourceId,
           sourceSessionId:sourceId,
@@ -3413,9 +3417,30 @@
     return String(row?.config?.studyMode || row?.config?.examType || `${row?.mode || 'session'}:${row?.title || ''}`);
   }
 
+  function isDailyAutoSession(row = {}) {
+    const studyMode = String(row?.config?.studyMode || '');
+    return row?.mode === 'study' && studyMode.startsWith('auto_');
+  }
+
+  function sessionPlanDate(row = {}) {
+    const configured = String(row?.config?.planDate || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(configured)) return configured;
+    // Compatibilidad con sesiones auto creadas antes de v1.3.2: su fecha de creación
+    // identifica el día del checklist al que pertenecían.
+    if (isDailyAutoSession(row) && (row.created_at || row.updated_at)) {
+      return isoDateLocal(row.created_at || row.updated_at);
+    }
+    return null;
+  }
+
   function activeSessionForTask(task) {
     if (!task?.mode) return null;
-    return latestActiveSession(activeSessions.filter(row => row?.mode === 'study' && row?.config?.studyMode === task.mode));
+    const today = isoDateLocal();
+    return latestActiveSession(activeSessions.filter(row =>
+      row?.mode === 'study'
+      && row?.config?.studyMode === task.mode
+      && sessionPlanDate(row) === today
+    ));
   }
 
   function similarActiveSessionCount(row) {
@@ -3436,7 +3461,7 @@
       mode:'study', count:selected.length, randomize:false, feedback,
       timeMode: task.kind === 'speed' ? 'per_question' : 'none',
       secondsPerQuestion:Number(profile?.target_response_seconds||25), totalSeconds:0,
-      title:task.label, studyMode:task.mode,
+      title:task.label, studyMode:task.mode, planDate:isoDateLocal(),
     });
   }
 
@@ -3868,7 +3893,12 @@
     const daysReady = daysUntil(profile?.readiness_target_date || DEFAULT_PROFILE.readiness_target_date);
     const pace7 = sevenDayPace();
     const completion = plan.adjustedTarget ? Math.min(100, Math.round(plan.done/plan.adjustedTarget*100)) : 100;
-    const primaryActiveSession = latestActiveSession();
+    // Las sesiones automáticas pertenecen al checklist del día en que se crearon.
+    // Una sesión auto antigua sigue disponible abajo para recuperación/cierre, pero no
+    // desplaza la siguiente tarea de hoy ni congela una selección calculada días atrás.
+    const primaryActiveSession = latestActiveSession(activeSessions.filter(row =>
+      !isDailyAutoSession(row) || sessionPlanDate(row) === plan.today
+    ));
     const primaryAnswered = primaryActiveSession ? (primaryActiveSession.answered_count || answeredIdsFor(primaryActiveSession, primaryActiveSession.state || {}).length) : 0;
     const primaryPlanned = primaryActiveSession ? (primaryActiveSession.planned_count || primaryActiveSession.question_ids?.length || 0) : 0;
 

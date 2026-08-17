@@ -282,13 +282,19 @@
         continue;
       }
 
-      const localPending = ['pending', 'conflict', 'offline', 'offline_create', 'recovery_local'].includes(localRaw.syncStatus);
+      // Un estado marcado como conflict ya fue preservado por app.js en una sesión
+      // de recuperación independiente antes de mezclar. Si existe fila remota canónica,
+      // no volver a mostrar la sombra conflictiva con el mismo ID como sesión principal.
+      if (localRaw.syncStatus === 'conflict') continue;
+
+      const localPending = ['pending', 'offline', 'offline_create', 'recovery_local'].includes(localRaw.syncStatus);
       const localRevision = Number(localRaw.state_revision || 0);
       const remoteRevision = Number(current.state_revision || 0);
       const localUpdated = new Date(localRaw.localUpdatedAt || localRaw.updated_at || 0).getTime();
       const remoteUpdated = new Date(current.updated_at || 0).getTime();
 
-      // FIX-SESSION-004: a stale local shadow must never hide a newer server revision.
+      // FIX-SESSION-004: a stale local shadow must never hide a newer server revision;
+      // los cambios locales pendientes no conflictivos con la misma revisión sí se conservan.
       if (localRevision > remoteRevision || (localRevision === remoteRevision && localPending && localUpdated > remoteUpdated)) {
         byId.set(localRaw.id, localRaw);
       }
