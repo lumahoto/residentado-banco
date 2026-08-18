@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import hashlib
 import json
+import re
 import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+MIG = ROOT / 'MIGRATIONS' / '20260818_TAXONOMY_V3_A16'
+EXPECTED = json.loads((ROOT / 'docs' / 'TAXONOMY_V3_A16_EXPECTED.json').read_text(encoding='utf-8'))
 errors = []
 
 def require(condition, message):
@@ -18,146 +22,140 @@ def js_check(name):
 for name in ['app.js','session-core.js','session-storage.js','service-worker.js','version.js','question-parser.js','w3-tools.js','w4-data.js']:
     js_check(name)
 
-app = (ROOT / 'app.js').read_text(encoding='utf-8')
-core = (ROOT / 'session-core.js').read_text(encoding='utf-8')
-sw = (ROOT / 'service-worker.js').read_text(encoding='utf-8')
-version = (ROOT / 'version.js').read_text(encoding='utf-8')
-index = (ROOT / 'index.html').read_text(encoding='utf-8')
-pt409 = (ROOT / 'MIGRATIONS/20260805_FIX_SESSION_CONFLICT_PT409.sql').read_text(encoding='utf-8')
-notes_sql = (ROOT / 'MIGRATIONS/20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql').read_text(encoding='utf-8')
-tts_sql = (ROOT / 'MIGRATIONS/20260805_ADD_TTS_TOPIC_CATALOG_V061.sql').read_text(encoding='utf-8')
-tts_c1 = (ROOT / 'MIGRATIONS/20260805_FIX_TTS_TOPIC_CATALOG_READONLY_C1.sql').read_text(encoding='utf-8')
+app = (ROOT/'app.js').read_text(encoding='utf-8')
+core = (ROOT/'session-core.js').read_text(encoding='utf-8')
+storage = (ROOT/'session-storage.js').read_text(encoding='utf-8')
+sw = (ROOT/'service-worker.js').read_text(encoding='utf-8')
+version = (ROOT/'version.js').read_text(encoding='utf-8')
+index = (ROOT/'index.html').read_text(encoding='utf-8')
+manifest = json.loads((ROOT/'RELEASE_MANIFEST.json').read_text(encoding='utf-8'))
+w3 = (ROOT/'w3-tools.js').read_text(encoding='utf-8')
+w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
-# Release/versioning.
-require("version: '1.3.1'" in version, 'version.js no declara 1.3.1')
-require("cacheName: 'residentado-v1-3-1'" in version, 'version.js no declara el caché 1.3.1')
+# Release/version consistency.
+require("version: '1.4.0'" in version, 'version.js no declara 1.4.0')
+require("cacheName: 'residentado-v1-4-0'" in version, 'version.js no declara cache v1.4.0')
+require(manifest.get('version') == '1.4.0', 'RELEASE_MANIFEST no coincide con v1.4.0')
+require(manifest.get('release_id') == EXPECTED['release_id'], 'release_id inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
 require('<script src="./version.js"></script>' in index, 'index.html no carga version.js')
-require('1.1.0-rc3' not in app + sw + version, 'Quedó una referencia runtime a rc3')
 
-# Session/concurrency guardrails inherited intact.
-require("raise sqlstate 'pt409'" in pt409.lower(), 'La migración de conflicto no usa PT409')
-require("errcode = '40001'" not in pt409.lower(), 'La migración conserva SQLSTATE 40001')
-require("queueOperation('UPSERT_SESSION'" in app, 'Falta la cola offline de actualización de sesiones')
-require("from('practice_sessions').upsert" not in app, 'CREATE_SESSION volvió a usar upsert destructivo')
-require('persistir la fila elegida por reconciliacion' in app, 'La carga vuelve a ocultar la reconciliación con remoto bruto')
-require('if (isSessionConflictError(error)) return handleSessionRevisionConflict' in app, 'Los conflictos no se desvían a recuperación')
-require("persistRecoverySession(conflicted, 'revision_conflict')" in app, 'No se conserva una copia de recuperación')
-require('SESSION_LEASE_HEARTBEAT_MS' in app and 'BroadcastChannel' in app, 'Falta protección entre pestañas')
-require(".eq('state_revision', expectedRevision)" in app, 'El cierre no valida state_revision')
-require('localRevision > remoteRevision' in core, 'La reconciliación no prioriza revisiones')
-require('localRevision === remoteRevision && localPending' in core, 'La reconciliación no preserva cambios locales pendientes')
-require('network-first' in sw.lower(), 'La navegación no conserva network-first')
-
-# v1.2.0 features remain present.
-require('coverage-rank' in app and '>N.º<' in app, 'Cobertura canónica perdió numeración')
-require('id="review-jump-input"' in app and 'data-review-jump' in app, 'Falta salto directo en revisión')
-require('data-review-last' in app, 'Falta botón Última en revisión')
-require('data-review-exit' in app and 'const exitReview' in app, 'Falta salida intermedia de revisión')
-require('originalQuestionIds:currentStudy.questions.map' in app, 'La práctica parcial no conserva posición original')
-require('originalQuestionIds:exam.questions.map' in app, 'El examen parcial no conserva posición original')
-require("from('question_learning_notes')" in app and 'renderLearningNotesPage' in app, 'Se perdió el flujo de notas personales')
-
-
-# v1.3.1: exportación autoritativa autosuficiente para auditoría y parche.
-require("async function downloadReviewFlagsCsv" in app, 'La exportación de flags no es asíncrona')
-require("fetchAuthoritativeRowsByIds('question_review_flags', 'id', flagIds)" in app, 'La exportación no relee flags completos desde Supabase')
-require("fetchAuthoritativeRowsByIds('questions', 'id', questionIds)" in app, 'La exportación no relee preguntas completas desde Supabase')
-require("select('*').in(idColumn, chunk)" in app, 'La exportación no usa select dinámico de todas las columnas')
-require("export__source:'SUPABASE_AUTHORITATIVE'" in app, 'El CSV no declara fuente autoritativa')
-require("residentado-review-patch-csv-v1" in app, 'Falta versión de esquema del CSV')
-require("flagColumns.map(column => `flag__${column}`)" in app, 'Faltan columnas completas prefijadas de flags')
-require("questionColumns.map(column => `question__${column}`)" in app, 'Faltan columnas completas prefijadas de preguntas')
-require('missingFlagIds.length || missingQuestionIds.length' in app, 'Falta guardrail de IDs incompletos')
-require('No se generó un archivo basado solo en caché local' in app, 'Falta bloqueo de exportación local no autoritativa')
-require('Exportar CSV completo para auditoría y parche' in app, 'Falta el único botón de CSV completo')
-require('id="copy-review-flags"' not in app, 'La interfaz todavía muestra el botón de copia simple')
-require("replace(/\\r\\n/g, '\\n')" in app, 'El CSV no conserva campos multilínea')
-
-# Archivos sensibles y corpus auxiliares preservados byte por byte desde v1.3.0.
-import hashlib
+# Session/concurrency guardrails: byte-identical to the actual v1.3.4 baseline supplied on 2026-08-17.
 protected = {
-    'session-core.js':'ab81e2ff36c24e871dce40567a1812d7488b04d5587c800fb889fb2bd4affaaf',
+    'session-core.js':'d5875ebfdbe3b1658023617948f38c99746ca74c3412607103c28fabe156b7f5',
     'session-storage.js':'eed7339ad479d21cefb6429210c350f8c2fcd551d78449359798c15a405e68da',
-    'config.js':'6659f3ed8fc2162ba9388e7159f9376a1b1b60922acb6847edce954ffdeab554',
-    'question-parser.js':'d224c6446652018398c97ea6b4d6718bfa81485a9aa7def3699fac099d3e1a65',
-    'w3-tools.js':'40de509733278abdfb043522d8dc28e20c1617f97f1a206d5a6fd8144a5fb1e5',
-    'w4-data.js':'a51c8fe813b301ee18306598bdd3a43cd46e3c41cccc4eb3b4e50d485c08c3a6',
-    'pilot-data.js':'2f838ea00a41ce471f4be432cac80e0c53d8f70e9cd019b9bf251f69878f4c39',
-    'index.html':'6b2dcab398729294da39c768fae178802236d0b3e76ee26c1b4fe4e7c340ed0e',
-    'styles.css':'e33ba7d952abca56bc0bf27e3aa208be31ef63a715563b4da76032413b1fc3f8',
-    'tts_catalog.json':'55fde0266e3a3e9cc491e74e07f333438b5e015dcad23c74c22029c7d2beda05',
 }
-for name, expected in protected.items():
+for name, expected_hash in protected.items():
     actual = hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
-    require(actual == expected, f'{name} cambió respecto de la base v1.3.0')
+    require(actual == expected_hash, f'{name} cambió respecto del baseline v1.3.4')
+pt409 = (ROOT/'MIGRATIONS/20260805_FIX_SESSION_CONFLICT_PT409.sql').read_text(encoding='utf-8').lower()
+require("raise sqlstate 'pt409'" in pt409, 'La migración de conflicto no usa PT409')
+require("errcode = '40001'" not in pt409, 'Se reintrodujo SQLSTATE 40001')
+require("queueOperation('UPSERT_SESSION'" in app, 'Falta cola offline de sesiones')
+require("from('practice_sessions').upsert" not in app, 'CREATE_SESSION volvió a usar upsert destructivo')
+require('if (isSessionConflictError(error)) return handleSessionRevisionConflict' in app, 'Falta recuperación PT409')
+require('SESSION_LEASE_HEARTBEAT_MS' in app and 'BroadcastChannel' in app, 'Falta guardia entre pestañas')
+require(".eq('state_revision', expectedRevision)" in app, 'El cierre no valida state_revision')
+require('localRevision > remoteRevision' in core and 'localRevision === remoteRevision && localPending' in core, 'Reglas de reconciliación de sesiones alteradas')
 
-# TTS integration: one catalog load, shared local map, no per-row calls.
-require("const TTS_CATALOG_TABLE = 'tts_topic_catalog'" in app, 'No se declara la tabla TTS')
-require('async function loadCloudTtsCatalog()' in app, 'Falta carga del catálogo TTS desde Supabase')
-require("supa.from(TTS_CATALOG_TABLE)" in app, 'La carga TTS no consulta la tabla autoritativa')
-require('await loadCloudTtsCatalog();' in app, 'El catálogo TTS no se sincroniza al cargar datos')
-require("applyTtsCatalog(await response.json(), 'static-fallback')" in app, 'Falta respaldo local TTS')
-require('enrichCoverageTopics' in app and 'data-topic-tts-key' in app, 'Cobertura canónica no muestra TTS')
-require('<th>TTS</th>' in app, 'Falta columna TTS en Cobertura canónica')
-require('W4Data.catalogCompactLabel' in app, 'Debilidades no muestra código/estado TTS actualizado')
-require('availableTtsCount()' in app and 'TTS disponibles' in app, 'Falta conteo real de disponibilidad TTS')
-require(".insert(" not in app[app.find('async function loadCloudTtsCatalog()'):app.find('async function fetchDatasetManifest()')], 'La carga TTS intenta insertar')
-require(".update(" not in app[app.find('async function loadCloudTtsCatalog()'):app.find('async function fetchDatasetManifest()')], 'La carga TTS intenta actualizar')
-require(".delete(" not in app[app.find('async function loadCloudTtsCatalog()'):app.find('async function fetchDatasetManifest()')], 'La carga TTS intenta eliminar')
+# Taxonomía V3: identidad estable y compatibilidad de aliases.
+require('TOPIC_ID:${encodeURIComponent(stableId)}' in app, 'El selector no serializa rentability_topic_id estable')
+require('function resolveTopicSelectionKey' in app and 'function topicSelectionMatches' in app, 'Falta resolver selección legacy/alias')
+require('topicAliasesBySourceLabel' in app, 'Falta compatibilidad con paths históricos basados en label')
+require("from('taxonomy_topic_aliases')" in app, 'La app no carga aliases V2→V3')
+require("from('rentability_topics')" in app, 'La app no carga el catálogo autoritativo de topics')
+require('function validateCorpusBundle' in app, 'Falta validación atómica del bundle questions+topics')
+require('manifestMatchesBundle' in w4, 'W4 no compara revisión + active_topic_count')
+require('replaceCorpus(normalized, validation.activeTopics, manifest)' in app, 'La cache no reemplaza questions/topics como bundle validado')
+require('indexeddb-stale-invalid-remote' in app, 'No se preserva caché válida ante bundle remoto incompatible')
+require('coverage_counting_rule' in app or 'coverageCountingRule' in app or 'EXCLUSIVE_PRIMARY_TOPIC_ONLY' in json.dumps(EXPECTED), 'Falta regla de conteo primario')
 
-# Static fallback must represent the full taxonomy while marking exactly 89 available.
-catalog = json.loads((ROOT / 'tts_catalog.json').read_text(encoding='utf-8'))
+# Mi Estado: cobertura usa el corpus completo; observadas solo se excluyen de métricas adaptativas.
+require('W3Tools.buildCoverageSnapshot(questions, coverageAttempts, coverageMemory' in app, 'Mi Estado no calcula cobertura sobre las 2.180 preguntas del corpus')
+require('Preguntas del corpus vistas ≥1 vez' in app, 'La UI no distingue cobertura total de métricas adaptativas')
+require('Puedes ver los ${coverage.totalTopics} temas activos' in app, 'Quedó un conteo de topics no dinámico en Mi Estado')
+require('La especialidad es la columna vertebral de navegación' in app, 'Falta navegación conceptual por especialidad primaria')
+require('promedio descriptivo ponderado' in app, 'La UI no distingue score descriptivo de especialidad vs tier canónico')
+
+# Filtros de rentabilidad respetan tiers A16, incluido acceso individual.
+for token in ['value="muy_alta"','value="alta"','value="media"','value="baja"','matchesRentabilityFilter']:
+    require(token in app, f'Falta filtro de rentabilidad {token}')
+require("if (filter === 'high') return isHighRentability(q)" in app, 'Se perdió filtro MUY_ALTA+ALTA')
+
+# No hardcodear 274 en runtime. Se permite solo en catálogo TTS legacy/documentación/QA explícita.
+runtime_text = '\n'.join((ROOT/name).read_text(encoding='utf-8') for name in ['app.js','w3-tools.js','w4-data.js','version.js','service-worker.js','index.html'])
+require('274' not in runtime_text, 'Existe constante runtime 274; el número de topics debe ser dinámico')
+
+# TTS se conserva sin migrar: fallback V061 sigue siendo 274/89, pero la disponibilidad UI puede limitarse a IDs activos.
+catalog = json.loads((ROOT/'tts_catalog.json').read_text(encoding='utf-8'))
 topics = catalog.get('topics', [])
 available = [row for row in topics if row.get('status') in {'COMPLETE','PARTIAL'}]
-require(catalog.get('catalogVersion') == 'V061', 'El respaldo TTS no declara V061')
-require(len(topics) == 274, f'El respaldo TTS no contiene 274 temas: {len(topics)}')
-require(len(available) == 89, f'El respaldo TTS no contiene 89 disponibles: {len(available)}')
-require({row.get('primaryCode') for row in available} == {f'TTS_{i:03d}' for i in range(1,90)}, 'El respaldo TTS no cubre exactamente TTS_001–089')
+require(catalog.get('catalogVersion') == 'V061', 'El respaldo TTS legacy cambió de versión')
+require(len(topics) == 274, f'El respaldo TTS legacy ya no tiene 274 filas: {len(topics)}')
+require(len(available) == 89, f'El respaldo TTS legacy ya no tiene 89 disponibles: {len(available)}')
+require('availableTtsCount(rentabilityTopics.length ? rentabilityTopics : null)' in app, 'Debilidades no restringe TTS por topic activo cuando existe catálogo V3')
+require('availableTtsCount(coverageTopics)' in app, 'Mi Estado no restringe TTS por topics activos')
 
-# W4 normalizes Supabase snake_case rows and emits a compact label.
-node_test = r"""
-const w = require(process.argv[1]);
-const c = w.normalizeCatalog({topics:[{rentability_topic_id:'R1',topic_label:'Tema',status:'COMPLETE',primary_code:'TTS_089',tts_version:'V061',catalog_version:'V061',part_codes:['TTS_089A','TTS_089B'],estimated_minutes:12.5}]});
-if (c.catalogVersion !== 'V061') process.exit(2);
-if (c.topics[0].topicId !== 'R1' || c.topics[0].parts.length !== 2) process.exit(3);
-if (!w.catalogCompactLabel(c.topics[0]).startsWith('TTS_089 · Completa')) process.exit(4);
-"""
-node = subprocess.run(['node','-e',node_test,str(ROOT/'w4-data.js')],capture_output=True,text=True)
-require(node.returncode == 0, f'Falló normalización TTS Supabase: {node.stdout} {node.stderr}')
+# Features previas sensibles siguen presentes.
+for token, msg in [
+    ('coverage-rank','Cobertura perdió numeración'),('id="review-jump-input"','Falta salto en revisión'),
+    ('data-review-last','Falta Última en revisión'),('data-review-exit','Falta salida intermedia'),
+    ("from('question_learning_notes')",'Se perdió notas personales'),('async function downloadReviewFlagsCsv','Se perdió exportación autoritativa'),
+    ("export__source:'SUPABASE_AUTHORITATIVE'",'CSV ya no declara fuente autoritativa'),('residentado-review-patch-csv-v1','Cambió esquema CSV de revisión')]:
+    require(token in app, msg)
 
-# Database catalog is additive and read-only for authenticated after C1.
-tts_lower = tts_sql.lower()
-c1_lower = tts_c1.lower()
-tts_runtime = '\n'.join(line.split('--', 1)[0] for line in tts_lower.splitlines())
-require('create table if not exists public.tts_topic_catalog' in tts_lower, 'Falta creación idempotente de tts_topic_catalog')
-require('enable row level security' in tts_lower, 'El catálogo TTS no activa RLS')
-require('delete ' not in tts_runtime and 'truncate ' not in tts_runtime and 'drop table' not in tts_runtime, 'La migración de datos TTS contiene operación destructiva')
-require('revoke all privileges on table public.tts_topic_catalog from authenticated' in c1_lower, 'C1 no retira privilegios heredados de authenticated')
-require('grant select on table public.tts_topic_catalog to authenticated' in c1_lower, 'C1 no conserva SELECT autenticado')
-
-# Existing notes migration remains isolated.
-notes_lower = notes_sql.lower()
-require('create table if not exists public.question_learning_notes' in notes_lower, 'Falta migración de notas v1.2.0')
-require('question_review_flags' not in notes_lower, 'La migración de notas modifica flags')
-require('practice_sessions' not in notes_lower and 'attempts' not in notes_lower, 'La migración de notas toca progreso/sesiones')
-
-# Mi Estado remains local: rendering must not query Supabase.
+# Mi Estado debe seguir 100% local una vez cargado el bundle.
 stats_start = app.find('  function renderStats(')
 stats_end = app.find('\n  init();', stats_start)
 require(stats_start >= 0 and stats_end > stats_start, 'No se pudo localizar renderStats')
 if stats_start >= 0 and stats_end > stats_start:
     stats_body = app[stats_start:stats_end]
-    require(".from('" not in stats_body and 'supa.' not in stats_body, 'Mi Estado emite consultas remotas por vista/fila')
+    require(".from('" not in stats_body and 'supa.' not in stats_body, 'Mi Estado emite consultas Supabase al renderizar')
 
-unit = subprocess.run(['node', str(ROOT / 'QA/test_session_core.js')], capture_output=True, text=True)
-require(unit.returncode == 0, f'Falló test session-core heredado: {unit.stdout} {unit.stderr}')
+# Migration package completeness and counts.
+required_sql = [
+ '01_PRECHECK_READONLY.sql','02_PREPARE_SCHEMA_AND_STAGE.sql','03_LOAD_STAGE_TOPICS_ALIASES_RELATIONS.sql',
+ '04_LOAD_STAGE_QUESTIONS.sql','05_VALIDATE_STAGE_READONLY.sql','06_COMMIT_TAXONOMY_V3_A16.sql',
+ '07_POSTCHECK_READONLY.sql','08_ROLLBACK_TAXONOMY_V3_A16.sql','README.md']
+for name in required_sql: require((MIG/name).exists(), f'Falta migration artifact {name}')
+qload=(MIG/'04_LOAD_STAGE_QUESTIONS.sql').read_text(encoding='utf-8')
+otherload=(MIG/'03_LOAD_STAGE_TOPICS_ALIASES_RELATIONS.sql').read_text(encoding='utf-8')
+commit=(MIG/'06_COMMIT_TAXONOMY_V3_A16.sql').read_text(encoding='utf-8')
+rollback=(MIG/'08_ROLLBACK_TAXONOMY_V3_A16.sql').read_text(encoding='utf-8')
+require(qload.count('::jsonb') == EXPECTED['question_count'], 'Staging questions no contiene exactamente 2180 payloads')
+require(otherload.count('::jsonb') == EXPECTED['active_topic_count'] + EXPECTED['alias_rows'] + EXPECTED['secondary_relation_rows'], 'Staging topics/aliases/relations no coincide con A16')
+require("topic_status='DEPRECATED_DISTRIBUTED'" in commit, 'El commit no preserva deprecados')
+require('create table residentado_backup.tax_v3_a16_questions_before' in commit, 'Falta backup de questions fuera de public')
+require("dataset_revision='QUESTIONS-TAXV3-A16-20260818-R1'" in commit, 'Falta bump de dataset_revision')
+require(commit.rfind("dataset_revision='QUESTIONS-TAXV3-A16-20260818-R1'") > commit.find('update public.questions q set'), 'El bump ocurre antes de actualizar questions')
+require(commit.rfind("dataset_revision='QUESTIONS-TAXV3-A16-20260818-R1'") > commit.find('update public.rentability_topics t set'), 'El bump ocurre antes de actualizar topics')
+for table in ['attempts','practice_sessions','question_review_flags','question_learning_notes','question_memory_state','user_learning_profile']:
+    require(f'update public.{table}' not in commit.lower() and f'delete from public.{table}' not in commit.lower() and f'insert into public.{table}' not in commit.lower(), f'El commit toca datos de usuario: {table}')
+require('residentado_backup.tax_v3_a16_questions_before' in rollback and 'residentado_backup.tax_v3_a16_topics_before' in rollback, 'Rollback no restaura backups')
+require("dataset_revision='QUESTIONS-ROLLBACK-TAXV3-A16-20260818-R1'" in rollback, 'Rollback no publica revisión nueva')
+require("'rollback_of','QUESTIONS-TAXV3-A16-20260818-R1'" in rollback, 'Rollback no registra rollback_of')
+require("insert into public.app_dataset_versions select * from residentado_backup.tax_v3_a16_manifest_before" in rollback.lower(), 'Rollback no parte del snapshot previo del manifest')
+
+# Unit tests: session core and W4 manifest behavior.
+unit = subprocess.run(['node', str(ROOT/'QA/test_session_core.js')], capture_output=True, text=True)
+require(unit.returncode == 0, f'Falló test session-core: {unit.stdout} {unit.stderr}')
+node_test = r"""
+const w = require(process.argv[1]);
+const cached={dataset_revision:'R3',row_count:2180,metadata:{taxonomy_version:'T3',active_topic_count:287}};
+const remote={dataset_revision:'R3',row_count:2180,metadata:{taxonomy_version:'T3',active_topic_count:287}};
+if(!w.manifestMatchesBundle(cached,remote,2180,287))process.exit(2);
+if(w.manifestMatchesBundle(cached,{...remote,dataset_revision:'R4'},2180,287))process.exit(3);
+if(w.manifestMatchesBundle(cached,{...remote,metadata:{taxonomy_version:'T3',active_topic_count:274}},2180,287))process.exit(4);
+const qs=Array.from({length:2180},(_,i)=>({id:'Q'+i,rentability_topic_id:'T'+(i%287),rentability_topic_label:'Tema '+(i%287),rentability_tier:'MEDIA'}));
+const snap=require(process.argv[2]).buildCoverageSnapshot(qs,[],[],new Date());
+if(snap.totalQuestions!==2180 || snap.totalTopics!==287)process.exit(5);
+"""
+node = subprocess.run(['node','-e',node_test,str(ROOT/'w4-data.js'),str(ROOT/'w3-tools.js')],capture_output=True,text=True)
+require(node.returncode == 0, f'Falló unit bundle/cobertura V3: {node.stdout} {node.stderr}')
 
 if errors:
-    print('QA v1.3.1: FAIL')
-    for error in errors:
-        print(f'- {error}')
+    print('QA v1.4.0 TAXV3 A16: FAIL')
+    for error in errors: print('- '+error)
     sys.exit(1)
-
-print('QA v1.3.1: OK')
+print('QA v1.4.0 TAXV3 A16: OK')

@@ -61,6 +61,26 @@
     return true;
   }
 
+  function metadataObject(manifest = {}) {
+    const raw = manifest?.metadata;
+    if (!raw) return {};
+    if (typeof raw === 'object') return raw;
+    try { return JSON.parse(raw); } catch { return {}; }
+  }
+
+  function manifestMatchesBundle(cached = {}, remote = {}, cachedQuestionCount = null, cachedActiveTopicCount = null) {
+    if (!manifestMatches(cached, remote, cachedQuestionCount)) return false;
+    const metadata = metadataObject(remote);
+    const expectedTopics = Number(metadata.active_topic_count ?? metadata.topic_row_count_active ?? cachedActiveTopicCount);
+    const actualTopics = Number(cachedActiveTopicCount);
+    if (Number.isFinite(expectedTopics) && expectedTopics >= 0 && Number.isFinite(actualTopics) && expectedTopics !== actualTopics) return false;
+    const cachedMetadata = metadataObject(cached);
+    const remoteTaxonomy = String(metadata.taxonomy_version || '');
+    const cachedTaxonomy = String(cachedMetadata.taxonomy_version || '');
+    if (remoteTaxonomy && cachedTaxonomy && remoteTaxonomy !== cachedTaxonomy) return false;
+    return true;
+  }
+
   function topicsFromQuestions(questions = []) {
     const groups = new Map();
     for (const question of questions || []) {
@@ -199,6 +219,7 @@
     mergeRows,
     attemptKey,
     manifestMatches,
+    manifestMatchesBundle,
     topicsFromQuestions,
     normalizeCatalog,
     catalogMap,

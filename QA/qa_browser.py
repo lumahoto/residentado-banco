@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.3.1. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.4.0 TAXV3 A16. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -23,17 +23,18 @@ with sync_playwright() as p:
         launch_args['executable_path'] = '/usr/bin/chromium'
     browser = p.chromium.launch(**launch_args)
     page = browser.new_page(viewport={'width': 1440, 'height': 1000})
+    page.set_default_timeout(5000)
     page.on('dialog', lambda dialog: dialog.accept())
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.3.1' in page.locator('body').inner_text()
+    assert 'v1.4.0' in page.locator('body').inner_text()
 
     page.get_by_role('button', name='📊 MI ESTADO').click()
     page.wait_for_timeout(150)
     header = page.locator('.topic-coverage-table thead').first.inner_text()
     assert 'N.º' in header and 'TTS' in header
-    assert '89 TTS disponibles' in page.locator('.tts-catalog-meta').last.inner_text()
+    assert '1 TTS disponibles' in page.locator('.tts-catalog-meta').last.inner_text()
     available = page.locator('[data-topic-tts-key]', has_text='TTS_001')
     assert available.count() == 1
     available.click()
@@ -47,6 +48,12 @@ with sync_playwright() as p:
     assert page.locator('.specialty-coverage-group').count() > 0
     assert 'TTS' in page.locator('.specialty-summary-metrics').first.inner_text()
 
+    page.get_by_role('button', name='Inicio').click()
+    page.get_by_role('button', name='⚡ PRACTICAR').click()
+    page.get_by_role('button', name='⚙ Personalizar práctica').click()
+    page.wait_for_timeout(100)
+    assert page.locator('#rentability option[value="muy_alta"]').count() == 1
+    assert page.locator('input[name="topicPath"]').first.get_attribute('value').startswith('TOPIC_ID:')
     page.get_by_role('button', name='Inicio').click()
     page.get_by_role('button', name='Empezar').first.click()
     page.locator('.option[data-letter]').first.click()
@@ -64,4 +71,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.3.1: OK')
+print('QA navegador v1.4.0 TAXV3 A16: OK')

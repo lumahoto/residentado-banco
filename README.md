@@ -1,54 +1,59 @@
-# Residentado v1.3.1
+# Residentado v1.4.0 — Taxonomía V3 A16
 
-Webapp estática para práctica del banco de Residentado Médico Perú. Esta rama conserva el runtime v1.3.1 sin cambios funcionales y usa una estructura de repositorio reducida para facilitar auditorías y cargas por la interfaz web de GitHub.
+WebApp estática del banco de Residentado Médico Perú. Esta versión parte **exclusivamente** del ZIP v1.3.4 descargado del repositorio vigente el 17/08/2026 y añade compatibilidad segura con el freeze taxonómico A16 del 18/08/2026.
 
-## Estructura
+## Estado
 
-- **Raíz:** archivos de runtime, versión y metadatos actuales.
-- **`QA/`:** una prueba estática vigente, un smoke de navegador, un test unitario y una verificación consolidada de Supabase.
-- **`MIGRATIONS/`:** migraciones inmutables; las antiguas están en `legacy/`.
-- **`DATABASE/`:** esquema y seed del piloto, separados. `supabase_setup.sql` se retiró porque era exactamente la concatenación normalizada de ambos.
-- **`docs/`:** auditoría de limpieza e historial Markdown consolidado.
-- **`tools/`:** generador del paquete de despliegue con solo los archivos que ejecuta la webapp.
+- Frontend: `v1.4.0` / caché `residentado-v1-4-0`.
+- Preguntas: 2.180 IDs estables.
+- Taxonomía objetivo: V3 A16, 287 topics activos.
+- Migración Supabase: preparada, **no aplicada**.
+- Anki/TTS: **no migrados** en esta fase.
+- `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline v1.3.4.
 
-## Runtime
+## Cambio arquitectónico principal
 
-La lista autoritativa está en `RUNTIME_FILES.txt` y contiene 17 archivos. `index.html` y `service-worker.js` cargan o precachean ese mismo conjunto. La documentación, QA, migraciones y archivos históricos no participan en la ejecución ordinaria.
+La app ya no trata la taxonomía como un listado derivado solo de labels de preguntas. Carga `questions` + `rentability_topics`, compara `dataset_revision`, `taxonomy_version` y número de topics activos, valida el bundle completo y solo entonces reemplaza el corpus local en IndexedDB. Un bundle remoto parcial o incompatible no reemplaza una caché válida.
 
-## Validación
+La identidad de topic del selector se serializa como `rentability_topic_id`. Las rutas antiguas basadas en labels conservan un resolver V2→V3 mediante `taxonomy_topic_aliases`.
+
+## Migración Supabase
+
+Seguir exactamente:
+
+`MIGRATIONS/20260818_TAXONOMY_V3_A16/README.md`
+
+El orden es: precheck → preparación/staging → carga → validación → commit transaccional → postcheck. El bump del manifiesto ocurre al final del mismo `COMMIT` que publica topics/questions/aliases, evitando estados mixtos V2/V3. Se incluye rollback.
+
+## QA
 
 ```bash
 python3 QA/qa_static.py
 python3 QA/qa_browser.py
+node QA/test_session_core.js
 ```
 
-El smoke de navegador requiere Playwright y Chromium. La prueba estática requiere Python 3 y Node.js.
+Los checks cubren, entre otros: versión/caché, PT409, sesiones no modificadas, identidad estable de topics, invalidación automática de corpus, ausencia de `274` en runtime, cobertura dinámica, filtros por tier y presencia/orden de la migración V3.
 
-## Crear el ZIP de despliegue
+## Estructura
 
-```bash
-python3 tools/build_runtime_zip.py
-```
+- raíz: runtime y metadatos actuales;
+- `MIGRATIONS/`: migraciones inmutables, incluida Taxonomía V3 A16;
+- `QA/`: QA vigente;
+- `docs/`: documentación técnica vigente y expectativas A16;
+- `DATABASE/`: esquema de referencia;
+- historial cerrado: Git tags/releases y documento consolidado, no copias redundantes por versión.
 
-El script crea `residentado-runtime-v1.3.1.zip` fuera de la carpeta del repositorio, con 17 archivos y su SHA-256. Ese ZIP es apropiado para desplegar la webapp; para auditorías de código debe compartirse el repositorio limpio completo.
+## Publicación recomendada
 
-## Publicación segura
+1. Subir primero este repositorio v1.4.0 a GitHub y verificar que funciona todavía contra el dataset V2 actual.
+2. Mantener la WebApp cerrada durante la migración de Supabase.
+3. Aplicar los SQL V3 en el orden documentado y verificar el postcheck.
+4. Abrir v1.4.0 con conexión: debe detectar automáticamente la nueva `dataset_revision`, descargar el bundle V3 y conservar sesiones/intentos/notas/flags.
 
-1. Conservar el release/tag anterior.
-2. Subir el repositorio limpio o usar Git/ GitHub Desktop.
-3. No ejecutar migraciones ya aplicadas por rutina.
-4. Publicar el ZIP de runtime si el hosting solo necesita la aplicación.
-5. Ejecutar QA y el smoke real con Supabase.
-6. Confirmar `v1.3.1`, caché `residentado-v1-3-1`, PT409, sesiones, notas, flags y catálogo TTS.
+No ejecutar migraciones antiguas por rutina.
 
-## Historia y trazabilidad
 
-- `CHANGELOG.md` resume los cambios funcionales.
-- `RELEASE_MANIFEST.json` describe el release vigente.
-- `docs/HISTORIAL_DOCUMENTAL_CONSOLIDADO.md` conserva el contenido literal de los Markdown retirados.
-- El ZIP histórico conserva los archivos originales retirados, incluidos parches, manifiestos, checksums y QA anteriores.
-- En GitHub, las versiones cerradas deben marcarse con tags y releases; no deben mantenerse copias versionadas de README, QA o checksums en la rama principal.
+### Rollback taxonómico V3 A16
 
-## Regla para futuras versiones
-
-Actualizar los archivos de nombre estable (`README.md`, `RELEASE_MANIFEST.json`, `CHECKSUMS_SHA256.txt`, `QA/qa_static.py`, `QA/qa_browser.py`) en vez de crear uno nuevo por cada versión. Las migraciones sí mantienen fecha y nombre propios porque representan cambios secuenciales de base de datos.
+El rollback incluido restaura el contenido previo sin borrar progreso y publica una revisión nueva (`QUESTIONS-ROLLBACK-TAXV3-A16-20260818-R1`) para forzar la invalidación segura del bundle V3 en clientes que ya lo hubieran descargado.

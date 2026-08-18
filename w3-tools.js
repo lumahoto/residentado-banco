@@ -32,6 +32,7 @@
       specialty,
       tier: normalizeTier(question.rentability_tier || question.rentability_status),
       score: Number.isFinite(score) ? score : null,
+      tierConfidence: clean(question.score_confidence || question.tier_confidence) || null,
     };
   }
 
@@ -65,6 +66,7 @@
           uncertainAttempts: 0,
           overdue: 0,
           latestAttemptAt: null,
+          tierConfidence: identity.tierConfidence || null,
           questionIds: [],
         });
       }
@@ -89,6 +91,7 @@
       if (memory?.due_at && new Date(memory.due_at) <= now) topic.overdue += 1;
       if (identity.score != null && (topic.score == null || identity.score > topic.score)) topic.score = identity.score;
       if (TIER_ORDER[identity.tier] < TIER_ORDER[topic.tier]) topic.tier = identity.tier;
+      if (String(identity.tierConfidence || '').toUpperCase() === 'BORDERLINE') topic.tierConfidence = 'BORDERLINE';
     }
 
     const topics = [...topicsByKey.values()].map(topic => {
