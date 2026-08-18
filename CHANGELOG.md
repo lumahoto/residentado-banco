@@ -1,5 +1,20 @@
 # Changelog - Residentado
 
+## v1.4.0 - 2026-08-18
+
+Adaptación estructural a la taxonomía V3 congelada en A16, preparada sobre el ZIP v1.3.4 vigente. No aplica cambios directamente a Supabase, Anki ni TTS.
+
+- carga `questions` y `rentability_topics` como un bundle versionado y rechaza combinaciones incompatibles antes de reemplazar IndexedDB;
+- invalida automáticamente el corpus local cuando cambia `dataset_revision`, `taxonomy_version` o el número de topics activos;
+- migra la identidad del selector de topics desde rutas basadas en labels a `rentability_topic_id`, preservando compatibilidad con selecciones V2 mediante aliases/deprecaciones;
+- añade filtros individuales MUY_ALTA, ALTA, MEDIA y BAJA, conservando el filtro combinado MUY_ALTA+ALTA;
+- Mi Estado calcula cobertura taxonómica sobre las 2.180 preguntas del corpus y topics activos dinámicos; las preguntas observadas siguen excluyéndose únicamente de las métricas adaptativas de precisión/debilidad;
+- evita sintetizar un tier de especialidad: el promedio de scores por especialidad se presenta explícitamente como descriptivo;
+- mantiene TTS por coincidencia exacta de topic ID y no realiza aún la migración de Anki/TTS;
+- incorpora migración Supabase por staging, transacción, backups fuera de `public`, aliases/deprecaciones, relaciones secundarias, controles pre/post y rollback;
+- preserva byte por byte `session-core.js` y `session-storage.js` del baseline v1.3.4, incluidos PT409, leases y recuperación no destructiva;
+- corrige una inconsistencia de trazabilidad del baseline: `version.js` ya estaba en v1.3.4 pero `RELEASE_MANIFEST.json` y `QA/qa_static.py` seguían anclados a v1.3.1.
+
 ## v1.3.4 - 2026-08-17
 
 Hotfix de ciclo de vida de sesiones conflictivas sobre v1.3.3. No modifica el plan de estudio, cobertura, memoria, retención ni selección de preguntas.

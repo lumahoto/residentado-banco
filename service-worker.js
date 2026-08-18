@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.3.4: cierre robusto de recuperaciones y limpieza de sombras conflictivas huérfanas.
+// v1.4.0: compatibilidad Taxonomía V3/A16; conserva guardrails de sesiones v1.3.4.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-3-4';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-4-0';
 const ASSETS = [
   './',
   './index.html',

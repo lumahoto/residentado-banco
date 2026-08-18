@@ -1,5 +1,9 @@
 # Migraciones de Supabase
 
+## Taxonomía V3 A16 — preparada, NO aplicada
+
+Para la migración taxonómica congelada del 18/08/2026 usar exclusivamente `20260818_TAXONOMY_V3_A16/README.md` y ejecutar sus SQL en el orden indicado. El frontend v1.4.0 debe desplegarse primero. La publicación de `questions`, `rentability_topics`, aliases y `dataset_revision` se cierra en una sola transacción y tiene rollback.
+
 ## Vigentes para reproducir el estado actual
 
 Ejecutar solo cuando corresponda y en el orden documentado por cada archivo:

@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.3.4';
+  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.4.0';
   const LEARNING_NOTES_MIGRATION = 'MIGRATIONS/20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql';
   const TTS_CATALOG_TABLE = 'tts_topic_catalog';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
@@ -49,6 +49,11 @@
   let ttsCatalogSource = 'unloaded';
   let ttsCatalogLoadError = '';
   let datasetManifest = null;
+  let rentabilityTopics = [];
+  let rentabilityTopicsById = new Map();
+  let topicAliases = [];
+  let topicAliasBySourceId = new Map();
+  let topicAliasesBySourceLabel = new Map();
   let historyPage = 0;
   let historyHasMore = true;
   const HISTORY_PAGE_SIZE = 50;
@@ -1160,8 +1165,8 @@
   }
 
   function normalizedTaxonomyParts(q) {
-    // v0.6.16: usa la taxonomía global V2 cuando está disponible y conserva
-    // compatibilidad automática con la estructura histórica.
+    // Taxonomía canónica: usa los campos primarios versionados cuando están disponibles
+    // y conserva compatibilidad automática con la estructura histórica.
     const area = canonicalArea(q?.canonical_area || q?.area);
     const specialty = cleanTaxonomyLabel(q?.canonical_specialty || q?.specialty) || 'General';
     const entity = cleanTaxonomyLabel(q?.canonical_entity || q?.subtopic);
@@ -1178,7 +1183,7 @@
       specialty,
       topic,
       subtopic: subtopic || q?.subtopic || null,
-      taxonomy_runtime_source: q?.rentability_topic_label ? 'GLOBAL_V2' : 'LEGACY_FALLBACK',
+      taxonomy_runtime_source: q?.rentability_topic_label ? 'CANONICAL_RENTABILITY_TOPIC' : 'LEGACY_FALLBACK',
     };
   }
 
@@ -1212,8 +1217,66 @@
   }
 
   function topicPathKey(q) {
+    // Taxonomía V3: nunca usar el label visible como identidad si existe un ID estable.
+    const stableId = cleanTaxonomyLabel(q?.rentability_topic_id || q?.topic_id);
+    if (stableId) return `TOPIC_ID:${encodeURIComponent(stableId)}`;
     const { area, specialty, topic } = topicPathParts(q);
-    return encodeURIComponent([area, specialty, topic].join('\u001f'));
+    return `LEGACY_PATH:${encodeURIComponent([area, specialty, topic].join('\u001f'))}`;
+  }
+
+  function aliasReplacementIds(row = {}) {
+    const raw = row?.replacement_topic_ids;
+    if (Array.isArray(raw)) return raw.map(String).map(x => x.trim()).filter(Boolean);
+    if (raw == null) return [];
+    const text = String(raw).trim();
+    if (!text) return [];
+    if (text.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) return parsed.map(String).map(x => x.trim()).filter(Boolean);
+      } catch {}
+    }
+    return text.split(/\s*\|\s*|\s*,\s*/).map(x => x.trim()).filter(Boolean);
+  }
+
+  function resolveTopicSelectionKey(selectionKey = '') {
+    const rawKey = String(selectionKey || '');
+    if (!rawKey) return { kind:'empty', topicIds:[], legacyLabel:null };
+    if (rawKey.startsWith('TOPIC_ID:')) {
+      const sourceId = decodeURIComponent(rawKey.slice('TOPIC_ID:'.length));
+      const alias = topicAliasBySourceId.get(sourceId);
+      const replacements = aliasReplacementIds(alias);
+      const canonical = String(alias?.canonical_topic_id || '').trim();
+      return { kind:'id', sourceId, topicIds:[canonical, ...replacements, sourceId].filter(Boolean).filter((v,i,a)=>a.indexOf(v)===i), legacyLabel:null };
+    }
+    const encodedPath = rawKey.startsWith('LEGACY_PATH:') ? rawKey.slice('LEGACY_PATH:'.length) : rawKey;
+    try {
+      const decoded = decodeURIComponent(encodedPath);
+      const parts = decoded.split('\u001f');
+      const legacyLabel = cleanTaxonomyLabel(parts[parts.length - 1] || '');
+      const aliases = topicAliasesBySourceLabel.get(normalizeTopicSearch(legacyLabel)) || [];
+      const topicIds = aliases.flatMap(alias => [String(alias?.canonical_topic_id || '').trim(), ...aliasReplacementIds(alias)]).filter(Boolean);
+      return { kind:'legacy', topicIds:[...new Set(topicIds)], legacyLabel };
+    } catch {
+      return { kind:'legacy', topicIds:[], legacyLabel:null };
+    }
+  }
+
+  function topicSelectionMatches(q, selectedKeys = []) {
+    if (!selectedKeys?.length) return true;
+    const currentId = cleanTaxonomyLabel(q?.rentability_topic_id || q?.topic_id);
+    const currentStableKey = topicPathKey(q);
+    if (selectedKeys.includes(currentStableKey)) return true;
+    // Compatibility with v1.3.x builder configs, which stored the encoded visible path.
+    const { area, specialty, topic } = topicPathParts(q);
+    const currentLegacyKey = encodeURIComponent([area, specialty, topic].join('\u001f'));
+    if (selectedKeys.includes(currentLegacyKey) || selectedKeys.includes(`LEGACY_PATH:${currentLegacyKey}`)) return true;
+    for (const key of selectedKeys) {
+      const resolved = resolveTopicSelectionKey(key);
+      if (currentId && resolved.topicIds.includes(currentId)) return true;
+      if (!currentId && resolved.legacyLabel && normalizeTopicSearch(topic) === normalizeTopicSearch(resolved.legacyLabel)) return true;
+    }
+    return false;
   }
 
   function normalizeTopicSearch(value = '') {
@@ -2265,7 +2328,7 @@
     applyTtsCatalog({
       catalogVersion:rows[0]?.catalog_version || 'EMPTY',
       generatedAt:rows.reduce((latest, row) => String(row.updated_at || row.available_at || '') > String(latest || '') ? (row.updated_at || row.available_at) : latest, null),
-      taxonomyVersion:'POST_SEGUNDA_AUDITORIA_274_20260804',
+      taxonomyVersion:rows[0]?.taxonomy_version || 'TTS_CATALOG_LEGACY_MAPPING',
       topics:rows,
     }, 'supabase');
     return { data:ttsCatalog, error:null, source:'supabase' };
@@ -2280,38 +2343,120 @@
     return { data:data || null, error:null };
   }
 
+  function manifestMetadata(manifest = {}) {
+    const raw = manifest?.metadata;
+    if (!raw) return {};
+    if (typeof raw === 'object') return raw;
+    try { return JSON.parse(raw); } catch { return {}; }
+  }
+
+  function activeTopicRows(rows = []) {
+    return (rows || []).filter(row => {
+      if (row?.is_active === false || String(row?.is_active || '').toLowerCase() === 'false') return false;
+      const status = String(row?.topic_status || row?.status || '').toUpperCase();
+      return !status.startsWith('DEPRECATED');
+    });
+  }
+
+  function validateCorpusBundle(questionRows = [], topicRows = [], manifest = {}) {
+    const metadata = manifestMetadata(manifest);
+    const expectedQuestions = Number(manifest?.row_count ?? metadata.question_row_count ?? questionRows.length);
+    const expectedActiveTopics = Number(metadata.active_topic_count ?? metadata.topic_row_count_active ?? topicRows.length);
+    const ids = questionRows.map(row => String(row?.id || '')).filter(Boolean);
+    if (!questionRows.length || new Set(ids).size !== questionRows.length) return { ok:false, reason:'question_ids_not_unique' };
+    if (Number.isFinite(expectedQuestions) && expectedQuestions >= 0 && questionRows.length !== expectedQuestions) return { ok:false, reason:`question_count_${questionRows.length}_expected_${expectedQuestions}` };
+
+    const activeTopics = activeTopicRows(topicRows);
+    if (Number.isFinite(expectedActiveTopics) && expectedActiveTopics >= 0 && activeTopics.length !== expectedActiveTopics) return { ok:false, reason:`active_topic_count_${activeTopics.length}_expected_${expectedActiveTopics}` };
+    const topicIds = new Set(activeTopics.map(row => String(row?.id || '')).filter(Boolean));
+    if (topicIds.size !== activeTopics.length) return { ok:false, reason:'active_topic_ids_not_unique' };
+    const orphan = questionRows.find(row => !topicIds.has(String(row?.rentability_topic_id || '')));
+    if (orphan) return { ok:false, reason:`orphan_topic_${orphan.id}_${orphan.rentability_topic_id}` };
+
+    const counts = new Map();
+    for (const row of questionRows) {
+      const id = String(row?.rentability_topic_id || '');
+      counts.set(id, (counts.get(id) || 0) + 1);
+    }
+    const mismatched = activeTopics.find(row => Number.isFinite(Number(row?.n_questions)) && Number(row.n_questions) !== Number(counts.get(String(row.id)) || 0));
+    if (mismatched) return { ok:false, reason:`topic_count_mismatch_${mismatched.id}` };
+
+    const expectedTaxonomy = String(metadata.taxonomy_version || '').trim();
+    if (expectedTaxonomy) {
+      const badQuestion = questionRows.find(row => String(row?.taxonomy_version || '') !== expectedTaxonomy);
+      const badTopic = activeTopics.find(row => String(row?.taxonomy_version || '') !== expectedTaxonomy);
+      if (badQuestion || badTopic) return { ok:false, reason:'taxonomy_version_mismatch' };
+    }
+    return { ok:true, activeTopics };
+  }
+
+  async function fetchAllRentabilityTopics() {
+    const pageSize = 500;
+    const all = [];
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await supa.from('rentability_topics').select('*').order('id').range(from, from + pageSize - 1);
+      if (error) return { data:null, error };
+      all.push(...(data || []));
+      if (!data || data.length < pageSize) break;
+    }
+    return { data:all, error:null };
+  }
+
+  async function fetchTopicAliasesOptional() {
+    const { data, error } = await supa.from('taxonomy_topic_aliases').select('*').order('source_topic_id');
+    if (error) return { data:[], error:null, unavailable:true };
+    return { data:data || [], error:null, unavailable:false };
+  }
+
   async function loadCorpusWithCache() {
     const cached = sessionStore?.getCachedCorpus ? await sessionStore.getCachedCorpus() : null;
     const manifestRes = await fetchDatasetManifest();
     const remoteManifest = manifestRes.data;
     datasetManifest = remoteManifest || cached?.manifest || null;
     const cachedQuestions = cached?.questions || [];
-    const cachedValid = cachedQuestions.length > 0 && (
+    const cachedTopics = cached?.topics || [];
+    const cachedMetadata = manifestMetadata(cached?.manifest || {});
+    const cachedValid = cachedQuestions.length > 0 && cachedTopics.length > 0 && (
       remoteManifest
-        ? (W4Data.manifestMatches ? W4Data.manifestMatches(cached?.manifest || { dataset_revision:cached?.revision }, remoteManifest, cachedQuestions.length) : cached?.revision === remoteManifest.dataset_revision)
+        ? (W4Data.manifestMatchesBundle
+            ? W4Data.manifestMatchesBundle(cached?.manifest || { dataset_revision:cached?.revision }, remoteManifest, cachedQuestions.length, activeTopicRows(cachedTopics).length)
+            : W4Data.manifestMatches(cached?.manifest || { dataset_revision:cached?.revision }, remoteManifest, cachedQuestions.length))
         : cachedQuestions.length === Number(cached?.manifest?.row_count || cachedQuestions.length)
     );
 
-    if (cachedValid) return { data:cachedQuestions, source:'indexeddb', manifest:datasetManifest, error:null };
-
-    const remote = await fetchAllQuestions();
-    if (remote.error) {
-      if (cachedQuestions.length) return { data:cachedQuestions, source:'indexeddb-stale', manifest:datasetManifest, error:null };
-      return { data:null, source:'none', manifest:datasetManifest, error:remote.error };
+    if (cachedValid) {
+      const aliases = await fetchTopicAliasesOptional();
+      return { data:cachedQuestions, topics:activeTopicRows(cachedTopics), aliases:aliases.data || [], source:'indexeddb', manifest:datasetManifest, error:null };
     }
 
-    const normalized = normalizeQuestionCorpus(remote.data || []);
-    const topics = W4Data.topicsFromQuestions ? W4Data.topicsFromQuestions(normalized) : [];
+    const [remoteQuestions, remoteTopics, aliases] = await Promise.all([
+      fetchAllQuestions(),
+      fetchAllRentabilityTopics(),
+      fetchTopicAliasesOptional(),
+    ]);
+    if (remoteQuestions.error || remoteTopics.error) {
+      if (cachedQuestions.length && cachedTopics.length) return { data:cachedQuestions, topics:activeTopicRows(cachedTopics), aliases:aliases.data || [], source:'indexeddb-stale', manifest:datasetManifest, error:null };
+      return { data:null, topics:null, aliases:aliases.data || [], source:'none', manifest:datasetManifest, error:remoteQuestions.error || remoteTopics.error };
+    }
+
+    const normalized = normalizeQuestionCorpus(remoteQuestions.data || []);
+    const allTopics = remoteTopics.data || [];
     const manifest = remoteManifest || {
       dataset_key:'questions',
       dataset_revision:`fallback-${normalized.length}-${new Date().toISOString().slice(0,10)}`,
       row_count:normalized.length,
-      metadata:{ taxonomy_version:'unknown', source:'client-fallback' },
+      metadata:{ taxonomy_version:'unknown', active_topic_count:activeTopicRows(allTopics).length, source:'client-fallback' },
       updated_at:new Date().toISOString(),
     };
-    if (sessionStore?.replaceCorpus) await sessionStore.replaceCorpus(normalized, topics, manifest);
+    const validation = validateCorpusBundle(normalized, allTopics, manifest);
+    if (!validation.ok) {
+      console.error('Se rechazó un bundle de taxonomía incompatible; se conserva la caché previa.', validation.reason);
+      if (cachedQuestions.length && cachedTopics.length) return { data:cachedQuestions, topics:activeTopicRows(cachedTopics), aliases:aliases.data || [], source:'indexeddb-stale-invalid-remote', manifest:cached?.manifest || datasetManifest, error:null, validationError:validation.reason };
+      return { data:null, topics:null, aliases:aliases.data || [], source:'none', manifest, error:new Error(`Dataset incompatible: ${validation.reason}`) };
+    }
+    if (sessionStore?.replaceCorpus) await sessionStore.replaceCorpus(normalized, validation.activeTopics, manifest);
     datasetManifest = manifest;
-    return { data:normalized, source:'supabase', manifest, error:null };
+    return { data:normalized, topics:validation.activeTopics, aliases:aliases.data || [], source:'supabase', manifest, error:null };
   }
 
   async function fetchAttemptsUpdatedSince(since = null) {
@@ -2727,6 +2872,17 @@
     if (fRes.error) { renderFatal(`No se pudieron sincronizar las observaciones: ${fRes.error.message}`); return; }
 
     questions = normalizeQuestionCorpus(qRes.data || []);
+    rentabilityTopics = qRes.topics || (W4Data.topicsFromQuestions ? W4Data.topicsFromQuestions(questions) : []);
+    rentabilityTopicsById = new Map(rentabilityTopics.map(row => [String(row.id), row]));
+    topicAliases = qRes.aliases || [];
+    topicAliasBySourceId = new Map(topicAliases.map(row => [String(row.source_topic_id || ''), row]).filter(([key]) => key));
+    topicAliasesBySourceLabel = new Map();
+    for (const row of topicAliases) {
+      const key = normalizeTopicSearch(row?.source_label || '');
+      if (!key) continue;
+      if (!topicAliasesBySourceLabel.has(key)) topicAliasesBySourceLabel.set(key, []);
+      topicAliasesBySourceLabel.get(key).push(row);
+    }
     rebuildCorpusRentability();
     const remoteAttempts = aRes.data || [];
     const shadowAttempts = sessionStore?.getAttemptsForUser
@@ -2970,6 +3126,21 @@
     const explicit = explicitRentabilityTier(q);
     if (explicit.includes('MUY_ALTA') || explicit.includes('MUY ALTA') || explicit.startsWith('ALTA')) return true;
     return Boolean(corpusRentabilityByQuestion.get(q.id)?.high);
+  }
+
+  function normalizedExplicitRentabilityTier(q) {
+    return explicitRentabilityTier(q).replace(/\s+/g, '_');
+  }
+
+  function matchesRentabilityFilter(q, filter = 'all') {
+    if (!filter || filter === 'all') return true;
+    if (filter === 'high') return isHighRentability(q);
+    const explicit = normalizedExplicitRentabilityTier(q);
+    if (filter === 'muy_alta') return explicit === 'MUY_ALTA';
+    if (filter === 'alta') return explicit === 'ALTA';
+    if (filter === 'media') return explicit === 'MEDIA';
+    if (filter === 'baja') return explicit === 'BAJA';
+    return true;
   }
 
   function sortByPriority(list, now = new Date(), { diversifyYears = false, tolerance = 0.75 } = {}) {
@@ -3530,7 +3701,7 @@
           <span class="roadmap-kicker">SE RECALCULA CON CADA RESPUESTA</span>
           <h1>Tu mapa actual de debilidades</h1>
           <p class="muted">Usa el estado más reciente de cada pregunta: errores, dudas <strong>?</strong>, error+duda, lentitud, errores recientes y repasos vencidos. Una pregunta incorrecta con <strong>?</strong> recibe prioridad adicional.</p>
-          <small class="tts-catalog-meta">Disponibilidad TTS: ${availableTtsCount()} temas · catálogo ${esc(ttsCatalog.catalogVersion || '—')} · ${ttsCatalogSource === 'supabase' ? 'Supabase' : 'respaldo local'}</small>
+          <small class="tts-catalog-meta">Disponibilidad TTS: ${availableTtsCount(rentabilityTopics.length ? rentabilityTopics : null)} temas · catálogo ${esc(ttsCatalog.catalogVersion || '—')} · ${ttsCatalogSource === 'supabase' ? 'Supabase' : 'respaldo local'}</small>
         </div>
         <div class="actions">
           <button id="copy-weakness-report" class="btn primary">📋 Copiar informe para ChatGPT</button>
@@ -4510,6 +4681,12 @@
     const areas = [...new Set(questions.map(q => q.area).filter(Boolean))].sort(localeSort);
     const topicHierarchy = buildTopicHierarchy();
     const years = [...new Set(questions.map(q => Number(q.year)))].sort((a,b) => a-b);
+    const tierCounts = {
+      muy_alta:questions.filter(q => matchesRentabilityFilter(q, 'muy_alta')).length,
+      alta:questions.filter(q => matchesRentabilityFilter(q, 'alta')).length,
+      media:questions.filter(q => matchesRentabilityFilter(q, 'media')).length,
+      baja:questions.filter(q => matchesRentabilityFilter(q, 'baja')).length,
+    };
     const highCount = questions.filter(isHighRentability).length;
     const isExam = mode === 'exam';
 
@@ -4528,8 +4705,8 @@
           <div class="builder-grid">
             <fieldset><legend>Contenido</legend>
               <label>Estado previo<select id="pool-type" class="input"><option value="all">Todas</option><option value="unseen">Nunca vistas</option><option value="errors">Solo errores</option><option value="correct">Ya acertadas</option></select></label>
-              <label>Rentabilidad<select id="rentability" class="input"><option value="all">Todas</option><option value="high" ${highCount ? '' : 'disabled'}>Alta rentabilidad${highCount ? ` · ${highCount} preguntas` : ' — requiere al menos corpus suficiente y temas clasificados'}</option></select></label>
-              <small class="muted">La rentabilidad usa el puntaje histórico auditado de la taxonomía global V2 cuando está disponible. Si la base aún no fue migrada, la app conserva temporalmente el cálculo automático por corpus. No depende de cuántas preguntas hayas respondido.</small>
+              <label>Rentabilidad<select id="rentability" class="input"><option value="all">Todas</option><option value="high" ${highCount ? '' : 'disabled'}>MUY_ALTA + ALTA · ${highCount}</option><option value="muy_alta" ${tierCounts.muy_alta ? '' : 'disabled'}>MUY_ALTA · ${tierCounts.muy_alta}</option><option value="alta" ${tierCounts.alta ? '' : 'disabled'}>ALTA · ${tierCounts.alta}</option><option value="media" ${tierCounts.media ? '' : 'disabled'}>MEDIA · ${tierCounts.media}</option><option value="baja" ${tierCounts.baja ? '' : 'disabled'}>BAJA · ${tierCounts.baja}</option></select></label>
+              <small class="muted">La rentabilidad usa el tier y score auditados del topic primario cuando están disponibles. Si la base aún no fue migrada, la app conserva temporalmente el cálculo automático por corpus. No depende de cuántas preguntas hayas respondido.</small>
             </fieldset>
 
             <fieldset><legend>Cantidad</legend>
@@ -4546,7 +4723,7 @@
                 <input id="topic-search" class="input topic-search" type="search" placeholder="Buscar tema o especialidad: exantemas, cardiología, sepsis…" autocomplete="off">
                 <div class="topic-tools"><button type="button" id="topics-all" class="btn small">Todos</button><button type="button" id="topics-none" class="btn small ghost">Ninguno</button></div>
               </div>
-              <div class="topic-browser-help">Navega por Área → Especialidad → Tema de rentabilidad o usa el buscador. La entidad clínica se conserva como nivel fino dentro de cada pregunta.</div>
+              <div class="topic-browser-help">Navega por Área → Especialidad primaria → Tema clínico primario o usa el buscador. La entidad clínica se conserva como nivel fino dentro de cada pregunta.</div>
               <div id="topic-search-status" class="topic-search-status muted"></div>
               <div class="topic-browser" id="topic-browser">${topicHierarchyHtml(topicHierarchy)}</div>
             </fieldset>
@@ -4703,8 +4880,8 @@
     return questions.filter(q => {
       if (config.areas.length && !config.areas.includes(q.area)) return false;
       if (config.years.length && !config.years.includes(Number(q.year))) return false;
-      if (config.topicPaths.length && !config.topicPaths.includes(topicPathKey(q))) return false;
-      if (config.rentability === 'high' && !isHighRentability(q)) return false;
+      if (config.topicPaths.length && !topicSelectionMatches(q, config.topicPaths)) return false;
+      if (!matchesRentabilityFilter(q, config.rentability)) return false;
       if (config.poolType === 'unseen' && seenIds.has(q.id)) return false;
       if (config.poolType === 'errors' && !wrongIds.has(q.id)) return false;
       if (config.poolType === 'correct' && !correctIds.has(q.id)) return false;
@@ -7167,8 +7344,9 @@
     return topicId ? (ttsCatalogByTopic.get(topicId) || null) : null;
   }
 
-  function availableTtsCount() {
-    return [...ttsCatalogByTopic.values()].filter(item => item && item.status !== 'PENDING').length;
+  function availableTtsCount(activeTopics = null) {
+    const activeIds = Array.isArray(activeTopics) ? new Set(activeTopics.map(topic => String(topic.id || topic.key || ''))) : null;
+    return [...ttsCatalogByTopic.values()].filter(item => item && item.status !== 'PENDING' && (!activeIds || activeIds.has(String(item.topicId)))).length;
   }
 
   function enrichCoverageTopics(topics = []) {
@@ -7177,7 +7355,15 @@
       const ttsStatusLabel = W4Data.catalogCompactLabel
         ? W4Data.catalogCompactLabel(tts)
         : (W4Data.catalogStatusLabel ? W4Data.catalogStatusLabel(tts) : (tts?.status || 'Pendiente'));
-      return { ...topic, tts, ttsStatusLabel, ttsAvailable:Boolean(tts && tts.status !== 'PENDING') };
+      const canonical = rentabilityTopicsById.get(String(topic.id || topic.key || '')) || {};
+      return {
+        ...topic,
+        tierConfidence:canonical.tier_confidence || topic.tierConfidence || topic.scoreConfidence || null,
+        sampleBand:canonical.sample_band || null,
+        scoringReliabilityPolicy:canonical.scoring_reliability_policy || null,
+        freezeStatus:canonical.freeze_status || null,
+        tts, ttsStatusLabel, ttsAvailable:Boolean(tts && tts.status !== 'PENDING'),
+      };
     });
   }
 
@@ -7236,7 +7422,7 @@
     app.innerHTML = `<main class="shell">${topbar('Detalle de tema', true)}
       <section class="panel topic-coverage-detail-head">
         <button id="coverage-back" class="btn small ghost" type="button">← Volver a Mi estado</button>
-        <div class="meta-line"><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<span class="tag">Rentabilidad ${Math.round(topic.score)}</span>` : ''}<span class="tag ${topic.ttsAvailable?'ok':''}">TTS ${esc(topic.ttsStatusLabel)}</span></div>
+        <div class="meta-line"><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<span class="tag">Rentabilidad ${Math.round(topic.score)}</span>` : ''}${String(topic.tierConfidence||'').toUpperCase()==='BORDERLINE'?'<span class="tag warn">Tier cerca del corte</span>':''}<span class="tag ${topic.ttsAvailable?'ok':''}">TTS ${esc(topic.ttsStatusLabel)}</span></div>${topic.scoringReliabilityPolicy==='PARENT_AWARE_INTERPRETATION_REQUIRED'?'<p class="muted">Score con muestra pequeña: interprétalo junto con su especialidad; el topic permanece congelado y contable de forma exclusiva.</p>':''}
         <h2>${esc(topic.label)}</h2><p class="muted">${esc(topic.area)} → ${esc(topic.specialty)}</p>
         <div class="coverage-detail-kpis"><span><strong>${topic.seen}/${topic.total}</strong> vistas</span><span><strong>${topic.correctEver}/${topic.total}</strong> acertadas alguna vez</span><span><strong>${topic.overdue}</strong> vencidas</span><span><strong>${topic.uncertainAttempts}</strong> intentos dudosos</span></div>
         <div class="footer-actions"><button id="topic-unseen-session" class="btn primary" ${topic.seen===topic.total?'disabled':''}>Practicar no vistas</button><button id="topic-all-session" class="btn">Crear sesión del tema</button><button id="topic-tts-request" class="btn ghost">📋 ${topic.ttsAvailable?'Pedir suplemento TTS':'Pedir TTS'}</button></div>
@@ -7252,17 +7438,6 @@
       const pool = topicQuestions.filter(q => !seen.has(q.id));
       if (pool.length) launchStudy(pool, { mode:'study', count:pool.length, randomize:false, feedback:'end', timeMode:'none', secondsPerQuestion:Number(profile?.target_response_seconds||25), totalSeconds:0, title:`No vistas · ${topic.label}`, studyMode:'topic_unseen', shuffleOptions:true });
     };
-  }
-
-  function specialtyRentabilityTier(score, topics = []) {
-    if (Number.isFinite(score)) {
-      if (score >= 75) return 'MUY_ALTA';
-      if (score >= 60) return 'ALTA';
-      if (score >= 40) return 'MEDIA';
-      return 'BAJA';
-    }
-    const rank = W3Tools.TIER_ORDER || { MUY_ALTA:0, ALTA:1, MEDIA:2, BAJA:3, SIN_CLASIFICAR:4 };
-    return [...topics].sort((a,b) => (rank[a.tier] ?? 4) - (rank[b.tier] ?? 4))[0]?.tier || 'SIN_CLASIFICAR';
   }
 
   function buildSpecialtyCoverageGroups(topics = []) {
@@ -7297,7 +7472,6 @@
         ...group,
         topics:orderedTopics,
         score,
-        tier:specialtyRentabilityTier(score, orderedTopics),
         coverage:group.total ? group.seen / group.total : 0,
         accuracy:group.attempts ? group.correctAttempts / group.attempts : null,
       };
@@ -7305,27 +7479,35 @@
   }
 
   function topicCoverageTableMarkup(topics = []) {
-    return `<div class="table-wrap"><table class="topic-coverage-table"><thead><tr><th class="num coverage-rank">N.º</th><th>Tema</th><th>Rentabilidad</th><th>TTS</th><th class="num">Vistas</th><th class="num">Total</th><th class="num">Cobertura</th><th class="num">Dudas</th><th class="num">Vencidas</th></tr></thead><tbody>${topics.map((topic,index) => `<tr class="clickable-row" data-topic-coverage-key="${esc(topic.key)}" tabindex="0"><td class="num coverage-rank">${index+1}</td><td><strong>${esc(topic.label)}</strong><small>${esc(topic.area)} · ${esc(topic.specialty)}</small></td><td><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<small>${Math.round(topic.score)}</small>` : ''}</td><td><button class="btn small ghost tts-availability ${topic.ttsAvailable?'available':''}" type="button" data-topic-tts-key="${esc(topic.key)}" title="${topic.ttsAvailable?'La lectura existe; copiar pedido de suplemento':'La lectura todavía no existe; copiar pedido TTS'}">${esc(topic.ttsStatusLabel || 'Pendiente')}</button></td><td class="num">${topic.seen}</td><td class="num">${topic.total}</td><td class="num">${Math.round(topic.coverage*100)}%</td><td class="num">${topic.uncertainAttempts}</td><td class="num">${topic.overdue}</td></tr>`).join('')}</tbody></table></div>`;
+    return `<div class="table-wrap"><table class="topic-coverage-table"><thead><tr><th class="num coverage-rank">N.º</th><th>Tema</th><th>Rentabilidad</th><th>TTS</th><th class="num">Vistas</th><th class="num">Total</th><th class="num">Cobertura</th><th class="num">Dudas</th><th class="num">Vencidas</th></tr></thead><tbody>${topics.map((topic,index) => `<tr class="clickable-row" data-topic-coverage-key="${esc(topic.key)}" tabindex="0"><td class="num coverage-rank">${index+1}</td><td><strong>${esc(topic.label)}</strong><small>${esc(topic.area)} · ${esc(topic.specialty)}</small></td><td><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<small>${Math.round(topic.score)}${String(topic.tierConfidence||'').toUpperCase()==='BORDERLINE'?' · cerca del corte':''}</small>` : ''}</td><td><button class="btn small ghost tts-availability ${topic.ttsAvailable?'available':''}" type="button" data-topic-tts-key="${esc(topic.key)}" title="${topic.ttsAvailable?'La lectura existe; copiar pedido de suplemento':'La lectura todavía no existe; copiar pedido TTS'}">${esc(topic.ttsStatusLabel || 'Pendiente')}</button></td><td class="num">${topic.seen}</td><td class="num">${topic.total}</td><td class="num">${Math.round(topic.coverage*100)}%</td><td class="num">${topic.uncertainAttempts}</td><td class="num">${topic.overdue}</td></tr>`).join('')}</tbody></table></div>`;
   }
 
   function specialtyCoverageMarkup(groups = []) {
-    return `<p class="muted specialty-coverage-note">La rentabilidad de cada especialidad es el promedio de los puntajes de sus temas, ponderado por el número de preguntas. Dentro de cada especialidad, los temas se ordenan por rentabilidad.</p><div class="specialty-coverage-list">${groups.map(group => `<details class="specialty-coverage-group"><summary><div><strong>${esc(group.specialty)}</strong><small>${esc(group.area)} · ${group.topics.length} tema${group.topics.length===1?'':'s'} · ${group.total} preguntas</small></div><div class="specialty-summary-metrics"><span class="tag">${esc(topicTierLabel(group.tier))}${group.score == null?'':` · ${Math.round(group.score)}`}</span><span>${group.seen}/${group.total} vistas · ${Math.round(group.coverage*100)}%</span><span>${group.overdue} vencidas</span><span>${group.ttsAvailable}/${group.topics.length} TTS</span></div></summary>${topicCoverageTableMarkup(group.topics)}</details>`).join('')}</div>`;
+    return `<p class="muted specialty-coverage-note">La especialidad es la columna vertebral de navegación. El número mostrado es un promedio descriptivo ponderado de los scores de sus temas; no crea un tier canónico nuevo ni modifica los tiers A16.</p><div class="specialty-coverage-list">${groups.map(group => `<details class="specialty-coverage-group"><summary><div><strong>${esc(group.specialty)}</strong><small>${esc(group.area)} · ${group.topics.length} tema${group.topics.length===1?'':'s'} · ${group.total} preguntas</small></div><div class="specialty-summary-metrics"><span class="tag">${group.score == null?'Sin promedio':`Promedio descriptivo ${Math.round(group.score)}`}</span><span>${group.seen}/${group.total} vistas · ${Math.round(group.coverage*100)}%</span><span>${group.overdue} vencidas</span><span>${group.ttsAvailable}/${group.topics.length} TTS</span></div></summary>${topicCoverageTableMarkup(group.topics)}</details>`).join('')}</div>`;
   }
 
   function renderStats(topicSort = 'rentability', coverageView = 'topics') {
     clearTimer();
+    // Coverage is a corpus-membership metric: A16 requires all 2,180 stable question IDs
+    // to count exactly once, including questions whose audit status may exclude them from
+    // adaptive accuracy/weakness calculations. Other performance metrics remain restricted
+    // to non-observed questions below.
+    const corpusIds = new Set(questions.map(q => q.id));
+    const coverageAttempts = attempts.filter(a => corpusIds.has(a.question_id));
+    const coverageMemory = memoryStates.filter(row => corpusIds.has(row.question_id));
+    const coverage = W3Tools.buildCoverageSnapshot
+      ? W3Tools.buildCoverageSnapshot(questions, coverageAttempts, coverageMemory, new Date())
+      : { totalQuestions:questions.length, seenQuestions:new Set(coverageAttempts.map(a=>a.question_id)).size, correctEverQuestions:new Set(coverageAttempts.filter(a=>a.is_correct).map(a=>a.question_id)).size, totalTopics:0, touchedTopics:0, completeTopics:0, topics:[] };
+
     const statsQuestions = questions.filter(q => !observed(q));
     const statsIds = new Set(statsQuestions.map(q => q.id));
     const statsAttempts = attempts.filter(a => statsIds.has(a.question_id));
     const statsMemory = memoryStates.filter(row => statsIds.has(row.question_id));
-    const coverage = W3Tools.buildCoverageSnapshot
-      ? W3Tools.buildCoverageSnapshot(statsQuestions, statsAttempts, statsMemory, new Date())
-      : { totalQuestions:statsQuestions.length, seenQuestions:new Set(statsAttempts.map(a=>a.question_id)).size, correctEverQuestions:new Set(statsAttempts.filter(a=>a.is_correct).map(a=>a.question_id)).size, totalTopics:0, touchedTopics:0, completeTopics:0, topics:[] };
     const timeSummary = W3Tools.buildTimeSummary
       ? W3Tools.buildTimeSummary(statsAttempts, completedSessions, statsQuestions.length, new Date())
       : { todayQuestions:dailyActual(isoDateLocal()), activeMsToday:statsAttempts.filter(a=>isoDateLocal(a.answered_at)===isoDateLocal()).reduce((sum,a)=>sum+Number(a.response_time_ms||0),0), pacePerDay:sevenDayPace(), unseenQuestions:Math.max(0,statsQuestions.length-new Set(statsAttempts.map(a=>a.question_id)).size), projectedDays:null };
     const coverageTopics = enrichCoverageTopics(coverage.topics);
-    const availableTts = availableTtsCount();
+    const availableTts = availableTtsCount(coverageTopics);
     const sortedTopics = W3Tools.sortTopics ? W3Tools.sortTopics(coverageTopics, topicSort) : coverageTopics;
     const specialtyGroups = buildSpecialtyCoverageGroups(coverageTopics);
     const normalizedCoverageView = coverageView === 'specialties' ? 'specialties' : 'topics';
@@ -7348,7 +7530,7 @@
       <section class="panel stats-report-link"><div><h2>Informe dinámico de debilidades</h2><p class="muted">Separa cobertura, debilidad y rentabilidad. La cobertura se calcula localmente con el corpus y los intentos ya cargados.</p></div><div class="stats-link-actions"><button id="stats-weakness-report" class="btn primary">Ver informe</button><button id="stats-history" class="btn">🕘 Historial y ritmo</button></div></section>
 
       <section class="kpis coverage-kpis">
-        <div class="kpi"><div class="value">${coverage.seenQuestions}/${coverage.totalQuestions}</div><div class="label">Preguntas válidas vistas ≥1 vez</div><small>Excluye ${questions.length-statsQuestions.length} observadas</small></div>
+        <div class="kpi"><div class="value">${coverage.seenQuestions}/${coverage.totalQuestions}</div><div class="label">Preguntas del corpus vistas ≥1 vez</div><small>La cobertura taxonómica incluye las ${coverage.totalQuestions} preguntas; ${questions.length-statsQuestions.length} observadas se excluyen solo de métricas adaptativas de precisión/debilidad.</small></div>
         <div class="kpi"><div class="value">${coverage.correctEverQuestions}/${coverage.totalQuestions}</div><div class="label">Acertadas ≥1 vez</div></div>
         <div class="kpi"><div class="value">${coverage.touchedTopics}/${coverage.totalTopics}</div><div class="label">Temas tocados</div></div>
         <div class="kpi"><div class="value">${coverage.completeTopics}/${coverage.totalTopics}</div><div class="label">Temas con cobertura completa</div></div>
@@ -7360,7 +7542,7 @@
 
       <section class="stats-grid"><div class="panel"><h2>Por área</h2><div class="table-wrap"><table><thead><tr><th>Área</th><th class="num">Preg.</th><th class="num">Intentos</th><th class="num">Acierto</th></tr></thead><tbody>${[...byArea.entries()].sort().map(([area,g])=>`<tr><td>${esc(area)}</td><td class="num">${g.questions}</td><td class="num">${g.attempts}</td><td class="num">${pct(g.correct,g.attempts)}</td></tr>`).join('')}</tbody></table></div></div><div class="panel"><h2>Más difíciles</h2><div class="table-wrap"><table><thead><tr><th>ID</th><th>Tema</th><th class="num">Fallos</th><th class="num">Vistas</th></tr></thead><tbody>${hard.map(({q,s})=>`<tr><td>${esc(q.id)}</td><td>${esc(q.rentability_topic_label || q.topic)}</td><td class="num">${s.wrong}</td><td class="num">${s.seen}</td></tr>`).join('')}</tbody></table></div></div></section>
 
-      <section class="panel topic-coverage-panel"><div class="section-head topic-coverage-head"><div><h2>Cobertura canónica</h2><p class="muted">Este bloque queda al final de Mi estado. Puedes ver los 274 temas individualmente o agruparlos por especialidad. La disponibilidad TTS se carga una sola vez desde Supabase y usa el respaldo local si no hay conexión.</p><small class="tts-catalog-meta">Catálogo ${esc(ttsCatalog.catalogVersion || '—')} · ${availableTts} TTS disponibles · fuente ${ttsCatalogSource === 'supabase' ? 'Supabase' : 'respaldo local'}${ttsCatalogLoadError ? ' · sincronización remota no disponible' : ''}</small></div><div class="topic-coverage-controls"><label>Vista<select id="topic-coverage-view" class="input"><option value="topics" ${normalizedCoverageView==='topics'?'selected':''}>Temas individuales</option><option value="specialties" ${normalizedCoverageView==='specialties'?'selected':''}>Agrupado por especialidad</option></select></label>${normalizedCoverageView==='topics'?`<label>Orden<select id="topic-coverage-sort" class="input"><option value="rentability" ${topicSort==='rentability'?'selected':''}>Rentabilidad</option><option value="coverage" ${topicSort==='coverage'?'selected':''}>Menor cobertura</option><option value="weakness" ${topicSort==='weakness'?'selected':''}>Mayor debilidad</option><option value="alphabetical" ${topicSort==='alphabetical'?'selected':''}>Alfabético</option></select></label>`:''}</div></div>
+      <section class="panel topic-coverage-panel"><div class="section-head topic-coverage-head"><div><h2>Cobertura canónica</h2><p class="muted">Este bloque queda al final de Mi estado. Puedes ver los ${coverage.totalTopics} temas activos individualmente o agruparlos por especialidad. La disponibilidad TTS se carga una sola vez desde Supabase y usa el respaldo local si no hay conexión.</p><small class="tts-catalog-meta">Catálogo ${esc(ttsCatalog.catalogVersion || '—')} · ${availableTts} TTS disponibles · fuente ${ttsCatalogSource === 'supabase' ? 'Supabase' : 'respaldo local'}${ttsCatalogLoadError ? ' · sincronización remota no disponible' : ''}</small></div><div class="topic-coverage-controls"><label>Vista<select id="topic-coverage-view" class="input"><option value="topics" ${normalizedCoverageView==='topics'?'selected':''}>Temas individuales</option><option value="specialties" ${normalizedCoverageView==='specialties'?'selected':''}>Agrupado por especialidad</option></select></label>${normalizedCoverageView==='topics'?`<label>Orden<select id="topic-coverage-sort" class="input"><option value="rentability" ${topicSort==='rentability'?'selected':''}>Rentabilidad</option><option value="coverage" ${topicSort==='coverage'?'selected':''}>Menor cobertura</option><option value="weakness" ${topicSort==='weakness'?'selected':''}>Mayor debilidad</option><option value="alphabetical" ${topicSort==='alphabetical'?'selected':''}>Alfabético</option></select></label>`:''}</div></div>
         ${normalizedCoverageView==='specialties' ? specialtyCoverageMarkup(specialtyGroups) : topicCoverageTableMarkup(sortedTopics)}
       </section>
     </main>`;

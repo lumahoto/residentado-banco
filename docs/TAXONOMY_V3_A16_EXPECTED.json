@@ -1,0 +1,37 @@
+{
+  "release_id": "REL-20260818-V1.4.0-TAXV3-A16",
+  "dataset_revision": "QUESTIONS-TAXV3-A16-20260818-R1",
+  "taxonomy_version": "TAXONOMIA_RENTABILIDAD_TAX_AUD_FINAL_V3_2026-08-18",
+  "rentability_formula_version": "RENTABILIDAD_TAX_AUD_FINAL_V3_LEGACY_EMULATION_2026-08-18",
+  "source_package": "TAXONOMIA_META_AUDITORIA_FREEZE_A16_META-AUD-014",
+  "source_package_sha256": "a759bd56e7a7170989e54f2d31baacc483274abcc4a8e5a0c25a4e2608e1ee7a",
+  "question_count": 2180,
+  "active_topic_count": 287,
+  "stored_topic_count_after_migration": 303,
+  "retained_active_v2_ids": 258,
+  "deprecated_v2_ids": 16,
+  "new_active_v3_ids": 29,
+  "alias_rows": 291,
+  "alias_unique_source_ids": 289,
+  "deprecated_alias_rows": 16,
+  "secondary_relation_rows": 18,
+  "question_tier_counts": {
+    "MUY_ALTA": 582,
+    "ALTA": 699,
+    "MEDIA": 741,
+    "BAJA": 158
+  },
+  "topic_tier_counts": {
+    "MUY_ALTA": 33,
+    "ALTA": 71,
+    "MEDIA": 134,
+    "BAJA": 49
+  },
+  "topic_tier_confidence_counts": {
+    "HIGH": 162,
+    "BORDERLINE": 125
+  },
+  "freeze_until": "2026-09-06",
+  "coverage_counting_rule": "EXCLUSIVE_PRIMARY_TOPIC_ONLY",
+  "compatibility": "V2_TO_V3_PRIMARY_TOPIC_STABLE_QUESTION_IDS"
+}

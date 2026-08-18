@@ -1,95 +1,70 @@
 {
-  "release_id": "REL-20260806-V1.3.1",
-  "version": "1.3.1",
-  "date": "2026-08-06",
+  "release_id": "REL-20260818-V1.4.0-TAXV3-A16",
+  "version": "1.4.0",
+  "date": "2026-08-18",
   "base": {
-    "version": "1.3.0",
-    "archive": "260806_v130_residentado-banco-main(1).zip",
-    "sha256": "2ef803ee51e256aaa72c0632d540d030500373e82e79def7a7c4d63299a33bc9"
+    "version": "1.3.4",
+    "archive": "260817_residentado-banco-main_v134.zip",
+    "sha256": "30ed0a4f148cefca3f33f80a89bed1c73960f10cd2b65270b53738771ebefda7"
   },
-  "status": "CANDIDATA_ESTABLE_PENDIENTE_SMOKE_REAL_POST_DEPLOYMENT",
-  "release_type": "COMPATIBLE_FEATURE_PATCH",
-  "features": [
-    "SINGLE_AUTHORITATIVE_REVIEW_PATCH_CSV",
-    "FULL_DYNAMIC_QUESTION_COLUMNS",
-    "FULL_DYNAMIC_FLAG_COLUMNS",
-    "SUPABASE_READ_ON_EXPLICIT_EXPORT_ONLY",
-    "NO_LOCAL_CACHE_EXPORT_FALLBACK",
-    "INCOMPLETE_ID_SET_ABORTS_EXPORT",
-    "ROW_VERSION_HASH_AND_UPDATED_AT_METADATA",
-    "MULTILINE_CSV_FIELDS_PRESERVED"
+  "status": "READY_FOR_GITHUB_REPLACEMENT_AND_STAGED_SUPABASE_MIGRATION_NOT_APPLIED",
+  "release_type": "TAXONOMY_COMPATIBILITY_MIGRATION",
+  "taxonomy": {
+    "source_package": "TAXONOMIA_META_AUDITORIA_FREEZE_A16_META-AUD-014",
+    "source_sha256": "a759bd56e7a7170989e54f2d31baacc483274abcc4a8e5a0c25a4e2608e1ee7a",
+    "taxonomy_version": "TAXONOMIA_RENTABILIDAD_TAX_AUD_FINAL_V3_2026-08-18",
+    "active_topics": 287,
+    "questions": 2180,
+    "primary_memberships": 2180,
+    "stored_topics_after_migration": 303,
+    "deprecated_preserved": 16,
+    "new_active_topics": 29,
+    "alias_rows": 291,
+    "secondary_relations": 18,
+    "freeze_until": "2026-09-06"
+  },
+  "dataset_revision_target": "QUESTIONS-TAXV3-A16-20260818-R1",
+  "runtime_changes": [
+    "atomic questions+rentability_topics bundle validation against app_dataset_versions metadata",
+    "automatic IndexedDB corpus invalidation on dataset_revision/active_topic_count/taxonomy_version change",
+    "stable rentability_topic_id serialization in topic filters with V2 label-path compatibility",
+    "optional alias/deprecation resolver for V2-to-V3 topic references",
+    "individual MUY_ALTA/ALTA/MEDIA/BAJA filters plus combined high filter",
+    "Mi Estado coverage counts all 2180 corpus questions and all 287 active topics dynamically",
+    "specialty navigation remains descriptive and does not synthesize canonical tiers",
+    "TTS remains legacy-compatible by exact topic ID only; no Anki/TTS migration in this release"
   ],
-  "runtime_behavior": {
-    "trigger": "explicit_user_click_only",
-    "flag_source": "public.question_review_flags select(*) by selected flag ids",
-    "question_source": "public.questions select(*) by selected question ids",
-    "query_pattern": "two grouped chunked reads; no per-row queries",
-    "offline_behavior": "abort_without_file",
-    "output_schema": "residentado-review-patch-csv-v1",
-    "output_source_label": "SUPABASE_AUTHORITATIVE",
-    "output_rows": "one row per selected flag; complete question repeated when necessary"
-  },
   "modified_runtime_files": [
     "app.js",
+    "w3-tools.js",
+    "w4-data.js",
     "version.js",
     "service-worker.js"
-  ],
-  "modified_traceability_files": [
-    "CHANGELOG.md"
   ],
   "unchanged_critical_files": [
     "session-core.js",
     "session-storage.js",
     "config.js",
-    "question-parser.js",
-    "w3-tools.js",
-    "w4-data.js",
-    "pilot-data.js",
-    "index.html",
-    "styles.css",
-    "tts_catalog.json"
+    "question-parser.js"
   ],
   "supabase": {
-    "migration_required": false,
-    "writes_added": false,
-    "runtime_reads_added": "only on explicit review CSV export",
-    "tables_read": [
-      "public.question_review_flags",
-      "public.questions"
-    ]
+    "migration_required": true,
+    "migration_directory": "MIGRATIONS/20260818_TAXONOMY_V3_A16",
+    "production_applied": false,
+    "strategy": "stage -> validate -> single transaction topics/questions/aliases/relations -> integrity -> manifest bump",
+    "rollback_included": true,
+    "user_progress_tables_written": false,
+    "rollback_semantics": "restore previous corpus/topics/aliases/relations but publish a NEW rollback dataset_revision; never reuse the old revision"
   },
   "qa": {
-    "static_regression_command": "python3 QA/qa_v1_3_1.py",
-    "static_regression_result": "PASS",
-    "browser_smoke_command": "python3 QA/qa_browser_v1_3_1.py",
-    "browser_smoke_result": "PASS",
-    "session_core_unit_result": "PASS",
-    "real_supabase_export_smoke": "PENDING_AFTER_DEPLOYMENT"
+    "static_command": "python3 QA/qa_static.py",
+    "browser_command": "python3 QA/qa_browser.py",
+    "session_core_unit_command": "node QA/test_session_core.js",
+    "static_result": "PASS",
+    "browser_result": "PASS",
+    "real_supabase_smoke": "PENDING_USER_APPLICATION",
+    "session_core_unit_result": "PASS"
   },
-  "data_changes": {
-    "questions": false,
-    "rentability_topics": false,
-    "attempts": false,
-    "memory": false,
-    "sessions": false,
-    "review_flags": false,
-    "learning_notes": false,
-    "tts_catalog": false
-  },
-  "repository_cleanup": {
-    "performed": true,
-    "method": "versioned documentation consolidated; superseded QA/checksums/manifests/patches moved to external historical archive; runtime untouched",
-    "archive_asset": "residentado_v1.3.1_archivo_historico_retirado.zip"
-  },
-  "repository_layout": {
-    "revision": "CLEAN-20260806-R1",
-    "app_version_changed": false,
-    "runtime_files_changed": false,
-    "principle": "current source + current QA + immutable migrations; history in Git tags/releases and portable archive",
-    "qa_commands": [
-      "python3 QA/qa_static.py",
-      "python3 QA/qa_browser.py"
-    ],
-    "runtime_build_command": "python3 tools/build_runtime_zip.py"
-  }
+  "known_baseline_traceability_issue_fixed": "The supplied v1.3.4 baseline had version.js at 1.3.4 while RELEASE_MANIFEST.json and QA/qa_static.py still targeted 1.3.1. v1.4.0 realigns current release metadata and QA.",
+  "dataset_revision_rollback": "QUESTIONS-ROLLBACK-TAXV3-A16-20260818-R1"
 }
