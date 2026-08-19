@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.4.0 TAXV3 A16. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.4.1: Taxonomía V3/A16 + paridad de práctica. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -28,7 +28,7 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.4.0' in page.locator('body').inner_text()
+    assert 'v1.4.1' in page.locator('body').inner_text()
 
     page.get_by_role('button', name='📊 MI ESTADO').click()
     page.wait_for_timeout(150)
@@ -54,7 +54,25 @@ with sync_playwright() as p:
     page.wait_for_timeout(100)
     assert page.locator('#rentability option[value="muy_alta"]').count() == 1
     assert page.locator('input[name="topicPath"]').first.get_attribute('value').startswith('TOPIC_ID:')
-    page.get_by_role('button', name='Inicio').click()
+
+    # v1.4.1: una práctica personalizada cronometrada conserva la acción No sé.
+    page.locator('#question-count').fill('1')
+    page.locator('#time-mode').select_option('per_question')
+    page.locator('#seconds-per-question').fill('30')
+    page.locator('#feedback-mode').select_option('immediate')
+    page.locator('#builder-form').evaluate('(form) => form.requestSubmit()')
+    page.wait_for_timeout(150)
+    assert page.locator('#dont-know-study').count() == 1
+    assert 'No sé · mostrar respuesta' in page.locator('#dont-know-study').inner_text()
+    page.locator('#dont-know-study').click()
+    page.wait_for_timeout(250)
+    assert 'No sabía' in page.locator('#feedback').inner_text()
+    assert 'Tiempo agotado' not in page.locator('#feedback').inner_text()
+    page.locator('#cancel-study').click()
+    page.get_by_role('button', name='Cerrar sesión parcial y revisar respondidas').click()
+    page.wait_for_timeout(200)
+    page.locator('[data-review-exit]').first.click()
+
     page.get_by_role('button', name='Empezar').first.click()
     page.locator('.option[data-letter]').first.click()
     page.wait_for_timeout(250)
@@ -71,4 +89,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.4.0 TAXV3 A16: OK')
+print('QA navegador v1.4.1 PRACTICE PARITY: OK')

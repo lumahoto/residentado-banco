@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.4.0';
+  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.4.1';
   const LEARNING_NOTES_MIGRATION = 'MIGRATIONS/20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql';
   const TTS_CATALOG_TABLE = 'tts_topic_catalog';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
@@ -5011,7 +5011,7 @@
           ${locked ? `<div class="banner compact"><strong>⏱ Pregunta cerrada.</strong> ${responseState.timedOut ? 'El tiempo terminó sin respuesta; contará como un único intento fallido por tiempo.' : 'El tiempo terminó después de que respondiste; se conserva esa respuesta y ya no puede modificarse.'}</div>` : ''}
           <div class="uncertainty-hint">Marca <strong>?</strong> en cualquier alternativa que no domines del todo. No cambia tu respuesta; sí hace que el concepto vuelva antes al repaso.</div>
           <div class="options">${opts.map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.sourceLetter || o.letter))).join('')}</div>
-          ${currentStudy.config.timeMode === 'none' ? `<div class="dont-know-row"><button id="dont-know-study" class="btn ghost dont-know-btn" type="button">🤷 No sé · mostrar respuesta</button><span class="muted">Cuenta como respuesta incorrecta explícita; no como pregunta en blanco.</span></div>` : ''}
+          <div class="dont-know-row"><button id="dont-know-study" class="btn ghost dont-know-btn" type="button">${currentStudy.config.feedback === 'immediate' ? '🤷 No sé · mostrar respuesta' : '🤷 No sé · continuar'}</button><span class="muted">Cuenta como respuesta incorrecta explícita; no como pregunta en blanco ni como tiempo agotado.</span></div>
         </div>
         <div id="feedback"></div>
       </section>
@@ -5166,7 +5166,7 @@
 
   async function handleStudyDontKnow() {
     const q = studyCurrentQuestion();
-    if (!q || !currentStudy || currentStudy.config.timeMode !== 'none') return;
+    if (!q || !currentStudy || studyQuestionLocked(q)) return;
 
     saveStudyDuration();
     currentStudy.responses[q.id] = { selected: null, didNotKnow: true };
