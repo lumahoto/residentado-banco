@@ -1,29 +1,37 @@
-# Residentado v1.4.0 — Taxonomía V3 A16
+# Residentado v1.4.1 — paridad funcional de práctica sobre Taxonomía V3 A16
 
-WebApp estática del banco de Residentado Médico Perú. Esta versión parte **exclusivamente** del ZIP v1.3.4 descargado del repositorio vigente el 17/08/2026 y añade compatibilidad segura con el freeze taxonómico A16 del 18/08/2026.
+WebApp estática del banco de Residentado Médico Perú. Esta versión parte del ZIP v1.4.0 del 18/08/2026 y aplica un hotfix de uniformidad de capacidades en las sesiones de práctica, sin cambiar el dataset, la taxonomía, Supabase, memoria, scheduler ni los simulacros.
 
 ## Estado
 
-- Frontend: `v1.4.0` / caché `residentado-v1-4-0`.
+- Frontend: `v1.4.1` / caché `residentado-v1-4-1`.
+- Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
 - Preguntas: 2.180 IDs estables.
-- Taxonomía objetivo: V3 A16, 287 topics activos.
-- Migración Supabase: preparada, **no aplicada**.
-- Anki/TTS: **no migrados** en esta fase.
-- `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline v1.3.4.
+- Taxonomía: V3 A16, 287 topics activos.
+- Migración Supabase requerida por v1.4.1: **ninguna**.
+- Anki/TTS: **sin cambios** en este hotfix.
+- `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido v1.3.4.
 
-## Cambio arquitectónico principal
+## Hotfix v1.4.1: práctica uniforme
 
-La app ya no trata la taxonomía como un listado derivado solo de labels de preguntas. Carga `questions` + `rentability_topics`, compara `dataset_revision`, `taxonomy_version` y número de topics activos, valida el bundle completo y solo entonces reemplaza el corpus local en IndexedDB. Un bundle remoto parcial o incompatible no reemplaza una caché válida.
+`🤷 No sé` forma parte de las capacidades canónicas de práctica. En v1.4.0 el render y el handler lo limitaban por error a `timeMode = none`, de modo que desaparecía en práctica personalizada cronometrada, sprints y entrenamiento de velocidad.
 
-La identidad de topic del selector se serializa como `rentability_topic_id`. Las rutas antiguas basadas en labels conservan un resolver V2→V3 mediante `taxonomy_topic_aliases`.
+Desde v1.4.1 aparece en todo flujo que usa `launchStudy`:
 
-## Migración Supabase
+- práctica adaptativa;
+- práctica personalizada;
+- práctica por tema;
+- sprints y velocidad;
+- sin límite, por pregunta o con tiempo total;
+- corrección inmediata o al final.
 
-Seguir exactamente:
+Pulsar `No sé` registra una respuesta incorrecta explícita; no una pregunta en blanco y no un timeout. Si existe cronómetro, se conserva el tiempo real transcurrido hasta pulsarlo. Los simulacros estándar e históricos conservan su formato especial y no fueron modificados.
 
-`MIGRATIONS/20260818_TAXONOMY_V3_A16/README.md`
+## Taxonomía V3 A16 preservada
 
-El orden es: precheck → preparación/staging → carga → validación → commit transaccional → postcheck. El bump del manifiesto ocurre al final del mismo `COMMIT` que publica topics/questions/aliases, evitando estados mixtos V2/V3. Se incluye rollback.
+La arquitectura v1.4.0 continúa intacta: la app carga `questions` + `rentability_topics`, compara `dataset_revision`, `taxonomy_version` y número de topics activos, valida el bundle completo y solo entonces reemplaza el corpus local en IndexedDB. La identidad del selector sigue siendo `rentability_topic_id`, con compatibilidad V2→V3 mediante aliases.
+
+La migración original A16 se conserva en `MIGRATIONS/20260818_TAXONOMY_V3_A16/` únicamente para trazabilidad, verificación y rollback. **No debe reejecutarse para instalar v1.4.1.**
 
 ## QA
 
@@ -33,27 +41,13 @@ python3 QA/qa_browser.py
 node QA/test_session_core.js
 ```
 
-Los checks cubren, entre otros: versión/caché, PT409, sesiones no modificadas, identidad estable de topics, invalidación automática de corpus, ausencia de `274` en runtime, cobertura dinámica, filtros por tier y presencia/orden de la migración V3.
+Los checks cubren, entre otros: versión/caché, PT409, sesiones protegidas, taxonomía V3, invalidación automática de corpus, cobertura dinámica, filtros por tier y la nueva paridad de `No sé` en práctica cronometrada.
 
-## Estructura
+## Publicación
 
-- raíz: runtime y metadatos actuales;
-- `MIGRATIONS/`: migraciones inmutables, incluida Taxonomía V3 A16;
-- `QA/`: QA vigente;
-- `docs/`: documentación técnica vigente y expectativas A16;
-- `DATABASE/`: esquema de referencia;
-- historial cerrado: Git tags/releases y documento consolidado, no copias redundantes por versión.
-
-## Publicación recomendada
-
-1. Subir primero este repositorio v1.4.0 a GitHub y verificar que funciona todavía contra el dataset V2 actual.
-2. Mantener la WebApp cerrada durante la migración de Supabase.
-3. Aplicar los SQL V3 en el orden documentado y verificar el postcheck.
-4. Abrir v1.4.0 con conexión: debe detectar automáticamente la nueva `dataset_revision`, descargar el bundle V3 y conservar sesiones/intentos/notas/flags.
+1. Reemplazar el repositorio/runtime por v1.4.1 y hacer commit/push.
+2. No ejecutar SQL ni modificar Supabase por este hotfix.
+3. Abrir la WebApp normalmente con conexión. El nuevo nombre de caché hace que el service worker sustituya el runtime anterior.
+4. Smoke recomendado: práctica personalizada cronometrada → confirmar `No sé`; pulsarlo antes del timeout → debe figurar como `No sé`, no como `Tiempo agotado`; abrir luego un simulacro y confirmar que su interfaz permanece igual.
 
 No ejecutar migraciones antiguas por rutina.
-
-
-### Rollback taxonómico V3 A16
-
-El rollback incluido restaura el contenido previo sin borrar progreso y publica una revisión nueva (`QUESTIONS-ROLLBACK-TAXV3-A16-20260818-R1`) para forzar la invalidación segura del bundle V3 en clientes que ya lo hubieran descargado.

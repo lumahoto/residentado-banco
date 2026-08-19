@@ -1,5 +1,16 @@
 # Changelog - Residentado
 
+## v1.4.1 - 2026-08-18
+
+Hotfix de uniformidad funcional sobre v1.4.0. No modifica Supabase, dataset, taxonomía, memoria, scheduler ni simulacros.
+
+- hace visible `🤷 No sé` en **toda sesión de práctica**, incluida práctica personalizada con tiempo por pregunta o tiempo total, sprints y entrenamiento de velocidad;
+- conserva la semántica canónica de `No sé`: respuesta incorrecta explícita, `selected_answer = null`, `timed_out = false`, `speed_bucket = dont_know` y `NO_SE_EXPLICITO`;
+- diferencia `No sé` de un timeout incluso cuando existe cronómetro; el tiempo real transcurrido sigue guardándose;
+- en corrección inmediata usa `No sé · mostrar respuesta`; en corrección al final usa `No sé · continuar`;
+- mantiene el marcador `?`, mezcla de alternativas, cierre/reanudación, navegación y revisión con el mismo motor compartido `launchStudy`;
+- deja los simulacros estándar e históricos sin cambios, preservando su formato especial y reglas propias.
+
 ## v1.4.0 - 2026-08-18
 
 Adaptación estructural a la taxonomía V3 congelada en A16, preparada sobre el ZIP v1.3.4 vigente. No aplica cambios directamente a Supabase, Anki ni TTS.

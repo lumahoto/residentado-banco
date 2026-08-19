@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.4.0: compatibilidad Taxonomía V3/A16; conserva guardrails de sesiones v1.3.4.
+// v1.4.1: paridad funcional de práctica; "No sé" disponible en todos los modos de práctica. Taxonomía V3/A16 intacta.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-4-0';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-4-1';
 const ASSETS = [
   './',
   './index.html',

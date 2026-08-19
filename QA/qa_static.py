@@ -33,10 +33,10 @@ w3 = (ROOT/'w3-tools.js').read_text(encoding='utf-8')
 w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
 # Release/version consistency.
-require("version: '1.4.0'" in version, 'version.js no declara 1.4.0')
-require("cacheName: 'residentado-v1-4-0'" in version, 'version.js no declara cache v1.4.0')
-require(manifest.get('version') == '1.4.0', 'RELEASE_MANIFEST no coincide con v1.4.0')
-require(manifest.get('release_id') == EXPECTED['release_id'], 'release_id inconsistente')
+require("version: '1.4.1'" in version, 'version.js no declara 1.4.1')
+require("cacheName: 'residentado-v1-4-1'" in version, 'version.js no declara cache v1.4.1')
+require(manifest.get('version') == '1.4.1', 'RELEASE_MANIFEST no coincide con v1.4.1')
+require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
 require('<script src="./version.js"></script>' in index, 'index.html no carga version.js')
@@ -97,6 +97,13 @@ require(len(available) == 89, f'El respaldo TTS legacy ya no tiene 89 disponible
 require('availableTtsCount(rentabilityTopics.length ? rentabilityTopics : null)' in app, 'Debilidades no restringe TTS por topic activo cuando existe catálogo V3')
 require('availableTtsCount(coverageTopics)' in app, 'Mi Estado no restringe TTS por topics activos')
 
+# Paridad de práctica v1.4.1: No sé debe existir con o sin cronómetro y seguir separado de timeout.
+require('id="dont-know-study"' in app, 'Falta botón No sé en práctica')
+require("currentStudy.config.timeMode === 'none' ? `<div class=\"dont-know-row" not in app, 'No sé sigue condicionado a práctica sin límite')
+require("if (!q || !currentStudy || studyQuestionLocked(q)) return;" in app, 'No sé no usa el mismo guardrail de bloqueo que las respuestas normales')
+require("currentStudy.config.feedback === 'immediate' ? '🤷 No sé · mostrar respuesta' : '🤷 No sé · continuar'" in app, 'No sé no adapta su etiqueta al modo de corrección')
+require('no como pregunta en blanco ni como tiempo agotado' in app, 'La UI no distingue No sé de timeout')
+
 # Features previas sensibles siguen presentes.
 for token, msg in [
     ('coverage-rank','Cobertura perdió numeración'),('id="review-jump-input"','Falta salto en revisión'),
@@ -155,7 +162,7 @@ node = subprocess.run(['node','-e',node_test,str(ROOT/'w4-data.js'),str(ROOT/'w3
 require(node.returncode == 0, f'Falló unit bundle/cobertura V3: {node.stdout} {node.stderr}')
 
 if errors:
-    print('QA v1.4.0 TAXV3 A16: FAIL')
+    print('QA v1.4.1 PRACTICE PARITY: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.4.0 TAXV3 A16: OK')
+print('QA v1.4.1 PRACTICE PARITY: OK')
