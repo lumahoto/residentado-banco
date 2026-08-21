@@ -1,5 +1,20 @@
 # Changelog - Residentado
 
+## v1.4.2 - 2026-08-20
+
+Hotfix de sincronización sobre v1.4.1, motivado por auditoría de logs Supabase. No requiere migración ni cambia dataset, taxonomía, memoria, scheduler o simulacros.
+
+- serializa `processSessionOutbox()` dentro y entre pestañas mediante Web Locks con fallback de lease local;
+- prioriza `CREATE_SESSION` antes de operaciones dependientes de la misma outbox;
+- detecta `23503` de `attempts_session_id_fkey`, verifica el padre remoto y limita el reintento a uno;
+- si la sesión padre ya no existe, preserva el attempt en IndexedDB como `orphaned_session` y retira solo el poison item para que no bloquee la cola;
+- adopta checkpoint local-first para estado de sesión;
+- en corrección inmediata evita lanzar un save remoto antes de completar el attempt;
+- difiere 30 s el checkpoint remoto de navegación pura, manteniendo flush inmediato al ocultar/cerrar/pausar;
+- omite `save_practice_session_state` cuando el payload persistible no cambió;
+- evita que una respuesta remota antigua pise un shadow local más nuevo creado mientras el RPC estaba en vuelo;
+- conserva PT409, `state_revision`, lease por sesión, IndexedDB, `No sé` v1.4.1 y Taxonomía V3 A16.
+
 ## v1.4.1 - 2026-08-18
 
 Hotfix de uniformidad funcional sobre v1.4.0. No modifica Supabase, dataset, taxonomía, memoria, scheduler ni simulacros.

@@ -33,9 +33,9 @@ w3 = (ROOT/'w3-tools.js').read_text(encoding='utf-8')
 w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
 # Release/version consistency.
-require("version: '1.4.1'" in version, 'version.js no declara 1.4.1')
-require("cacheName: 'residentado-v1-4-1'" in version, 'version.js no declara cache v1.4.1')
-require(manifest.get('version') == '1.4.1', 'RELEASE_MANIFEST no coincide con v1.4.1')
+require("version: '1.4.2'" in version, 'version.js no declara 1.4.2')
+require("cacheName: 'residentado-v1-4-2'" in version, 'version.js no declara cache v1.4.2')
+require(manifest.get('version') == '1.4.2', 'RELEASE_MANIFEST no coincide con v1.4.2')
 require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
@@ -56,6 +56,12 @@ require("queueOperation('UPSERT_SESSION'" in app, 'Falta cola offline de sesione
 require("from('practice_sessions').upsert" not in app, 'CREATE_SESSION volvió a usar upsert destructivo')
 require('if (isSessionConflictError(error)) return handleSessionRevisionConflict' in app, 'Falta recuperación PT409')
 require('SESSION_LEASE_HEARTBEAT_MS' in app and 'BroadcastChannel' in app, 'Falta guardia entre pestañas')
+require('OUTBOX_LOCK_NAME' in app and 'navigator.locks?.request' in app and 'outboxProcessPromise' in app, 'Falta mutex de outbox entre/intra pestañas')
+require('isAttemptSessionForeignKeyError' in app and 'SESSION_NOT_FOUND_23503' in app and 'orphaned_session' in app, 'Falta reparación terminal de attempt huérfano 23503')
+require("a.type === 'CREATE_SESSION' ? 0 : 1" in app, 'CREATE_SESSION no tiene prioridad sobre operaciones dependientes del outbox')
+require('SESSION_NAVIGATION_CHECKPOINT_MS = 30000' in app, 'Falta checkpoint remoto diferido de navegación')
+require('localOnly:currentStudy.config.feedback' in app, 'La respuesta inmediata sigue lanzando un save remoto antes de persistir el attempt')
+require('OPT-SAVE-002' in app and 'baseFingerprint === nextFingerprint' in app, 'Falta supresión de RPC de sesión sin cambios')
 require(".eq('state_revision', expectedRevision)" in app, 'El cierre no valida state_revision')
 require('localRevision > remoteRevision' in core and 'localRevision === remoteRevision && localPending' in core, 'Reglas de reconciliación de sesiones alteradas')
 
@@ -97,7 +103,7 @@ require(len(available) == 89, f'El respaldo TTS legacy ya no tiene 89 disponible
 require('availableTtsCount(rentabilityTopics.length ? rentabilityTopics : null)' in app, 'Debilidades no restringe TTS por topic activo cuando existe catálogo V3')
 require('availableTtsCount(coverageTopics)' in app, 'Mi Estado no restringe TTS por topics activos')
 
-# Paridad de práctica v1.4.1: No sé debe existir con o sin cronómetro y seguir separado de timeout.
+# Paridad de práctica v1.4.2 (heredada de v1.4.1): No sé debe existir con o sin cronómetro y seguir separado de timeout.
 require('id="dont-know-study"' in app, 'Falta botón No sé en práctica')
 require("currentStudy.config.timeMode === 'none' ? `<div class=\"dont-know-row" not in app, 'No sé sigue condicionado a práctica sin límite')
 require("if (!q || !currentStudy || studyQuestionLocked(q)) return;" in app, 'No sé no usa el mismo guardrail de bloqueo que las respuestas normales')
@@ -162,7 +168,7 @@ node = subprocess.run(['node','-e',node_test,str(ROOT/'w4-data.js'),str(ROOT/'w3
 require(node.returncode == 0, f'Falló unit bundle/cobertura V3: {node.stdout} {node.stderr}')
 
 if errors:
-    print('QA v1.4.1 PRACTICE PARITY: FAIL')
+    print('QA v1.4.2 SYNC HARDENING: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.4.1 PRACTICE PARITY: OK')
+print('QA v1.4.2 SYNC HARDENING: OK')
