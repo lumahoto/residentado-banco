@@ -1,14 +1,13 @@
 {
-  "release_id": "REL-20260820-V1.4.2-SYNC-OUTBOX-HARDENING",
-  "version": "1.4.2",
-  "date": "2026-08-20",
+  "release_id": "REL-20260821-V1.4.3-RECOVERY-IDEMPOTENCE-HOTFIX",
+  "version": "1.4.3",
+  "date": "2026-08-21",
   "base": {
-    "version": "1.4.1",
-    "archive": "260818_residentado-banco-main_v141_build.zip",
-    "sha256": "a9c845f1b87b85c60c7ccb9ae96c1c14a5980a6af2298a870e2331c5c0c06ec1"
+    "version": "1.4.2",
+    "archive": "260820_residentado-banco-main_v142_build(2).zip"
   },
   "status": "READY_FOR_GITHUB_REPLACEMENT_NO_SUPABASE_MIGRATION",
-  "release_type": "SYNC_OUTBOX_HARDENING_HOTFIX",
+  "release_type": "RECOVERY_IDEMPOTENCE_HOTFIX",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
@@ -20,23 +19,20 @@
     "runtime_sync_change": true
   },
   "evidence": {
-    "source": "supabase_logs.csv",
-    "window": "last_24_hours",
-    "rows": 596,
-    "edge_rows": 527,
-    "postgres_rows": 69,
-    "save_practice_session_state_events": 160,
-    "save_practice_session_state_posts": 157,
-    "attempt_fk_23503_events": 3,
-    "question_gets": 1,
-    "interpretation": "No runaway corpus polling; confirmed poison attempt retry and avoidable session-save amplification."
+    "incident": "2026-08-20 20:51 America/Lima",
+    "postgres_conflicts": 7,
+    "sqlstate": "PT409",
+    "message": "SESSION_REVISION_CONFLICT_OR_NOT_ACTIVE",
+    "recovery_sessions_created": 7,
+    "affected_current_attempt_rows": 156,
+    "affected_questions": 122,
+    "root_cause": "stale outbox snapshots were turned into recovery sessions; inherited attempt identities were then upserted under the recovery session and fresh answered_at values"
   },
   "fixes": {
-    "OUTBOX_LOCK_001": "Single drainer across tabs with Web Locks and localStorage fallback.",
-    "OUTBOX_DEP_001": "CREATE_SESSION prioritized before dependent queued operations.",
-    "ATTEMPT_FK_001": "23503 attempts_session_id_fkey is checked, retried once only if parent exists, otherwise preserved locally and retired from active outbox.",
-    "OPT_SAVE_002": "Local-first checkpoints, no pre-attempt remote save in immediate feedback, 30s navigation checkpoint, skip unchanged RPC.",
-    "LOCAL_SHADOW_001": "Newer pending/offline local shadow is preserved when an older remote save completes."
+    "RECOVERY_SUBSET_001": "If the remote state already contains the stale local state, accept remote and retire the stale outbox without creating recovery.",
+    "ATTEMPT_IDENTITY_002": "When closing a recovery, an existing attempt_id/client_attempt_id is resolved globally and never re-upserted merely because session_id differs.",
+    "RECOVERY_EDIT_001": "If the user explicitly changes an inherited answer, detach the inherited attempt identity so the new answer gets a new attempt.",
+    "RECOVERY_FAILSAFE_001": "A recovery with an inherited persisted identity that cannot be loaded refuses to fabricate a duplicate attempt."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
@@ -63,9 +59,6 @@
     "static_command": "python3 QA/qa_static.py",
     "browser_command": "python3 QA/qa_browser.py",
     "session_core_unit_command": "node QA/test_session_core.js",
-    "static_result": "PASS",
-    "browser_result": "PASS",
-    "session_core_unit_result": "PASS",
     "manual_smoke": "PENDING_USER_DEPLOYMENT"
   }
 }

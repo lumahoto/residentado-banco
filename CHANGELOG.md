@@ -1,5 +1,16 @@
 # Changelog - Residentado
 
+## v1.4.3 - 2026-08-21
+
+Hotfix de integridad de recuperaciones sobre v1.4.2. No requiere migración ni cambia dataset, taxonomía, algoritmo de memoria, scheduler o simulacros.
+
+- evita crear una `recuperación local` cuando el remoto ya contiene por completo el snapshot local atrasado;
+- corrige el manejo de `PT409 / SESSION_REVISION_CONFLICT_OR_NOT_ACTIVE` en el outbox para leer el remoto antes de decidir si existe progreso local único;
+- trata `client_attempt_id`/`attempt_id` como identidad global del intento al cerrar una recuperación, impidiendo mover un intento histórico a un `session_id` nuevo;
+- si el usuario modifica explícitamente una respuesta heredada, separa su identidad y crea un intento realmente nuevo;
+- añade un failsafe: una recuperación con identidad histórica no cargada no fabrica un attempt duplicado;
+- incidente que motivó el hotfix: 7 PT409 entre 20:51:23 y 20:51:29 del 20/08/2026 generaron 7 recuperaciones y reescribieron 156 attempts históricos de 122 preguntas.
+
 ## v1.4.2 - 2026-08-20
 
 Hotfix de sincronización sobre v1.4.1, motivado por auditoría de logs Supabase. No requiere migración ni cambia dataset, taxonomía, memoria, scheduler o simulacros.
