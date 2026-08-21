@@ -1,16 +1,23 @@
-# Residentado v1.4.2 — sincronización endurecida sobre Taxonomía V3 A16
+# Residentado v1.4.3 — integridad de recuperaciones sobre Taxonomía V3 A16
 
 WebApp estática del banco de Residentado Médico Perú. Esta versión parte de v1.4.1 y aplica un hotfix de sincronización: evita que varias pestañas drenen simultáneamente la outbox, repara attempts huérfanos `23503` sin bloquear la cola y reduce guardados remotos redundantes de sesión. No cambia dataset, taxonomía, Supabase, memoria, scheduler ni simulacros.
 
 ## Estado
 
-- Frontend: `v1.4.2` / caché `residentado-v1-4-2`.
+- Frontend: `v1.4.3` / caché `residentado-v1-4-3`.
 - Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos.
-- Migración Supabase requerida por v1.4.2: **ninguna**.
+- Migración Supabase requerida por v1.4.3: **ninguna**.
 - Anki/TTS: **sin cambios** en este hotfix.
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido v1.3.4.
+
+
+## Hotfix v1.4.3: recuperaciones idempotentes
+
+El incidente del 20/08/2026 demostró una secuencia 1:1 de siete `PT409` con siete sesiones `· recuperación local`. Los snapshots locales eran prefijos atrasados de sesiones ya más avanzadas o cerradas. Al cerrar esas copias, v1.4.2 podía reutilizar `client_attempt_id` históricos y hacer `upsert` con un `session_id` y `answered_at` nuevos.
+
+v1.4.3 evita la recuperación cuando el remoto ya contiene el snapshot local y hace idempotente la identidad de attempts a través de sesiones. Una recuperación legítima solo genera attempts para respuestas realmente nuevas.
 
 ## Hotfix v1.4.2: sincronización/outbox
 

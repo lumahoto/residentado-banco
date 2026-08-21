@@ -1,7 +1,7 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.4.2';
+  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.4.3';
   const LEARNING_NOTES_MIGRATION = 'MIGRATIONS/20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql';
   const TTS_CATALOG_TABLE = 'tts_topic_catalog';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
@@ -198,6 +198,46 @@
     return SessionCore.sessionStateFingerprint
       ? SessionCore.sessionStateFingerprint(state)
       : JSON.stringify(normalizeSessionState(state));
+  }
+
+  // v1.4.3 — un shadow local atrasado no merece una recuperación si el remoto
+  // ya contiene exactamente todo su progreso significativo. Esto evita convertir
+  // snapshots prefijo de sesiones ya cerradas en copias fantasma de recuperación.
+  function sessionResponseEquivalent(a, b) {
+    const left = sessionResponse({ responses:{ value:a } }, 'value');
+    const right = sessionResponse({ responses:{ value:b } }, 'value');
+    return left.selected === right.selected
+      && Boolean(left.didNotKnow) === Boolean(right.didNotKnow)
+      && Boolean(left.timedOut) === Boolean(right.timedOut);
+  }
+
+  function sessionStateContains(candidateState = {}, subsetState = {}) {
+    const candidate = normalizeSessionState(candidateState);
+    const subset = normalizeSessionState(subsetState);
+
+    for (const [questionId, response] of Object.entries(subset.responses || {})) {
+      if (!responseCountsAsAnswered(response)) continue;
+      const candidateResponse = candidate.responses?.[questionId];
+      if (!candidateResponse || !responseCountsAsAnswered(candidateResponse)) return false;
+      if (!sessionResponseEquivalent(candidateResponse, response)) return false;
+    }
+
+    for (const [questionId, scratch] of Object.entries(subset.scratch || {})) {
+      if (JSON.stringify(candidate.scratch?.[questionId] || {}) !== JSON.stringify(scratch || {})) return false;
+    }
+    for (const [questionId, marked] of Object.entries(subset.marked || {})) {
+      if (marked && !candidate.marked?.[questionId]) return false;
+    }
+
+    for (const [questionId, clientAttemptId] of Object.entries(subset.clientAttemptIdsByQuestion || {})) {
+      const remoteId = candidate.clientAttemptIdsByQuestion?.[questionId];
+      if (remoteId && String(remoteId) !== String(clientAttemptId)) return false;
+    }
+    for (const [questionId, attemptId] of Object.entries(subset.attemptIdsByQuestion || {})) {
+      const remoteId = candidate.attemptIdsByQuestion?.[questionId];
+      if (remoteId && String(remoteId) !== String(attemptId)) return false;
+    }
+    return true;
   }
 
   function sessionLeaseKey(sessionId) { return `${SESSION_LEASE_PREFIX}${sessionId}`; }
@@ -470,7 +510,8 @@
       const remoteRevision = Number(remote.state_revision || 0);
       const riskyStatus = ['conflict', 'pending', 'offline'].includes(local.syncStatus);
       const stateDiffers = sessionStateFingerprint(local.state || {}) !== sessionStateFingerprint(remote.state || {});
-      if (stateDiffers && (local.syncStatus === 'conflict' || (riskyStatus && localRevision < remoteRevision))) {
+      const localHasUniqueProgress = stateDiffers && !sessionStateContains(remote.state || {}, local.state || {});
+      if (localHasUniqueProgress && (local.syncStatus === 'conflict' || (riskyStatus && localRevision < remoteRevision))) {
         const recovery = await persistRecoverySession(local, 'stale_local_shadow_on_load');
         if (recovery) recoveries.push(recovery);
       }
@@ -520,6 +561,28 @@
   function answeredIdsFor(row, state) {
     if (SessionCore.answeredQuestionIds) return SessionCore.answeredQuestionIds(row?.question_ids || [], state || {});
     return (row?.question_ids || []).filter(id => responseCountsAsAnswered(state?.responses?.[id]));
+  }
+
+  function persistedAttemptForIdentity(holder, questionId) {
+    if (!holder || !questionId) return null;
+    const container = holder.state && holder === currentExam ? holder.state : holder;
+    const attemptId = container?.attemptIdsByQuestion?.[questionId] || null;
+    const clientAttemptId = container?.clientAttemptIdsByQuestion?.[questionId] || null;
+    return attempts.find(attempt =>
+      (attemptId && String(attempt.id || '') === String(attemptId))
+      || (clientAttemptId && String(attempt.client_attempt_id || '') === String(clientAttemptId))
+    ) || null;
+  }
+
+  function detachInheritedAttemptIdentity(holder, questionId) {
+    if (!holder || !questionId) return;
+    const container = holder.state && holder === currentExam ? holder.state : holder;
+    const persisted = persistedAttemptForIdentity(holder, questionId);
+    const belongsElsewhere = persisted
+      && String(persisted.session_id || '') !== String(holder?.row?.id || '');
+    if (!belongsElsewhere) return;
+    if (container.attemptIdsByQuestion) delete container.attemptIdsByQuestion[questionId];
+    if (container.clientAttemptIdsByQuestion) delete container.clientAttemptIdsByQuestion[questionId];
   }
 
   function ensureClientAttemptId(holder, questionId) {
@@ -775,9 +838,17 @@
                 active_time_ms:Number(p.activeTimeMs ?? stored.active_time_ms ?? 0),
                 paused_time_ms:Number(p.pausedTimeMs ?? stored.paused_time_ms ?? 0),
               } : null;
-              if (local) await persistRecoverySession(local, 'outbox_revision_conflict');
               const { data:remote } = await supa.from('practice_sessions').select('*').eq('id', p.sessionId).maybeSingle();
-              if (remote) await saveSessionShadow({ ...remote, syncStatus:'synced' }, 'synced');
+              if (remote && local && sessionStateContains(remote.state || {}, local.state || {})) {
+                // El remoto ya contiene este snapshot atrasado (por ejemplo 39/40 de una
+                // sesión completada). Aceptarlo y retirar el outbox es seguro; crear una
+                // recuperación aquí duplicaría progreso ya persistido.
+                await saveSessionShadow({ ...remote, syncStatus:'synced', syncError:null }, 'synced');
+                sessionSyncBlocked.delete(p.sessionId);
+              } else {
+                if (local) await persistRecoverySession(local, 'outbox_revision_conflict');
+                if (remote) await saveSessionShadow({ ...remote, syncStatus:'synced' }, 'synced');
+              }
               ok = true;
             }
           } else if (item.type === 'INSERT_ATTEMPT') {
@@ -862,6 +933,18 @@
     // FIX-SESSION-002/003/004: stop stale writes, preserve local progress, and continue on a new revision-safe session.
     sessionSyncBlocked.add(row.id);
     const { data:remote } = await supa.from('practice_sessions').select('*').eq('id', row.id).maybeSingle();
+
+    // v1.4.3: si el remoto ya contiene todo el snapshot local, el conflicto solo
+    // demuestra que el local estaba atrasado. No crear una recuperación redundante.
+    if (remote && sessionStateContains(remote.state || {}, row.state || {})) {
+      const syncedRemote = { ...remote, syncStatus:'synced', syncError:null };
+      await saveSessionShadow(syncedRemote, 'synced');
+      sessionSyncBlocked.delete(row.id);
+      upsertSessionInMemory(syncedRemote);
+      if (remote.status !== 'active') activeSessions = activeSessions.filter(item => item.id !== row.id);
+      if (owner) updateHolderFromSavedRow(owner, syncedRemote);
+      return syncedRemote;
+    }
 
     // v1.3.3: durante "Terminar / cerrar parcial", los intentos ya fueron persistidos
     // antes de cerrar. Si el servidor confirma que la sesión ya está cerrada, crear
@@ -4558,6 +4641,7 @@
         const index = Number(btn.dataset.answerIndex);
         const q = currentExam.questions[index];
         const letter = btn.dataset.answerLetter;
+        detachInheritedAttemptIdentity(currentExam, q.id);
         if (sessionSelected(currentExam.state, q.id) === letter) delete currentExam.state.responses[q.id];
         else currentExam.state.responses[q.id] = { ...sessionResponse(currentExam.state, q.id), selected:letter, didNotKnow:false, timedOut:false };
         refreshHistoricalAnswerSheet();
@@ -5299,6 +5383,7 @@
     const q = studyCurrentQuestion();
     if (!q || studyQuestionLocked(q)) return;
     saveStudyDuration();
+    detachInheritedAttemptIdentity(currentStudy, q.id);
     const previousResponse = currentStudy.responses[q.id] || {};
     currentStudy.responses[q.id] = { ...previousResponse, selected: letter, didNotKnow: false, timedOut: false };
     currentStudy.answerTimes[q.id] = Number(currentStudy.durations[q.id] || 0);
@@ -5343,6 +5428,7 @@
     if (!q || !currentStudy || studyQuestionLocked(q)) return;
 
     saveStudyDuration();
+    detachInheritedAttemptIdentity(currentStudy, q.id);
     currentStudy.responses[q.id] = { selected: null, didNotKnow: true };
     scheduleCurrentSessionSave({ localOnly:currentStudy.config.feedback === 'immediate' });
 
@@ -5391,6 +5477,7 @@
     const q = studyCurrentQuestion();
     if (!q || !currentStudy || studyQuestionLocked(q)) return;
     saveStudyDuration();
+    detachInheritedAttemptIdentity(currentStudy, q.id);
     const targetMs = studyQuestionTargetMs(q);
     currentStudy.durations[q.id] = targetMs;
     const prior = currentStudy.responses[q.id] || {};
@@ -5480,9 +5567,29 @@
   async function ensureStudyAttempts(study, questionList) {
     const sessionId = study?.row?.id;
     const existing = new Map(attemptsForSession(sessionId).map(attempt => [attempt.question_id, attempt]));
-    const missingPayload = questionList
-      .filter(q => !existing.has(q.id))
-      .map(q => studyAttemptPayload(study, q));
+    const missingPayload = [];
+
+    for (const q of questionList) {
+      if (existing.has(q.id)) continue;
+      const persisted = persistedAttemptForIdentity(study, q.id);
+      if (persisted) {
+        // Un client_attempt_id identifica un attempt global, no "un attempt por sesión".
+        // En una recuperación puede apuntar al attempt histórico de la sesión fuente.
+        existing.set(q.id, persisted);
+        continue;
+      }
+
+      const hasPersistedIdentity = Boolean(
+        study?.attemptIdsByQuestion?.[q.id]
+        || study?.clientAttemptIdsByQuestion?.[q.id]
+      );
+      if (study?.row?.config?.recovery && hasPersistedIdentity) {
+        console.warn('Recovery attempt identity not loaded; refusing to fabricate a duplicate.', study.row.id, q.id);
+        continue;
+      }
+      missingPayload.push(studyAttemptPayload(study, q));
+    }
+
     const saved = missingPayload.length ? await recordAttemptsBatch(missingPayload) : [];
     for (const attempt of saved) existing.set(attempt.question_id, attempt);
     for (const [questionId, attempt] of existing.entries()) {
@@ -5822,6 +5929,7 @@
     attachTopbar();
 
     document.querySelectorAll('.option').forEach(btn => btn.onclick = async () => {
+      detachInheritedAttemptIdentity(currentExam, q.id);
       currentExam.state.responses[q.id] = { ...sessionResponse(currentExam.state, q.id), selected:btn.dataset.letter, didNotKnow:false, timedOut:false };
       document.querySelectorAll('.option').forEach(b => b.classList.toggle('selected', b.dataset.letter === btn.dataset.letter));
       await persistExamState();
@@ -5967,9 +6075,26 @@
     const answeredForTiming = questionList.length;
     const elapsedSessionMs = Math.max(0, (Number(exam.config.totalSeconds || 0) - Number(exam.state.remainingSeconds || 0)) * 1000);
     const historicalAverageMs = answeredForTiming ? Math.round(elapsedSessionMs / answeredForTiming) : 0;
-    const payload = questionList
-      .filter(q => !existing.has(q.id))
-      .map(q => examAttemptPayload(exam, q, historicalAverageMs));
+    const payload = [];
+
+    for (const q of questionList) {
+      if (existing.has(q.id)) continue;
+      const persisted = persistedAttemptForIdentity(exam, q.id);
+      if (persisted) {
+        existing.set(q.id, persisted);
+        continue;
+      }
+      const hasPersistedIdentity = Boolean(
+        exam?.state?.attemptIdsByQuestion?.[q.id]
+        || exam?.state?.clientAttemptIdsByQuestion?.[q.id]
+      );
+      if (exam?.row?.config?.recovery && hasPersistedIdentity) {
+        console.warn('Recovery exam attempt identity not loaded; refusing to fabricate a duplicate.', exam.row.id, q.id);
+        continue;
+      }
+      payload.push(examAttemptPayload(exam, q, historicalAverageMs));
+    }
+
     const saved = payload.length ? await recordAttemptsBatch(payload) : [];
     for (const attempt of saved) existing.set(attempt.question_id, attempt);
     return [...existing.values()].filter(attempt => questionList.some(q => q.id === attempt.question_id));

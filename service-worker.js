@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.4.2: endurecimiento de sincronización/outbox y reducción de write amplification. Taxonomía V3/A16 intacta.
+// v1.4.3: evita recuperaciones fantasma por snapshots atrasados y replays de attempts heredados. Taxonomía V3/A16 intacta.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-4-2';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-4-3';
 const ASSETS = [
   './',
   './index.html',
