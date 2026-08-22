@@ -1,38 +1,35 @@
 {
-  "release_id": "REL-20260821-V1.4.3-RECOVERY-IDEMPOTENCE-HOTFIX",
-  "version": "1.4.3",
-  "date": "2026-08-21",
+  "release_id": "REL-20260822-V1.5.0-REVIEW-CENTER-STUDY-LOOP",
+  "version": "1.5.0",
+  "date": "2026-08-22",
   "base": {
-    "version": "1.4.2",
-    "archive": "260820_residentado-banco-main_v142_build(2).zip"
+    "version": "1.4.3 R2",
+    "archive": "260821_residentado-banco-main_v143r2_c1(1).zip"
   },
-  "status": "READY_FOR_GITHUB_REPLACEMENT_NO_SUPABASE_MIGRATION",
-  "release_type": "RECOVERY_IDEMPOTENCE_HOTFIX",
+  "status": "READY_FOR_GITHUB_REPLACEMENT_REQUIRES_SUPABASE_MIGRATION",
+  "release_type": "REVIEW_CENTER_STUDY_LOOP",
   "scope": {
-    "supabase_migration_required": false,
+    "supabase_migration_required": true,
     "dataset_change": false,
     "taxonomy_change": false,
     "memory_algorithm_change": false,
     "scheduler_change": false,
-    "simulators_changed": false,
-    "practice_ui_change": false,
+    "simulators_changed": true,
+    "practice_ui_change": true,
     "runtime_sync_change": true
   },
-  "evidence": {
-    "incident": "2026-08-20 20:51 America/Lima",
-    "postgres_conflicts": 7,
-    "sqlstate": "PT409",
-    "message": "SESSION_REVISION_CONFLICT_OR_NOT_ACTIVE",
-    "recovery_sessions_created": 7,
-    "affected_current_attempt_rows": 156,
-    "affected_questions": 122,
-    "root_cause": "stale outbox snapshots were turned into recovery sessions; inherited attempt identities were then upserted under the recovery session and fresh answered_at values"
+  "changes": {
+    "REVIEW_CENTER_001": "A single informative Review Center is reused after full completion, partial close, and from History; rows show original question number, states, topic, and entity when available.",
+    "REVIEW_FILTERS_001": "Review filters include incorrect, No sé, question-level doubt, notes, personal marks, review flags, and audit state, with subset navigation preserving original session position.",
+    "QUESTION_DOUBT_001": "The ? marker is question-level rather than per-alternative, with synchronized controls above the question and after the explanation; it does not create notes or audit flags.",
+    "DAY_BOUNDARY_001": "Continue-later sessions expire on the next local day. Answered sessions become partial history; empty sessions are abandoned. The transition creates zero new attempts.",
+    "DAY_BOUNDARY_PT409_001": "Status-only day-boundary closure never calls attempt materialization and never creates a recovery on a revision-only conflict; it re-reads remote status/revision and retries status only.",
+    "ANKI_OBSERVATION_001": "Content/doubt review flags require an associated learning note; learning notes can only be resolved with CREATE_NEW_CARD, UPDATE_EXISTING_CARD, or REEXPOSE_EXISTING_CARD. Legacy outcomes remain readable only.",
+    "REVIEW_SCOPE_001": "Review flags explicitly distinguish CONTENT from EDITORIAL_TECHNICAL; only content/doubt enters the mandatory Anki reinforcement flow."
   },
-  "fixes": {
-    "RECOVERY_SUBSET_001": "If the remote state already contains the stale local state, accept remote and retire the stale outbox without creating recovery.",
-    "ATTEMPT_IDENTITY_002": "When closing a recovery, an existing attempt_id/client_attempt_id is resolved globally and never re-upserted merely because session_id differs.",
-    "RECOVERY_EDIT_001": "If the user explicitly changes an inherited answer, detach the inherited attempt identity so the new answer gets a new attempt.",
-    "RECOVERY_FAILSAFE_001": "A recovery with an inherited persisted identity that cannot be loaded refuses to fabricate a duplicate attempt."
+  "supabase_migration": {
+    "file": "MIGRATIONS/20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql",
+    "purpose": "Adds question_review_flags.learning_scope and permits REEXPOSE_EXISTING_CARD in question_learning_notes.anki_action without touching user attempts, memory, questions, or taxonomy."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
@@ -44,6 +41,7 @@
   "dataset_revision": "QUESTIONS-TAXV3-A16-20260818-R1",
   "modified_runtime_files": [
     "app.js",
+    "styles.css",
     "version.js",
     "service-worker.js"
   ],

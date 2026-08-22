@@ -33,9 +33,9 @@ w3 = (ROOT/'w3-tools.js').read_text(encoding='utf-8')
 w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
 # Release/version consistency.
-require("version: '1.4.3'" in version, 'version.js no declara 1.4.3')
-require("cacheName: 'residentado-v1-4-3'" in version, 'version.js no declara cache v1.4.3')
-require(manifest.get('version') == '1.4.3', 'RELEASE_MANIFEST no coincide con v1.4.3')
+require("version: '1.5.0'" in version, 'version.js no declara 1.5.0')
+require("cacheName: 'residentado-v1-5-0'" in version, 'version.js no declara cache v1.5.0')
+require(manifest.get('version') == '1.5.0', 'RELEASE_MANIFEST no coincide con v1.5.0')
 require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
@@ -71,6 +71,26 @@ require('function persistedAttemptForIdentity' in app, 'Falta resolución global
 require("Recovery attempt identity not loaded; refusing to fabricate a duplicate." in app, 'Falta failsafe contra attempts duplicados en recovery')
 require('detachInheritedAttemptIdentity(currentStudy, q.id)' in app, 'Respuesta nueva en recovery de práctica no separa identidad heredada')
 require('detachInheritedAttemptIdentity(currentExam, q.id)' in app, 'Respuesta nueva en recovery de simulacro no separa identidad heredada')
+
+# v1.5.0: Centro de revisión, duda de pregunta, cierre diario y puente Anki.
+require('function renderReviewSummary()' in app and 'REVIEW_FILTERS' in app, 'Falta Centro de revisión único')
+for token in ["['incorrect','Incorrectas']", "['dont_know','No sé']", "['doubt','? Duda']", "['notes','Notas']", "['marked','Marcadas']", "['review_flag','Revisar']", "['audit','Auditoría']"]:
+    require(token in app, f'Falta filtro del Centro de revisión: {token}')
+require('canonical_entity || q.subtopic' in app and 'review-question-row' in app, 'La hoja informativa no expone Tema/Entidad')
+require('data-question-doubt-top' in app and 'data-question-doubt-label' in app, 'La duda no tiene controles superior/inferior sincronizados')
+require('data-uncertain-toggle' not in app, 'Se reintrodujo el ? por alternativa')
+require("REEXPOSE_EXISTING_CARD" in app and "ACTIVE_LEARNING_NOTE_OUTCOMES" in app, 'Falta reexposición Anki obligatoria')
+require("learningScope === 'CONTENT'" in app and 'ensureLearningNoteForContentReview' in app, 'Revisar pregunta de contenido no alimenta notas/Anki')
+require('EDITORIAL_TECHNICAL' in app and 'data-set-review-scope' in app, 'Falta separación Contenido vs Editorial/técnico')
+require('function expireActiveSessionAtDayBoundary' in app and "closed_reason:hasAnswers ? 'day_expired_partial' : 'day_expired_empty'" in app, 'Falta autocierre diario')
+require('statusOnly:true' in app, 'El autocierre diario no usa cierre status-only')
+expiry = app[app.find('async function expireActiveSessionAtDayBoundary'):app.find('async function expireStaleActiveSessions')]
+require('ensureStudyAttempts' not in expiry and 'ensureExamAttempts' not in expiry and "from('attempts')" not in expiry, 'El autocierre diario intenta materializar attempts')
+require("if (!error && !data && p.statusOnly)" in app and "persistRecoverySession(local, 'close_revision_conflict')" in app, 'Falta separación entre cierre status-only y recovery ordinaria')
+require((ROOT/'MIGRATIONS/20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql').exists(), 'Falta migración v1.5.0')
+mig150=(ROOT/'MIGRATIONS/20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql').read_text(encoding='utf-8')
+require('learning_scope' in mig150 and 'REEXPOSE_EXISTING_CARD' in mig150, 'Migración v1.5.0 incompleta')
+require('update public.attempts' not in mig150.lower() and 'update public.question_memory_state' not in mig150.lower(), 'Migración v1.5.0 toca progreso de usuario')
 
 # Taxonomía V3: identidad estable y compatibilidad de aliases.
 require('TOPIC_ID:${encodeURIComponent(stableId)}' in app, 'El selector no serializa rentability_topic_id estable')
@@ -175,7 +195,7 @@ node = subprocess.run(['node','-e',node_test,str(ROOT/'w4-data.js'),str(ROOT/'w3
 require(node.returncode == 0, f'Falló unit bundle/cobertura V3: {node.stdout} {node.stderr}')
 
 if errors:
-    print('QA v1.4.3 RECOVERY IDEMPOTENCE: FAIL')
+    print('QA v1.5.0 REVIEW CENTER: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.4.3 RECOVERY IDEMPOTENCE: OK')
+print('QA v1.5.0 REVIEW CENTER: OK')

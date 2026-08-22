@@ -1,8 +1,9 @@
 (() => {
   const app = document.getElementById('app');
   const cfg = window.APP_CONFIG || {};
-  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.4.3';
+  const APP_VERSION = window.RESIDENTADO_BUILD?.version || '1.5.0';
   const LEARNING_NOTES_MIGRATION = 'MIGRATIONS/20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql';
+  const REVIEW_LEARNING_SCOPE_MIGRATION = 'MIGRATIONS/20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql';
   const TTS_CATALOG_TABLE = 'tts_topic_catalog';
   const cloudConfigured = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_PUBLISHABLE_KEY);
   const DEMO_KEY = 'residentado_piloto_attempts_v3';
@@ -39,6 +40,9 @@
   let learningNoteByQuestion = new Map();
   let learningNotesAvailable = true;
   let learningNotesLoadError = '';
+  let reviewLearningScopeAvailable = !cloudConfigured;
+  let reviewLearningScopeLoadError = '';
+  let dayBoundarySweepInProgress = false;
 
   const SessionCore = window.ResidentadoSessionCore || {};
   const QuestionParser = window.ResidentadoQuestionParser || {};
@@ -348,6 +352,7 @@
           reason,
           createdAt:now,
           sourceRevision:Number(sourceRow.state_revision || 0),
+          sourceLocalDate:isoDateLocal(sourceRow.created_at || sourceRow.config?.planDate || sourceRow.updated_at || now),
         },
       },
       status:'active',
@@ -656,6 +661,11 @@
 
   function upsertSessionInMemory(row) {
     if (!row?.id) return;
+    if (row.status === 'abandoned') {
+      activeSessions = activeSessions.filter(item => item.id !== row.id);
+      completedSessions = completedSessions.filter(item => item.id !== row.id);
+      return;
+    }
     const target = row.status === 'completed' ? completedSessions : activeSessions;
     const other = row.status === 'completed' ? activeSessions : completedSessions;
     const index = target.findIndex(item => item.id === row.id);
@@ -890,10 +900,44 @@
               .eq('id', p.sessionId)
               .eq('status', 'active');
             if (p.expectedRevision != null) request = request.eq('state_revision', Number(p.expectedRevision));
-            const { data, error } = await request.select().maybeSingle();
+            let { data, error } = await request.select().maybeSingle();
             if (!error && data) {
               await saveSessionShadow({ ...data, syncStatus:'synced' }, 'synced');
               ok = true;
+            } else if (!error && !data && p.statusOnly) {
+              // v1.5.0: el autocierre por cambio de día es una transición de estado.
+              // Si cambió la revisión remota, se reintenta contra la revisión actual SIN
+              // copiar state ni crear recoveries. Nunca materializa respuestas heredadas.
+              const read = await supa.from('practice_sessions').select('*').eq('id', p.sessionId).maybeSingle();
+              if (!read.error && read.data?.status === 'active') {
+                const remoteRevision = Number(read.data.state_revision || 0);
+                const retryPayload = {
+                  ...(p.updatePayload || {}),
+                  state_revision:remoteRevision + 1,
+                  updated_at:sessionNowIso(),
+                  last_synced_at:sessionNowIso(),
+                };
+                const retry = await supa.from('practice_sessions')
+                  .update(retryPayload)
+                  .eq('id', p.sessionId)
+                  .eq('status', 'active')
+                  .eq('state_revision', remoteRevision)
+                  .select('*')
+                  .maybeSingle();
+                data = retry.data;
+                error = retry.error;
+                if (!error && data) {
+                  await saveSessionShadow({ ...data, syncStatus:'synced' }, 'synced');
+                  ok = true;
+                }
+              } else if (!read.error && read.data) {
+                await saveSessionShadow({ ...read.data, syncStatus:'synced', syncError:null }, 'synced');
+                ok = true;
+              } else if (!read.error && !read.data) {
+                await sessionStore.deleteSession(p.sessionId);
+                removeActiveSessionInMemory(p.sessionId);
+                ok = true;
+              }
             } else if (!error && !data) {
               const stored = await sessionStore.getSession(p.sessionId);
               const local = stored ? { ...stored, ...(p.updatePayload || {}), status:'active' } : null;
@@ -1202,6 +1246,10 @@
       } else {
         sessionHiddenStartedAt = 0;
         sessionActivityStartedAt = performance.now();
+        if (sessionExpiredByLocalDay(owner.row)) {
+          handleCurrentSessionDayBoundary().catch(error => console.warn('Day-boundary close failed.', error));
+          return;
+        }
         refreshSessionLease();
       }
     });
@@ -1742,10 +1790,19 @@
   };
 
   const LEARNING_NOTE_OUTCOMES = {
-    ALREADY_COVERED: 'Ya estaba cubierto en Anki',
-    UPDATE_EXISTING_CARD: 'Se actualizó una tarjeta existente',
     CREATE_NEW_CARD: 'Se creó una tarjeta nueva',
-    RESOLVED_WITHOUT_ANKI: 'Resuelta sin tarjeta',
+    UPDATE_EXISTING_CARD: 'Se actualizó una tarjeta existente',
+    REEXPOSE_EXISTING_CARD: 'Se reexpuso una tarjeta existente con prioridad inmediata',
+    // Valores históricos preservados para poder leer cierres previos. No se ofrecen para nuevos cierres.
+    ALREADY_COVERED: 'Histórico: ya estaba cubierto en Anki',
+    RESOLVED_WITHOUT_ANKI: 'Histórico: resuelta sin tarjeta',
+  };
+  const ACTIVE_LEARNING_NOTE_OUTCOMES = ['CREATE_NEW_CARD','UPDATE_EXISTING_CARD','REEXPOSE_EXISTING_CARD'];
+
+  const REVIEW_LEARNING_SCOPES = {
+    CONTENT: { label:'Contenido / duda', icon:'🧠', ankiRequired:true },
+    EDITORIAL_TECHNICAL: { label:'Editorial / técnico', icon:'🛠', ankiRequired:false },
+    UNCLASSIFIED: { label:'Sin clasificar', icon:'•', ankiRequired:false },
   };
 
   const REVIEW_FLAG_TYPES = {
@@ -1881,8 +1938,12 @@
     if (cloudConfigured && !learningNotesAvailable) { alert(learningNotesUnavailableMessage()); return false; }
     const now = new Date().toISOString();
     const normalizedStatus = status === 'RESOLVED' ? 'RESOLVED' : 'DISMISSED';
-    const outcome = normalizedStatus === 'RESOLVED' && LEARNING_NOTE_OUTCOMES[details.ankiAction]
+    const outcome = normalizedStatus === 'RESOLVED' && ACTIVE_LEARNING_NOTE_OUTCOMES.includes(details.ankiAction)
       ? details.ankiAction : null;
+    if (normalizedStatus === 'RESOLVED' && !outcome) {
+      alert('Toda nota conceptual debe cerrarse con una intervención Anki: crear, actualizar o reexponer una tarjeta.');
+      return false;
+    }
     const summary = cleanEditorialText(details.summary) || (normalizedStatus === 'RESOLVED'
       ? 'Duda resuelta y revisada para su cobertura en Anki.'
       : 'Nota retirada por el usuario.');
@@ -2030,10 +2091,53 @@
     });
   }
 
-  async function saveQuestionReviewFlag(questionId, flagType, userNote = '') {
+  function reviewLearningScopeMeta(scope) {
+    return REVIEW_LEARNING_SCOPES[scope] || REVIEW_LEARNING_SCOPES.UNCLASSIFIED;
+  }
+
+  function reviewLearningScopeUnavailableMessage() {
+    return `La clasificación Contenido/Editorial requiere ejecutar ${REVIEW_LEARNING_SCOPE_MIGRATION} en Supabase.${reviewLearningScopeLoadError ? `\n\nDetalle: ${reviewLearningScopeLoadError}` : ''}`;
+  }
+
+  async function probeReviewLearningScopeAvailability() {
+    if (!cloudConfigured) {
+      reviewLearningScopeAvailable = true;
+      reviewLearningScopeLoadError = '';
+      return true;
+    }
+    const { error } = await supa.from('question_review_flags').select('learning_scope').limit(1);
+    reviewLearningScopeAvailable = !error;
+    reviewLearningScopeLoadError = error?.message || '';
+    return reviewLearningScopeAvailable;
+  }
+
+  async function ensureLearningNoteForContentReview(questionId, flagType, userNote = '') {
+    const existing = learningNoteFor(questionId);
+    if (existing) return existing;
+    const q = questions.find(item => item.id === questionId);
+    const noteType = flagType === 'explanation' ? 'explanation' : 'general';
+    const text = cleanEditorialText(userNote)
+      || `Marqué ${questionId} para revisar por contenido/duda. Necesito consolidar el concepto evaluado: ${q?.question || 'revisar la pregunta fuente.'}`;
+    return saveQuestionLearningNote(questionId, noteType, text);
+  }
+
+  async function saveQuestionReviewFlag(questionId, flagType, userNote = '', learningScope = 'CONTENT') {
     if (!REVIEW_FLAG_TYPES[flagType]) return null;
+    if (!REVIEW_LEARNING_SCOPES[learningScope]) learningScope = 'CONTENT';
+    if (cloudConfigured && !reviewLearningScopeAvailable) {
+      alert(reviewLearningScopeUnavailableMessage());
+      return null;
+    }
+    if (learningScope === 'CONTENT' && cloudConfigured && !learningNotesAvailable) {
+      alert(learningNotesUnavailableMessage());
+      return null;
+    }
     const now = new Date().toISOString();
     const note = String(userNote ?? '').replace(/\r/g, '').trim().slice(0, 2000) || null;
+    if (learningScope === 'CONTENT' && !learningNoteFor(questionId)) {
+      const learningNote = await ensureLearningNoteForContentReview(questionId, flagType, note || '');
+      if (!learningNote) return null;
+    }
     const previous = reviewFlagFor(questionId);
     const previousClosed = latestClosedFlagFor(questionId);
     let row = null;
@@ -2041,7 +2145,7 @@
     if (cloudConfigured) {
       if (previous) {
         const { data, error } = await supa.from('question_review_flags')
-          .update({ flag_type:flagType, user_note:note, client_app_version:APP_VERSION, status:'OPEN', updated_at:now })
+          .update({ flag_type:flagType, user_note:note, learning_scope:learningScope, client_app_version:APP_VERSION, status:'OPEN', updated_at:now })
           .eq('id', previous.id)
           .eq('user_id', user.id)
           .select('*')
@@ -2057,6 +2161,7 @@
           question_id:questionId,
           flag_type:flagType,
           user_note:note,
+          learning_scope:learningScope,
           client_app_version:APP_VERSION,
           status:'OPEN',
           content_revision:questionContentRevision(questionId),
@@ -2078,6 +2183,7 @@
         ...previous,
         flag_type:flagType,
         user_note:note,
+        learning_scope:learningScope,
         client_app_version:APP_VERSION,
         status:'OPEN',
         updated_at:now,
@@ -2087,6 +2193,7 @@
         question_id: questionId,
         flag_type: flagType,
         user_note:note,
+        learning_scope:learningScope,
         client_app_version:APP_VERSION,
         status:'OPEN',
         content_revision:questionContentRevision(questionId),
@@ -2160,6 +2267,11 @@
     if (!q) return;
     const existing = reviewFlagFor(questionId);
     let selectedType = existing?.flag_type || 'general';
+    let selectedScope = ['CONTENT','EDITORIAL_TECHNICAL'].includes(existing?.learning_scope) ? existing.learning_scope : 'CONTENT';
+    if (cloudConfigured && !reviewLearningScopeAvailable) {
+      alert(reviewLearningScopeUnavailableMessage());
+      return;
+    }
     const modal = document.createElement('div');
     modal.id = 'question-review-flag-modal';
     modal.className = 'review-flag-modal';
@@ -2171,11 +2283,15 @@
         <div><h2 id="review-flag-modal-title">Marcar para auditoría</h2><p class="muted">${esc(q.id)} · ${esc(questionSourceLabel(q))}</p></div>
         <button class="btn small ghost" type="button" data-close-review-flag aria-label="Cerrar">✕</button>
       </div>
-      <p>Selecciona el tipo y describe, si lo deseas, qué debe revisarse. La nota no modifica tu respuesta ni tu memoria.</p>
+      <p>Selecciona el tipo, el alcance y describe qué debe revisarse. Una observación de <strong>Contenido / duda</strong> entra también a tus notas y al flujo Anki obligatorio.</p>
       <div class="review-flag-choice-grid" role="radiogroup" aria-label="Tipo de observación">
         <button class="review-flag-choice ${selectedType==='statement'?'selected':''}" type="button" data-set-review-flag="statement" role="radio" aria-checked="${selectedType==='statement'}"><strong>📝 Revisar enunciado</strong><span>Redacción, datos clínicos, alternativas o ambigüedad.</span></button>
         <button class="review-flag-choice ${selectedType==='explanation'?'selected':''}" type="button" data-set-review-flag="explanation" role="radio" aria-checked="${selectedType==='explanation'}"><strong>💬 Revisar explicación</strong><span>Explicación insuficiente, confusa, desactualizada o tautológica.</span></button>
         <button class="review-flag-choice ${selectedType==='general'?'selected':''}" type="button" data-set-review-flag="general" role="radio" aria-checked="${selectedType==='general'}"><strong>⚑ Revisar</strong><span>Observación general o motivo todavía no definido.</span></button>
+      </div>
+      <div class="review-learning-scope" role="radiogroup" aria-label="Alcance de la observación">
+        <button class="review-flag-choice ${selectedScope==='CONTENT'?'selected':''}" type="button" data-set-review-scope="CONTENT" role="radio" aria-checked="${selectedScope==='CONTENT'}"><strong>🧠 Contenido / duda</strong><span>También crea o reutiliza una nota de aprendizaje y exige acción Anki.</span></button>
+        <button class="review-flag-choice ${selectedScope==='EDITORIAL_TECHNICAL'?'selected':''}" type="button" data-set-review-scope="EDITORIAL_TECHNICAL" role="radio" aria-checked="${selectedScope==='EDITORIAL_TECHNICAL'}"><strong>🛠 Editorial / técnico</strong><span>Solo auditoría: typo, formato, texto cortado, duplicación o interfaz.</span></button>
       </div>
       <label class="review-flag-note-label" for="review-flag-note"><strong>Describe el problema</strong><span class="muted">Opcional · máximo 2000 caracteres</span></label>
       <textarea id="review-flag-note" class="input review-flag-note" maxlength="2000" rows="5" placeholder="Ejemplo: la explicación no diferencia este diagnóstico de la alternativa C.">${esc(existing?.user_note || '')}</textarea>
@@ -2207,13 +2323,23 @@
         });
       };
     });
+    modal.querySelectorAll('[data-set-review-scope]').forEach(btn => {
+      btn.onclick = () => {
+        selectedScope = btn.dataset.setReviewScope;
+        modal.querySelectorAll('[data-set-review-scope]').forEach(node => {
+          const active = node.dataset.setReviewScope === selectedScope;
+          node.classList.toggle('selected', active);
+          node.setAttribute('aria-checked', active ? 'true' : 'false');
+        });
+      };
+    });
     modal.querySelector('#review-flag-form').onsubmit = async ev => {
       ev.preventDefault();
       const errorNode = modal.querySelector('#review-flag-save-error');
       const note = modal.querySelector('#review-flag-note').value;
       errorNode.textContent = 'Guardando…';
       modal.querySelectorAll('button, textarea').forEach(node => node.disabled = true);
-      const saved = await saveQuestionReviewFlag(questionId, selectedType, note);
+      const saved = await saveQuestionReviewFlag(questionId, selectedType, note, selectedScope);
       if (saved) close();
       else {
         errorNode.textContent = 'No se pudo guardar. Revisa la conexión e inténtalo nuevamente.';
@@ -2296,6 +2422,143 @@
     const m = String(d.getMonth()+1).padStart(2,'0');
     const day = String(d.getDate()).padStart(2,'0');
     return `${y}-${m}-${day}`;
+  }
+
+  function sessionStartLocalDate(row = {}) {
+    const explicit = row.config?.recovery?.sourceLocalDate || row.config?.planDate || null;
+    return explicit && /^\d{4}-\d{2}-\d{2}$/.test(String(explicit))
+      ? String(explicit)
+      : isoDateLocal(row.created_at || row.updated_at || new Date());
+  }
+
+  function sessionExpiredByLocalDay(row = {}, today = isoDateLocal()) {
+    return row.status === 'active' && sessionStartLocalDate(row) < today;
+  }
+
+  function endOfSessionLocalDayIso(row = {}) {
+    const [year, month, day] = sessionStartLocalDate(row).split('-').map(Number);
+    const localEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
+    return localEnd.toISOString();
+  }
+
+  async function expireActiveSessionAtDayBoundary(rawRow) {
+    const row = SessionCore.normalizeSessionRow ? SessionCore.normalizeSessionRow(rawRow) : rawRow;
+    if (!sessionExpiredByLocalDay(row)) return row;
+    const state = normalizeSessionState(row.state || {});
+    const answeredCount = answeredIdsFor(row, state).length;
+    const hasAnswers = answeredCount > 0;
+    const now = sessionNowIso();
+    const expectedRevision = Number(row.state_revision || 0);
+    const nextRevision = expectedRevision + 1;
+    const nextStatus = hasAnswers ? 'completed' : 'abandoned';
+    const updatePayload = {
+      status:nextStatus,
+      is_partial:hasAnswers,
+      closed_reason:hasAnswers ? 'day_expired_partial' : 'day_expired_empty',
+      answered_count:answeredCount,
+      planned_count:Number(row.planned_count || row.question_ids?.length || 0),
+      completed_at:hasAnswers ? endOfSessionLocalDayIso(row) : null,
+      updated_at:now,
+      last_synced_at:cloudConfigured ? now : (row.last_synced_at || null),
+      client_app_version:APP_VERSION,
+      state_revision:nextRevision,
+    };
+    const localClosed = { ...row, ...updatePayload, state, syncStatus:cloudConfigured ? 'pending' : 'local', syncError:null };
+    await saveSessionShadow(localClosed, cloudConfigured ? 'pending' : 'local');
+
+    if (!cloudConfigured) {
+      saveLocalSessions();
+      return localClosed;
+    }
+
+    if (!navigator.onLine) {
+      await sessionStore?.queueOperation('CLOSE_SESSION', {
+        sessionId:row.id,
+        expectedRevision,
+        updatePayload,
+        statusOnly:true,
+      }, `CLOSE_SESSION:${row.id}`);
+      const offline = { ...localClosed, syncStatus:'offline', syncError:'DAY_BOUNDARY_OFFLINE' };
+      await saveSessionShadow(offline, 'offline');
+      return offline;
+    }
+
+    let { data, error } = await supa.from('practice_sessions')
+      .update(updatePayload)
+      .eq('id', row.id)
+      .eq('status', 'active')
+      .eq('state_revision', expectedRevision)
+      .select('*')
+      .maybeSingle();
+
+    if (!error && !data) {
+      const read = await supa.from('practice_sessions').select('*').eq('id', row.id).maybeSingle();
+      if (!read.error && read.data?.status === 'active') {
+        const remoteRevision = Number(read.data.state_revision || 0);
+        const retryPayload = { ...updatePayload, state_revision:remoteRevision + 1, updated_at:sessionNowIso(), last_synced_at:sessionNowIso() };
+        const retry = await supa.from('practice_sessions')
+          .update(retryPayload)
+          .eq('id', row.id)
+          .eq('status', 'active')
+          .eq('state_revision', remoteRevision)
+          .select('*')
+          .maybeSingle();
+        data = retry.data;
+        error = retry.error;
+      } else if (!read.error && read.data) {
+        data = read.data;
+      } else if (read.error) error = read.error;
+    }
+
+    if (error) {
+      await sessionStore?.queueOperation('CLOSE_SESSION', {
+        sessionId:row.id,
+        expectedRevision,
+        updatePayload,
+        statusOnly:true,
+      }, `CLOSE_SESSION:${row.id}`);
+      const offline = { ...localClosed, syncStatus:'offline', syncError:error.message || 'DAY_BOUNDARY_CLOSE_FAILED' };
+      await saveSessionShadow(offline, 'offline');
+      return offline;
+    }
+
+    const synced = { ...(data || localClosed), syncStatus:'synced', syncError:null };
+    await saveSessionShadow(synced, 'synced');
+    return synced;
+  }
+
+  async function expireStaleActiveSessions() {
+    if (dayBoundarySweepInProgress) return [];
+    dayBoundarySweepInProgress = true;
+    const closed = [];
+    try {
+      const stale = [...activeSessions].filter(row => sessionExpiredByLocalDay(row));
+      for (const row of stale) {
+        const result = await expireActiveSessionAtDayBoundary(row);
+        if (result && result.status !== 'active') closed.push(result);
+      }
+      return closed;
+    } finally {
+      dayBoundarySweepInProgress = false;
+    }
+  }
+
+  async function handleCurrentSessionDayBoundary() {
+    const owner = currentSessionOwner();
+    if (!owner?.row || !sessionExpiredByLocalDay(owner.row)) return false;
+    clearTimer();
+    accumulateSessionActivity();
+    const shadow = await persistCurrentSessionShadow(owner).catch(() => owner.row);
+    endSessionActivity();
+    const closed = await expireActiveSessionAtDayBoundary(shadow || owner.row);
+    const returnDate = sessionStartLocalDate(owner.row);
+    currentStudy = null;
+    currentExam = null;
+    deactivateSessionNavigationGuard();
+    releaseActiveSessionLease();
+    if (closed?.status === 'completed') await openHistorySession(closed.id, returnDate);
+    else renderDashboard();
+    return true;
   }
 
   function parseLocalDate(iso) {
@@ -2928,6 +3191,7 @@
       learningNotes = activeLearningNoteRows(learningNoteHistory);
       rebuildLearningNoteMap();
       rebuildMemoryMap();
+      await expireStaleActiveSessions();
       await reconcileMemoryFromAttempts();
       renderDashboard();
       return;
@@ -3127,6 +3391,7 @@
     if (pRes.error) { renderFatal(`Falta aplicar la migración v0.5 en Supabase: ${pRes.error.message}`); return; }
     if (mRes.error) { renderFatal(`No se pudo sincronizar la memoria: ${mRes.error.message}`); return; }
     if (fRes.error) { renderFatal(`No se pudieron sincronizar las observaciones: ${fRes.error.message}`); return; }
+    await probeReviewLearningScopeAvailability();
 
     questions = normalizeQuestionCorpus(qRes.data || []);
     rentabilityTopics = qRes.topics || (W4Data.topicsFromQuestions ? W4Data.topicsFromQuestions(questions) : []);
@@ -3191,6 +3456,7 @@
     completedSessions = SessionCore.mergeSessionRows
       ? SessionCore.mergeSessionRows(firstHistoryPage.error ? [] : (firstHistoryPage.data || []), localCompleted).filter(row => row.status === 'completed')
       : (firstHistoryPage.error ? localCompleted : (firstHistoryPage.data || []));
+    await expireStaleActiveSessions();
     if (sessionStore) {
       // FIX-SESSION-004: persistir la fila elegida por reconciliacion, no sobrescribirla luego con el remoto bruto.
       for (const row of [...activeSessions, ...completedSessions]) {
@@ -4460,7 +4726,6 @@
   }
 
   function scratchStateLabel(state) {
-    if (state === 'tentative') return 'Tentativa';
     if (state === 'crossed') return 'Tachada';
     return 'Sin marca';
   }
@@ -4469,7 +4734,7 @@
     currentExam.state.scratch ||= {};
     currentExam.state.scratch[qId] ||= {};
     const current = currentExam.state.scratch[qId][letter] || 'neutral';
-    const next = current === 'neutral' ? 'tentative' : current === 'tentative' ? 'crossed' : 'neutral';
+    const next = current === 'crossed' ? 'neutral' : 'crossed';
     if (next === 'neutral') delete currentExam.state.scratch[qId][letter];
     else currentExam.state.scratch[qId][letter] = next;
     if (!Object.keys(currentExam.state.scratch[qId]).length) delete currentExam.state.scratch[qId];
@@ -4478,7 +4743,7 @@
 
   function paperOptionHtml(q, index, o) {
     const state = scratchOptionState(q.id, o.letter);
-    const icon = state === 'tentative' ? '?' : state === 'crossed' ? '×' : '';
+    const icon = state === 'crossed' ? '×' : '';
     return `<button class="paper-option scratch-${state}"
       data-scratch-index="${index}" data-scratch-letter="${o.letter}"
       aria-label="${esc(historicalDisplayNumber(q,index))} ${o.letter}: ${scratchStateLabel(state)}">
@@ -4505,6 +4770,7 @@
         <div class="paper-question-head">
           <span class="paper-qnum">${esc(historicalDisplayNumber(q,index))}</span>
           <span class="muted">${esc(q.year)} · Prueba ${esc(test)}</span>
+          ${questionDoubtButton(q.id, questionHasDoubt(currentExam.state.scratch, q.id), 'paper-doubt')}
           <button class="paper-flag ${flagged?'active':''}" data-paper-flag-index="${index}">${flagged?'⚑ Revisar':'⚐ Marcar para revisar'}</button>
         </div>
         <p class="paper-question-text">${esc(q.question)}</p>
@@ -4525,7 +4791,7 @@
         : '';
       lastTest = test;
       const selected = sessionSelected(currentExam.state, q.id);
-      const uncertain = Object.values(currentExam.state.scratch?.[q.id] || {}).includes('tentative');
+      const uncertain = questionHasDoubt(currentExam.state.scratch, q.id);
       const flagged = Boolean(currentExam.state.marked?.[q.id]);
       return `${heading}<div class="answer-row ${selected?'answered':''} ${uncertain?'uncertain':''} ${flagged?'flagged':''}" data-answer-row="${index}">
         <button class="answer-number" data-scroll-question="${index}" title="Ir a la pregunta">${flagged?'⚑ ':''}${esc(historicalDisplayNumber(q,index))}${uncertain?' ?':''}</button>
@@ -4549,7 +4815,7 @@
       const q = currentExam.questions[i];
       const selected = sessionSelected(currentExam.state, q.id);
       const row = document.querySelector(`[data-answer-row="${i}"]`);
-      const uncertain = Object.values(currentExam.state.scratch?.[q.id] || {}).includes('tentative');
+      const uncertain = questionHasDoubt(currentExam.state.scratch, q.id);
       const flagged = Boolean(currentExam.state.marked?.[q.id]);
       if (row) {
         row.classList.toggle('answered', Boolean(selected));
@@ -4565,6 +4831,10 @@
   }
 
   function renderHistoricalExamPaper() {
+    if (currentExam?.row && sessionExpiredByLocalDay(currentExam.row)) {
+      handleCurrentSessionDayBoundary().catch(error => console.warn('Day-boundary close failed.', error));
+      return;
+    }
     clearTimer();
     examQuestionEnteredAt = 0;
     const answered = historicalAnsweredCount();
@@ -4590,8 +4860,8 @@
           <div class="paper-cover">
             <span class="roadmap-kicker">CUADERNILLO</span>
             <h1>${esc(currentExam.config.title)}</h1>
-            <p>Lee el cuadernillo y marca tu respuesta definitiva únicamente en la hoja lateral. En el cuadernillo puedes hacer anotaciones provisionales: toca una alternativa para alternar entre <strong>tentativa (?)</strong>, <strong>tachada (×)</strong> y <strong>sin marca</strong>.</p>
-            <div class="scratch-legend"><span><b>?</b> tentativa</span><span><b>×</b> descartada</span><span>La hoja de respuestas es la que cuenta.</span></div>
+            <p>Lee el cuadernillo y marca tu respuesta definitiva únicamente en la hoja lateral. En el cuadernillo puedes tachar distractores; usa el botón <strong>?</strong> de la cabecera para marcar la pregunta completa como dudosa.</p>
+            <div class="scratch-legend"><span><b>?</b> duda de la pregunta</span><span><b>×</b> alternativa descartada</span><span>La hoja de respuestas es la que cuenta.</span></div>
           </div>
           ${historicalPaperQuestionsHtml()}
         </div>
@@ -4617,8 +4887,21 @@
         btn.classList.remove('scratch-neutral', 'scratch-tentative', 'scratch-crossed');
         btn.classList.add(`scratch-${next}`);
         const mark = btn.querySelector('.paper-option-mark');
-        if (mark) mark.textContent = next === 'tentative' ? '?' : next === 'crossed' ? '×' : '';
+        if (mark) mark.textContent = next === 'crossed' ? '×' : '';
         btn.setAttribute('aria-label', `${historicalDisplayNumber(q,index)} ${letter}: ${scratchStateLabel(next)}`);
+        refreshHistoricalAnswerSheet();
+        await persistExamState();
+      };
+    });
+
+    document.querySelectorAll('[data-question-doubt-top]').forEach(btn => {
+      const q = currentExam.questions.find(item => item.id === btn.dataset.questionDoubt);
+      if (!q) return;
+      btn.onclick = async (ev) => {
+        ev.stopPropagation();
+        const active = !questionHasDoubt(currentExam.state.scratch || {}, q.id);
+        currentExam.state.scratch = setQuestionDoubt(currentExam.state.scratch || {}, q.id, active);
+        refreshQuestionDoubtButtons(q.id, active);
         refreshHistoricalAnswerSheet();
         await persistExamState();
       };
@@ -4725,6 +5008,7 @@
       ${topbar()}
       ${!cloudConfigured ? `<div class="banner"><strong>Modo demo:</strong> el progreso se guarda solo en este navegador.</div>` : ''}
       ${cloudConfigured && !learningNotesAvailable ? `<div class="banner"><strong>Notas de aprendizaje pendientes de activar:</strong> ejecuta <code>${LEARNING_NOTES_MIGRATION}</code>. La práctica sigue funcionando normalmente.</div>` : ''}
+      ${cloudConfigured && !reviewLearningScopeAvailable ? `<div class="banner"><strong>Actualización v1.5.0 pendiente en Supabase:</strong> ejecuta <code>${REVIEW_LEARNING_SCOPE_MIGRATION}</code> antes de guardar nuevas observaciones de “Revisar pregunta”.</div>` : ''}
       ${questions.length < 200 ? `<div class="banner"><strong>Piloto de 20 preguntas:</strong> la carga diaria se escala temporalmente al contenido disponible. Las metas completas se activarán al importar el banco maestro.</div>` : ''}
 
       <section class="briefing panel">
@@ -5158,7 +5442,7 @@
   async function launchStudy(selected, config) {
     clearTimer();
     if (!selected?.length) return renderMessage('Sin preguntas', 'No se encontraron preguntas para iniciar esta sesión.');
-    config = { shuffleOptions: true, ...config };
+    config = { shuffleOptions: true, ...config, datasetRevision:config?.datasetRevision || datasetManifest?.dataset_revision || null };
     currentExam = null;
     currentStudy = {
       row:null,
@@ -5229,6 +5513,10 @@
   }
 
   function renderStudyQuestion() {
+    if (currentStudy?.row && sessionExpiredByLocalDay(currentStudy.row)) {
+      handleCurrentSessionDayBoundary().catch(error => console.warn('Day-boundary close failed.', error));
+      return;
+    }
     clearTimer();
     scrollPageTop();
     const q = studyCurrentQuestion();
@@ -5239,6 +5527,7 @@
     const locked = Boolean(responseState.locked);
     currentStudy.scratch ||= {};
     const uncertainOptions = uncertaintyOptionsFor(currentStudy.scratch, q.id);
+    const questionDoubt = questionHasDoubt(currentStudy.scratch, q.id);
     const opts = displayOptionList(q, currentStudy.optionOrders, currentStudy.config.shuffleOptions !== false);
     const baseTargetSeconds = Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25);
     const adaptiveTargetSeconds = effectiveTargetSeconds(q, baseTargetSeconds);
@@ -5263,12 +5552,11 @@
       </div>
       <section class="panel question-card">
         <div class="progress"><div style="width:${(currentStudy.index/currentStudy.questions.length)*100}%"></div></div>
-        <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span><span id="study-question-metadata" class="question-meta-tags" ${metadataVisible?'':'hidden'} aria-hidden="${metadataVisible?'false':'true'}">${metadataVisible?studyQuestionMetadataTags(q):''}</span>${targetTag}${timerHtml}</div>
+        <div class="q-head"><span class="tag">${currentStudy.index+1}/${currentStudy.questions.length}</span>${questionDoubtButton(q.id, questionDoubt)}<span id="study-question-metadata" class="question-meta-tags" ${metadataVisible?'':'hidden'} aria-hidden="${metadataVisible?'false':'true'}">${metadataVisible?studyQuestionMetadataTags(q):''}</span>${targetTag}${timerHtml}</div>
         <div class="q-body"><p class="q-text">${esc(q.question)}</p>
           ${questionMediaHtml(q)}
           ${locked ? `<div class="banner compact"><strong>⏱ Pregunta cerrada.</strong> ${responseState.timedOut ? 'El tiempo terminó sin respuesta; contará como un único intento fallido por tiempo.' : 'El tiempo terminó después de que respondiste; se conserva esa respuesta y ya no puede modificarse.'}</div>` : ''}
-          <div class="uncertainty-hint">Marca <strong>?</strong> en cualquier alternativa que no domines del todo. No cambia tu respuesta; sí hace que el concepto vuelva antes al repaso.</div>
-          <div class="options">${opts.map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.sourceLetter || o.letter))).join('')}</div>
+          <div class="options">${opts.map(o => optionButton(o, selected)).join('')}</div>
           <div class="dont-know-row"><button id="dont-know-study" class="btn ghost dont-know-btn" type="button">${currentStudy.config.feedback === 'immediate' ? '🤷 No sé · mostrar respuesta' : '🤷 No sé · continuar'}</button><span class="muted">Cuenta como respuesta incorrecta explícita; no como pregunta en blanco ni como tiempo agotado.</span></div>
         </div>
         <div id="feedback"></div>
@@ -5286,20 +5574,16 @@
       if (locked) dontKnowBtn.disabled = true;
       else dontKnowBtn.onclick = handleStudyDontKnow;
     }
-    document.querySelectorAll('[data-uncertain-letter]').forEach(btn => {
-      if (locked) {
-        btn.disabled = true;
-        return;
-      }
-      btn.onclick = (ev) => {
+    document.querySelectorAll('[data-question-doubt-top]').forEach(btn => {
+      if (btn.dataset.questionDoubt !== q.id) return;
+      btn.onclick = async (ev) => {
         ev.stopPropagation();
-        const letter = btn.dataset.uncertainLetter;
-        currentStudy.scratch = toggleTentativeOption(currentStudy.scratch || {}, q.id, letter);
-        const active = isOptionUncertain(currentStudy.scratch, q.id, letter);
-        btn.classList.toggle('active', active);
-        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-        btn.title = active ? 'Quitar marca de duda' : 'Marcar esta alternativa con ?';
+        const active = !questionHasDoubt(currentStudy.scratch || {}, q.id);
+        currentStudy.scratch = setQuestionDoubt(currentStudy.scratch || {}, q.id, active);
+        refreshQuestionDoubtButtons(q.id, active);
         scheduleCurrentSessionSave();
+        const attemptId = currentStudy.attemptIdsByQuestion?.[q.id];
+        if (attemptId) await setAttemptQuestionDoubtAfterFeedback(attemptId, q, active);
       };
     });
     document.getElementById('cancel-study').onclick = cancelCurrentStudy;
@@ -5398,6 +5682,7 @@
         currentStudy.config.studyMode || 'custom_study', false,
         {
           uncertainOptions,
+          questionDoubt:questionHasDoubt(currentStudy.scratch, q.id),
           baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25),
           ...sessionAttemptMeta(currentStudy, q.id),
         }
@@ -5407,7 +5692,6 @@
       scheduleCurrentSessionSave();
       disableOptionsAndPaint(q, letter);
       revealStudyQuestionMetadata(q);
-      document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
       renderFeedback(q, letter, isCorrect, () => {
         currentStudy.index++;
         scheduleCurrentSessionSave({ delayMs:SESSION_NAVIGATION_CHECKPOINT_MS });
@@ -5440,6 +5724,7 @@
         currentStudy.config.studyMode || 'custom_study', false,
         {
           uncertainOptions,
+          questionDoubt:questionHasDoubt(currentStudy.scratch, q.id),
           dontKnow: true,
           baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25),
           ...sessionAttemptMeta(currentStudy, q.id),
@@ -5450,7 +5735,6 @@
       scheduleCurrentSessionSave();
       disableOptionsAndPaint(q, null);
       revealStudyQuestionMetadata(q);
-      document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
       const dontKnowBtn = document.getElementById('dont-know-study');
       if (dontKnowBtn) dontKnowBtn.disabled = true;
       renderFeedback(
@@ -5492,6 +5776,7 @@
         currentStudy.config.studyMode || 'custom_study', true,
         {
           uncertainOptions,
+          questionDoubt:questionHasDoubt(currentStudy.scratch, q.id),
           baseTargetSeconds: Number(currentStudy.config.secondsPerQuestion || profile?.target_response_seconds || 25),
           ...sessionAttemptMeta(currentStudy, q.id),
         }
@@ -5501,8 +5786,7 @@
         scheduleCurrentSessionSave();
         disableOptionsAndPaint(q, null);
         revealStudyQuestionMetadata(q);
-        document.querySelectorAll('.uncertainty-toggle').forEach(btn => btn.disabled = true);
-        renderFeedback(
+          renderFeedback(
           q, null, false,
           () => { currentStudy.index++; scheduleCurrentSessionSave({ delayMs:SESSION_NAVIGATION_CHECKPOINT_MS }); renderStudyQuestion(); },
           true, false, uncertainOptions,
@@ -5557,6 +5841,7 @@
       timedOut,
       {
         uncertainOptions,
+        questionDoubt:questionHasDoubt(study.scratch, q.id),
         dontKnow:didNotKnow,
         baseTargetSeconds:Number(study.config.secondsPerQuestion || profile?.target_response_seconds || 25),
         ...sessionAttemptMeta(study, q.id),
@@ -5700,6 +5985,8 @@
         sessionId:currentStudy.row.id,
         partial:true,
         questions:answeredQuestions,
+        allQuestions:answeredQuestions,
+        sessionTitle:currentStudy.config.title || 'Práctica',
         originalQuestionIds:currentStudy.questions.map(question => question.id),
         responses:currentStudy.responses,
         scratch:currentStudy.scratch || {},
@@ -5710,7 +5997,7 @@
       };
       currentStudy = null;
       deactivateSessionNavigationGuard();
-      renderReviewQuestion();
+      renderReviewSummary();
     } finally {
       sessionActionInProgress = false;
     }
@@ -5743,12 +6030,14 @@
         };
       });
       const correct = result.filter(row => row.correct).length;
-      const uncertainCount = study.questions.filter(q => uncertaintyOptionsFor(study.scratch, q.id).length > 0).length;
+      const uncertainCount = study.questions.filter(q => questionHasDoubt(study.scratch, q.id)).length;
       reviewContext = {
         type:'study_session',
         sessionId:study.row.id,
         partial:false,
         questions:study.questions,
+        allQuestions:study.questions,
+        sessionTitle:study.config.title || 'Práctica',
         originalQuestionIds:study.questions.map(question => question.id),
         responses:study.responses,
         scratch:study.scratch || {},
@@ -5762,7 +6051,7 @@
 
       app.innerHTML = `<main class="shell">${topbar('Sesión terminada', true)}<section class="panel empty"><h2>${timeExpired ? 'Tiempo terminado' : 'Sesión completada'}</h2><p class="score-big">${correct}/${result.length}</p><p>${pct(correct, result.length)} de aciertos · ${answeredQuestions.length} respondidas · ${uncertainCount} preguntas con duda registrada</p><div class="actions"><button id="review-btn" class="btn">Revisar respuestas</button><button class="btn primary" data-home>Volver al inicio</button></div></section></main>`;
       attachTopbar();
-      document.getElementById('review-btn').onclick = () => renderReviewQuestion();
+      document.getElementById('review-btn').onclick = () => renderReviewSummary();
     } finally {
       sessionActionInProgress = false;
     }
@@ -5771,7 +6060,7 @@
   async function launchExam(selected, config) {
     clearTimer();
     if (!selected?.length) return renderMessage('Sin preguntas', 'No se encontraron preguntas para iniciar este simulacro.');
-    config = { shuffleOptions:true, ...config };
+    config = { shuffleOptions:true, ...config, datasetRevision:config?.datasetRevision || datasetManifest?.dataset_revision || null };
     currentStudy = null;
     const state = normalizeSessionState({
       schemaVersion:1,
@@ -5804,6 +6093,12 @@
 
   async function resumePersistentSession(rawRow) {
     const row = SessionCore.normalizeSessionRow ? SessionCore.normalizeSessionRow(rawRow) : rawRow;
+    if (sessionExpiredByLocalDay(row)) {
+      const closed = await expireActiveSessionAtDayBoundary(row);
+      if (closed?.status === 'completed') await openHistorySession(closed.id, sessionStartLocalDate(row));
+      else renderDashboard();
+      return;
+    }
     if (!claimSessionLease(row.id)) {
       alert('Esta sesión ya está abierta en otra pestaña. Ciérrala allí o espera unos 18 segundos para que venza el bloqueo antes de reanudarla aquí.');
       return;
@@ -5886,6 +6181,10 @@
   }
 
   function renderExamQuestion() {
+    if (currentExam?.row && sessionExpiredByLocalDay(currentExam.row)) {
+      handleCurrentSessionDayBoundary().catch(error => console.warn('Day-boundary close failed.', error));
+      return;
+    }
     clearTimer();
     scrollPageTop();
     const q = currentExam.questions[currentExam.state.currentIndex];
@@ -5893,6 +6192,7 @@
     const marked = Boolean(currentExam.state.marked[q.id]);
     currentExam.state.scratch ||= {};
     const uncertainOptions = uncertaintyOptionsFor(currentExam.state.scratch, q.id);
+    const questionDoubt = questionHasDoubt(currentExam.state.scratch, q.id);
     examQuestionEnteredAt = performance.now();
 
     app.innerHTML = `<main class="shell exam-shell">
@@ -5906,15 +6206,14 @@
       <section class="exam-layout">
         <div class="panel question-card">
           <div class="progress"><div style="width:${(currentExam.state.currentIndex/currentExam.questions.length)*100}%"></div></div>
-          <div class="q-head"><span class="tag">${currentExam.state.currentIndex+1}/${currentExam.questions.length}</span><div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
+          <div class="q-head"><span class="tag">${currentExam.state.currentIndex+1}/${currentExam.questions.length}</span>${questionDoubtButton(q.id, questionDoubt)}<div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
           <div class="q-body"><p class="q-text">${esc(q.question)}</p>
             ${questionMediaHtml(q)}
-            <div class="uncertainty-hint">Puedes marcar <strong>?</strong> en una o varias alternativas sin cambiar tu respuesta definitiva.</div>
             <div class="options">${displayOptionList(
               q,
               currentExam.state.optionOrders,
               currentExam.config.shuffleOptions !== false && currentExam.config.examLayout !== 'paper'
-            ).map(o => optionWithUncertaintyButton(o, selected, uncertainOptions.includes(o.sourceLetter || o.letter))).join('')}</div>
+            ).map(o => optionButton(o, selected)).join('')}</div>
           </div>
         </div>
         <aside class="panel exam-nav"><div class="exam-nav-head"><strong>Navegación</strong><button class="btn small ${marked?'warn-btn':''}" data-exam-mark>${marked?'⚑ Marcada':'⚐ Marcar'}</button></div><div class="question-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="legend"><span>● respondida</span><span>⚑ revisar</span></div></aside>
@@ -5935,15 +6234,13 @@
       await persistExamState();
       refreshExamGridOnly();
     });
-    document.querySelectorAll('[data-uncertain-letter]').forEach(btn => {
+    document.querySelectorAll('[data-question-doubt-top]').forEach(btn => {
+      if (btn.dataset.questionDoubt !== q.id) return;
       btn.onclick = async (ev) => {
         ev.stopPropagation();
-        const letter = btn.dataset.uncertainLetter;
-        currentExam.state.scratch = toggleTentativeOption(currentExam.state.scratch || {}, q.id, letter);
-        const active = isOptionUncertain(currentExam.state.scratch, q.id, letter);
-        btn.classList.toggle('active', active);
-        btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-        btn.title = active ? 'Quitar marca de duda' : 'Marcar esta alternativa con ?';
+        const active = !questionHasDoubt(currentExam.state.scratch || {}, q.id);
+        currentExam.state.scratch = setQuestionDoubt(currentExam.state.scratch || {}, q.id, active);
+        refreshQuestionDoubtButtons(q.id, active);
         await persistExamState();
       };
     });
@@ -6030,7 +6327,7 @@
     accumulateExamTime();
     const answered = currentExam.questions.filter(q => sessionSelected(currentExam.state, q.id) != null).length;
     const marked = currentExam.questions.filter(q => currentExam.state.marked[q.id]).length;
-    const uncertain = currentExam.questions.filter(q => Object.values(currentExam.state.scratch?.[q.id] || {}).includes('tentative')).length;
+    const uncertain = currentExam.questions.filter(q => questionHasDoubt(currentExam.state.scratch, q.id)).length;
     app.innerHTML = `<main class="shell">${topbar('Revisión antes de entregar', false)}<section class="panel"><h2>Resumen del simulacro</h2><div class="kpis"><div class="kpi"><div class="value">${answered}</div><div class="label">Respondidas</div></div><div class="kpi"><div class="value">${currentExam.questions.length-answered}</div><div class="label">Sin responder</div></div><div class="kpi"><div class="value">${marked}</div><div class="label">Marcadas para revisar</div></div><div class="kpi"><div class="value">${uncertain}</div><div class="label">Dudosas (?)</div></div><div class="kpi"><div class="value">${formatTime(currentExam.state.remainingSeconds)}</div><div class="label">Tiempo restante</div></div></div><div class="question-grid overview-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="footer-actions"><button id="back-exam" class="btn ghost">Volver al examen</button><button id="cancel-overview" class="btn ghost">Cerrar o continuar después</button><button id="submit-exam" class="btn danger">Entregar y corregir</button></div></section></main>`;
     attachTopbar();
     document.querySelectorAll('[data-qindex]').forEach(btn => btn.onclick = () => {
@@ -6053,9 +6350,8 @@
   function examAttemptPayload(exam, q, historicalAverageMs = 0) {
     const selected = sessionSelected(exam.state, q.id);
     const measuredMs = exam.state.timeSpent?.[q.id] || (exam.config.examLayout === 'paper' ? historicalAverageMs : 0);
-    const uncertainOptions = Object.entries(exam.state.scratch?.[q.id] || {})
-      .filter(([, state]) => state === 'tentative')
-      .map(([letter]) => letter);
+    const uncertainOptions = uncertaintyOptionsFor(exam.state.scratch, q.id);
+    const questionDoubt = questionHasDoubt(exam.state.scratch, q.id);
     return makeAttempt(
       q,
       selected,
@@ -6065,6 +6361,7 @@
       false,
       {
         uncertainOptions,
+        questionDoubt,
         ...sessionAttemptMeta(exam, q.id),
       }
     );
@@ -6119,6 +6416,8 @@
         sessionId:exam.row.id,
         partial:true,
         questions:answeredQuestions,
+        allQuestions:answeredQuestions,
+        sessionTitle:exam.config.title || 'Simulacro',
         originalQuestionIds:exam.questions.map(question => question.id),
         responses:state.responses,
         scratch:state.scratch || {},
@@ -6130,7 +6429,7 @@
       };
       currentExam = null;
       deactivateSessionNavigationGuard();
-      renderReviewQuestion();
+      renderReviewSummary();
     } finally {
       sessionActionInProgress = false;
     }
@@ -6161,6 +6460,8 @@
         sessionId:exam.row.id,
         partial:false,
         questions:exam.questions,
+        allQuestions:exam.questions,
+        sessionTitle:exam.config.title || 'Simulacro',
         originalQuestionIds:exam.questions.map(question => question.id),
         responses:state.responses,
         scratch:state.scratch || {},
@@ -6175,41 +6476,202 @@
 
       app.innerHTML = `<main class="shell">${topbar('Resultado del simulacro', true)}<section class="panel empty"><h2>${timeExpired ? 'Tiempo agotado' : 'Simulacro entregado'}</h2><p class="score-big">${correct}/${result.length}</p><p>${pct(correct, result.length)} · ${answered} respondidas · ${result.length - answered} omitidas</p><div class="actions"><button id="review-btn" class="btn">Revisar pregunta por pregunta</button><button class="btn primary" data-home>Volver al inicio</button></div></section></main>`;
       attachTopbar();
-      document.getElementById('review-btn').onclick = renderReviewQuestion;
+      document.getElementById('review-btn').onclick = renderReviewSummary;
     } finally {
       sessionActionInProgress = false;
     }
   }
 
-  function renderReviewQuestion() {
-    clearTimer();
-    scrollPageTop();
-    const q = reviewContext.questions[reviewContext.index];
-    const historyReview = String(reviewContext?.type || '').startsWith('history_');
-    const historySessionReview = reviewContext?.type === 'history_session';
-    const specificQueryReview = reviewContext?.type === 'specific_query';
-    const responseValue = reviewContext.responses[q.id];
+  function reviewAllQuestions() {
+    if (!reviewContext) return [];
+    if (!Array.isArray(reviewContext.allQuestions) || !reviewContext.allQuestions.length) {
+      reviewContext.allQuestions = [...(reviewContext.questions || [])];
+    }
+    return reviewContext.allQuestions;
+  }
+
+  function reviewResponseMeta(q) {
+    const responseValue = reviewContext?.responses?.[q.id];
     const selected = responseValue?.selected ?? responseValue ?? null;
     const didNotKnow = Boolean(responseValue?.didNotKnow);
     const timedOut = Boolean(responseValue?.timedOut);
     const omitted = selected == null && !didNotKnow && !timedOut;
     const correct = !didNotKnow && !timedOut && selected === q.official_answer;
-    const uncertainOptions = Object.entries(reviewContext.scratch?.[q.id] || {})
-      .filter(([,state]) => state === 'tentative')
-      .map(([letter]) => letter);
-    const reviewOptions = displayOptionList(q, reviewContext.optionOrders || {}, reviewContext.shuffleOptions !== false);
-    const reviewTitle = reviewContext?.type === 'specific_query' ? 'Consulta' : 'Revisión';
-    const originalIds = reviewContext.originalQuestionIds || reviewContext.questions.map(question => question.id);
+    const attempt = reviewContext?.attemptsByQuestion?.[q.id] || null;
+    const doubt = questionHasDoubt(reviewContext?.scratch || {}, q.id) || Boolean(attempt?.was_uncertain);
+    const note = Boolean(learningNoteFor(q.id));
+    const flag = Boolean(reviewFlagFor(q.id));
+    const marked = Boolean(reviewContext?.marked?.[q.id]);
+    const audit = observed(q) || caveat(q);
+    return { selected, didNotKnow, timedOut, omitted, correct, doubt, note, flag, marked, audit, attempt };
+  }
+
+  const REVIEW_FILTERS = [
+    ['all','Todas'],
+    ['incorrect','Incorrectas'],
+    ['dont_know','No sé'],
+    ['doubt','? Duda'],
+    ['notes','Notas'],
+    ['marked','Marcadas'],
+    ['review_flag','Revisar'],
+    ['audit','Auditoría'],
+  ];
+
+  function reviewFilterMatch(q, filter = 'all') {
+    const meta = reviewResponseMeta(q);
+    if (filter === 'incorrect') return !meta.correct && !meta.omitted;
+    if (filter === 'dont_know') return meta.didNotKnow;
+    if (filter === 'doubt') return meta.doubt;
+    if (filter === 'notes') return meta.note;
+    if (filter === 'marked') return meta.marked;
+    if (filter === 'review_flag') return meta.flag;
+    if (filter === 'audit') return meta.audit;
+    return true;
+  }
+
+  function reviewFilterLabel(filter = reviewContext?.filter || 'all') {
+    return REVIEW_FILTERS.find(([key]) => key === filter)?.[1] || 'Todas';
+  }
+
+  function reviewVisibleQuestions() {
+    const filter = reviewContext?.filter || 'all';
+    const sort = reviewContext?.sort || 'session';
+    const originalIds = reviewContext?.originalQuestionIds || reviewAllQuestions().map(q => q.id);
+    const rows = reviewAllQuestions().filter(q => reviewFilterMatch(q, filter));
+    if (sort === 'topic') {
+      return rows.sort((a,b) => {
+        const topic = String(a.rentability_topic_label || a.topic || '').localeCompare(String(b.rentability_topic_label || b.topic || ''), 'es');
+        if (topic) return topic;
+        return originalIds.indexOf(a.id) - originalIds.indexOf(b.id);
+      });
+    }
+    return rows.sort((a,b) => originalIds.indexOf(a.id) - originalIds.indexOf(b.id));
+  }
+
+  function reviewStatusMarkup(q) {
+    const meta = reviewResponseMeta(q);
+    const result = meta.didNotKnow
+      ? '<span class="review-state bad">🤷 No sé</span>'
+      : meta.timedOut
+        ? '<span class="review-state bad">⏱ Tiempo</span>'
+        : meta.omitted
+          ? '<span class="review-state">— Omitida</span>'
+          : meta.correct
+            ? '<span class="review-state ok">✓ Correcta</span>'
+            : '<span class="review-state bad">✕ Incorrecta</span>';
+    return `${result}${meta.doubt?'<span class="review-mini-state warn">?</span>':''}${meta.note?'<span class="review-mini-state">🗒</span>':''}${meta.marked?'<span class="review-mini-state warn">⚑</span>':''}${meta.flag?'<span class="review-mini-state warn">⚐</span>':''}${meta.audit?'<span class="review-mini-state bad">⚠</span>':''}`;
+  }
+
+  function reviewQuestionRow(q) {
+    const originalIds = reviewContext.originalQuestionIds || reviewAllQuestions().map(item => item.id);
     const originalIndex = originalIds.indexOf(q.id);
-    const originalPositionMarkup = reviewContext.partial && originalIndex >= 0
-      ? `<small class="review-original-position">Respondida ${reviewContext.index+1} de ${reviewContext.questions.length} · pregunta ${originalIndex+1} de la sesión original</small>`
+    const topic = cleanTaxonomyLabel(q.rentability_topic_label || q.topic) || 'Sin tema';
+    const entity = cleanTaxonomyLabel(q.canonical_entity || q.subtopic);
+    return `<button class="review-question-row" type="button" data-review-open="${esc(q.id)}">
+      <div class="review-question-number">${originalIndex >= 0 ? originalIndex + 1 : '—'}</div>
+      <div class="review-question-info">
+        <div class="review-question-line"><strong>${esc(topic)}</strong><span class="review-question-states">${reviewStatusMarkup(q)}</span></div>
+        ${entity && taxonomyKey(entity) !== taxonomyKey(topic) ? `<small>${esc(entity)}</small>` : ''}
+      </div>
+    </button>`;
+  }
+
+  function renderReviewSummary() {
+    if (!reviewContext) return renderDashboard();
+    if (reviewContext.type === 'specific_query') return renderReviewQuestion();
+    clearTimer();
+    scrollPageTop();
+    const all = reviewAllQuestions();
+    const visible = reviewVisibleQuestions();
+    const metas = all.map(reviewResponseMeta);
+    const correct = metas.filter(meta => meta.correct).length;
+    const answered = metas.filter(meta => !meta.omitted).length;
+    const planned = Number(reviewContext.originalQuestionIds?.length || all.length);
+    const partial = Boolean(reviewContext.partial);
+    const filterCounts = Object.fromEntries(REVIEW_FILTERS.map(([key]) => [key, all.filter(q => reviewFilterMatch(q,key)).length]));
+    const title = reviewContext.sessionTitle || (partial ? 'Sesión parcial' : 'Sesión completada');
+    const historyReview = String(reviewContext.type || '').startsWith('history_');
+    const accuracy = answered ? Math.round(correct / answered * 100) : 0;
+    const currentDatasetRevision = datasetManifest?.dataset_revision || null;
+    const corpusChangedSinceSession = Boolean(
+      historyReview
+      && reviewContext.sessionDatasetRevision
+      && currentDatasetRevision
+      && String(reviewContext.sessionDatasetRevision) !== String(currentDatasetRevision)
+    );
+
+    app.innerHTML = `<main class="shell">${topbar('Centro de revisión', true)}
+      ${corpusChangedSinceSession ? `<div class="banner"><strong>Corpus actualizado desde esta sesión.</strong> La revisión muestra el contenido vigente; el resultado histórico de tu intento se conserva. No se atribuye retroactivamente el texto actual a la versión que viste entonces.</div>` : ''}
+      <section class="panel review-summary-hero">
+        <div><span class="roadmap-kicker">${partial?'CIERRE PARCIAL':'REVISIÓN DE SESIÓN'}</span><h2>${esc(title)}</h2><p class="muted">${answered} respondidas${partial ? ` de ${planned} planificadas` : ''} · ${correct} correctas · ${accuracy}% de acierto</p></div>
+        <div class="review-summary-score"><strong>${correct}/${answered || 0}</strong><small>correctas / respondidas</small></div>
+      </section>
+      <section class="panel review-center-panel">
+        <div class="review-filter-bar" aria-label="Filtros de revisión">
+          ${REVIEW_FILTERS.map(([key,label]) => `<button class="review-filter-chip ${reviewContext.filter===key || (!reviewContext.filter && key==='all')?'active':''}" data-review-filter="${key}" type="button">${esc(label)} <strong>${filterCounts[key]}</strong></button>`).join('')}
+        </div>
+        <div class="review-sort-bar"><span><strong>${esc(reviewFilterLabel())}</strong> · ${visible.length} pregunta${visible.length===1?'':'s'}</span><div><button class="btn small ${reviewContext.sort!=='topic'?'primary':'ghost'}" data-review-sort="session" type="button">Orden de sesión</button><button class="btn small ${reviewContext.sort==='topic'?'primary':'ghost'}" data-review-sort="topic" type="button">Tema</button></div></div>
+        <div class="review-question-list">${visible.length ? visible.map(reviewQuestionRow).join('') : '<div class="empty">No hay preguntas con este filtro.</div>'}</div>
+      </section>
+      <div class="footer-actions"><button class="btn primary" data-review-summary-exit type="button">${historyReview?'Volver al historial':'Volver al inicio'}</button></div>
+    </main>`;
+    attachTopbar();
+    document.querySelectorAll('[data-review-filter]').forEach(btn => btn.onclick = () => {
+      reviewContext.filter = btn.dataset.reviewFilter;
+      renderReviewSummary();
+    });
+    document.querySelectorAll('[data-review-sort]').forEach(btn => btn.onclick = () => {
+      reviewContext.sort = btn.dataset.reviewSort;
+      renderReviewSummary();
+    });
+    document.querySelectorAll('[data-review-open]').forEach(btn => btn.onclick = () => {
+      const list = reviewVisibleQuestions();
+      reviewContext.questions = list;
+      reviewContext.index = Math.max(0, list.findIndex(q => q.id === btn.dataset.reviewOpen));
+      renderReviewQuestion();
+    });
+    document.querySelector('[data-review-summary-exit]')?.addEventListener('click', () => {
+      const context = reviewContext;
+      reviewContext = null;
+      if (String(context?.type || '').startsWith('history_')) renderHistory(context.returnDate || isoDateLocal());
+      else renderDashboard();
+    });
+  }
+
+  function renderReviewQuestion() {
+    clearTimer();
+    scrollPageTop();
+    if (!reviewContext?.questions?.length) return renderReviewSummary();
+    const q = reviewContext.questions[reviewContext.index];
+    if (!q) return renderReviewSummary();
+    const historyReview = String(reviewContext?.type || '').startsWith('history_');
+    const historySessionReview = reviewContext?.type === 'history_session';
+    const specificQueryReview = reviewContext?.type === 'specific_query';
+    const meta = reviewResponseMeta(q);
+    const { selected, didNotKnow, timedOut, omitted, correct } = meta;
+    const uncertainOptions = uncertaintyOptionsFor(reviewContext.scratch || {}, q.id);
+    const questionDoubt = meta.doubt;
+    const reviewOptions = displayOptionList(q, reviewContext.optionOrders || {}, reviewContext.shuffleOptions !== false);
+    const reviewTitle = specificQueryReview ? 'Consulta' : 'Revisión';
+    const originalIds = reviewContext.originalQuestionIds || reviewAllQuestions().map(question => question.id);
+    const originalIndex = originalIds.indexOf(q.id);
+    const filterPosition = `${reviewFilterLabel()} ${reviewContext.index+1} de ${reviewContext.questions.length}`;
+    const originalPositionMarkup = originalIndex >= 0 && !specificQueryReview
+      ? `<small class="review-original-position">${esc(filterPosition)} · pregunta ${originalIndex+1} de ${originalIds.length} de la sesión original</small>`
       : '';
+    const sessionAttempt = reviewContext?.attemptsByQuestion?.[q.id] || null;
+    const sessionScopedReview = Boolean(reviewContext?.sessionId);
+    const latestAttempt = sessionAttempt || (sessionScopedReview
+      ? null
+      : attemptsForQuestion(q.id).slice().sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0] || null);
+
     app.innerHTML = `<main class="shell">${topbar(reviewTitle, true)}
       <div class="review-navigation-wrap">
         <div class="question-step-nav review-step-primary" aria-label="Navegación superior de la revisión">
           <button class="btn small ghost" data-review-prev ${reviewContext.index===0?'disabled':''}>← Anterior</button>
           <strong>${reviewContext.index+1}/${reviewContext.questions.length}</strong>
-          <button class="btn small primary" data-review-next>${reviewContext.index+1===reviewContext.questions.length?(specificQueryReview?'Volver al selector':'Terminar revisión'):'Siguiente →'}</button>
+          ${!specificQueryReview?'<button class="btn small ghost" data-review-summary type="button">Resumen</button>':''}
+          <button class="btn small primary" data-review-next>${reviewContext.index+1===reviewContext.questions.length?(specificQueryReview?'Volver al selector':'Volver al resumen'):'Siguiente →'}</button>
         </div>
         <div class="review-jump-actions" aria-label="Salto y salida de la revisión">
           <label>Ir a <input id="review-jump-input" class="input review-jump-input" type="number" min="1" max="${reviewContext.questions.length}" value="${reviewContext.index+1}" inputmode="numeric"></label>
@@ -6220,24 +6682,20 @@
         </div>
         ${originalPositionMarkup}
       </div>
-      <section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${uncertainOptions.length?'<span class="tag warn">❓ Duda registrada</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p>${questionMediaHtml(q)}<div class="options">${reviewOptions.map(o => {
+      <section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionDoubtButton(q.id, questionDoubt)}${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${questionDoubt?'<span class="tag warn">❓ Duda registrada</span>':''}${meta.note?'<span class="tag">🗒 Nota</span>':''}${meta.marked?'<span class="tag warn">⚑ Marcada</span>':''}${meta.flag?'<span class="tag warn">⚐ Revisar</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p>${questionMediaHtml(q)}<div class="options">${reviewOptions.map(o => {
         const sourceLetter = o.sourceLetter || o.letter;
         return `<div class="option ${sourceLetter===q.official_answer?'correct':sourceLetter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`;
       }).join('')}</div></div><div id="feedback"></div></section>
-      <div class="footer-actions review-footer-actions"><button class="btn ghost" data-review-prev ${historyReview && !historySessionReview?'style="visibility:hidden"':(reviewContext.index===0?'disabled':'')}>← Anterior</button><button class="btn ghost" data-review-last ${reviewContext.index+1===reviewContext.questions.length?'disabled':''}>Última</button><button class="btn danger ghost-danger" data-review-exit>Salir</button><button class="btn primary" data-review-next>${specificQueryReview?(reviewContext.index+1===reviewContext.questions.length?'Volver al selector':'Siguiente →'):historyReview?(historySessionReview && reviewContext.index+1<reviewContext.questions.length?'Siguiente →':'Volver al historial'):(reviewContext.index+1===reviewContext.questions.length?'Terminar revisión':'Siguiente →')}</button></div>
+      <div class="footer-actions review-footer-actions"><button class="btn ghost" data-review-prev ${historyReview && !historySessionReview?'style="visibility:hidden"':(reviewContext.index===0?'disabled':'')}>← Anterior</button>${!specificQueryReview?'<button class="btn ghost" data-review-summary>Volver al resumen</button>':''}<button class="btn danger ghost-danger" data-review-exit>Salir</button><button class="btn primary" data-review-next>${specificQueryReview?(reviewContext.index+1===reviewContext.questions.length?'Volver al selector':'Siguiente →'):(reviewContext.index+1===reviewContext.questions.length?'Volver al resumen':'Siguiente →')}</button></div>
     </main>`;
     attachTopbar();
-    const sessionAttempt = reviewContext?.attemptsByQuestion?.[q.id] || null;
-    const sessionScopedReview = Boolean(reviewContext?.sessionId);
-    const latestAttempt = sessionAttempt || (sessionScopedReview
-      ? null
-      : attemptsForQuestion(q.id).slice().sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0] || null);
     const reviewFeedbackMeta = {
       attemptId:latestAttempt?.id || null,
       responseTimeMs:Number(latestAttempt?.response_time_ms || 0),
       targetSeconds:Number(latestAttempt?.target_seconds || effectiveTargetSeconds(q)),
       wasUncertainAtAnswer:Boolean(latestAttempt?.was_uncertain),
-      allowPostMark:!didNotKnow && selected != null,
+      questionDoubt,
+      allowPostMark:!omitted,
       didNotKnow,
       omitted,
     };
@@ -6245,6 +6703,24 @@
     catch (error) { console.error('Error al renderizar la explicación de revisión:', error); }
     const reviewFeedbackNode = document.getElementById('feedback');
     if (reviewFeedbackNode && !reviewFeedbackNode.innerHTML.trim()) renderReviewFeedbackFallback(q, selected, correct, timedOut, uncertainOptions, reviewFeedbackMeta);
+
+    document.querySelectorAll('[data-question-doubt-top]').forEach(btn => {
+      if (btn.dataset.questionDoubt !== q.id) return;
+      btn.onclick = async () => {
+        const active = !questionHasDoubt(reviewContext.scratch || {}, q.id);
+        reviewContext.scratch = setQuestionDoubt(reviewContext.scratch || {}, q.id, active);
+        const attemptId = latestAttempt?.id || null;
+        if (attemptId) {
+          const updated = await setAttemptQuestionDoubtAfterFeedback(attemptId, q, active);
+          if (!updated) {
+            reviewContext.scratch = setQuestionDoubt(reviewContext.scratch || {}, q.id, !active);
+            return;
+          }
+          if (reviewContext.attemptsByQuestion) reviewContext.attemptsByQuestion[q.id] = updated;
+        }
+        refreshQuestionDoubtButtons(q.id, active);
+      };
+    });
 
     const goReviewPrev = () => {
       if (reviewContext.index <= 0) return;
@@ -6257,10 +6733,7 @@
         else renderSpecificQuestions();
         return;
       }
-      if (historyReview) {
-        if (historySessionReview && reviewContext.index + 1 < reviewContext.questions.length) { reviewContext.index++; renderReviewQuestion(); return; }
-        renderHistory(reviewContext.returnDate || isoDateLocal());
-      } else if (reviewContext.index + 1 >= reviewContext.questions.length) renderDashboard();
+      if (reviewContext.index + 1 >= reviewContext.questions.length) renderReviewSummary();
       else { reviewContext.index++; renderReviewQuestion(); }
     };
     const exitReview = () => {
@@ -6285,39 +6758,51 @@
     document.querySelectorAll('[data-review-last]').forEach(btn => btn.onclick = () => { reviewContext.index = reviewContext.questions.length - 1; renderReviewQuestion(); });
     document.querySelectorAll('[data-review-exit]').forEach(btn => btn.onclick = exitReview);
     document.querySelectorAll('[data-review-jump]').forEach(btn => btn.onclick = jumpReview);
+    document.querySelectorAll('[data-review-summary]').forEach(btn => btn.onclick = renderReviewSummary);
     const jumpInput = document.getElementById('review-jump-input');
     if (jumpInput) jumpInput.onkeydown = ev => { if (ev.key === 'Enter') { ev.preventDefault(); jumpReview(); } };
     if (specificQueryReview) document.querySelectorAll('[data-review-selector]').forEach(btn => btn.onclick = () => renderSpecificQuestions(specificQueryDraft));
   }
 
 
+  // v1.5.0 — la duda pertenece a la pregunta, no a una alternativa.
+  // Las marcas `tentative` antiguas se interpretan como duda de pregunta para mantener compatibilidad.
   function uncertaintyOptionsFor(scratch, qId) {
     return Object.entries(scratch?.[qId] || {})
-      .filter(([,state]) => state === 'tentative')
+      .filter(([key,state]) => key !== '__questionDoubt' && state === 'tentative')
       .map(([letter]) => letter);
   }
 
-  function isOptionUncertain(scratch, qId, letter) {
-    return scratch?.[qId]?.[letter] === 'tentative';
+  function questionHasDoubt(scratch, qId) {
+    const row = scratch?.[qId] || {};
+    return row.__questionDoubt === true || Object.entries(row).some(([key,state]) => key !== '__questionDoubt' && state === 'tentative');
   }
 
-  function toggleTentativeOption(scratch, qId, letter) {
+  function setQuestionDoubt(scratch, qId, active) {
     scratch ||= {};
     scratch[qId] ||= {};
-    if (scratch[qId][letter] === 'tentative') delete scratch[qId][letter];
-    else scratch[qId][letter] = 'tentative';
+    if (active) scratch[qId].__questionDoubt = true;
+    else {
+      delete scratch[qId].__questionDoubt;
+      // Al desmarcar una duda nueva también se limpian marcas `tentative` legacy.
+      for (const [key,state] of Object.entries(scratch[qId])) if (state === 'tentative') delete scratch[qId][key];
+    }
     if (!Object.keys(scratch[qId]).length) delete scratch[qId];
     return scratch;
   }
 
-  function optionWithUncertaintyButton(o, selected, uncertain = false) {
-    const sourceLetter = o.sourceLetter || o.letter;
-    return `<div class="option-with-uncertainty">
-      ${optionButton(o, selected)}
-      <button class="uncertainty-toggle ${uncertain?'active':''}" data-uncertain-letter="${sourceLetter}"
-        type="button" aria-pressed="${uncertain?'true':'false'}"
-        title="${uncertain?'Quitar marca de duda':'Marcar esta alternativa con ?'}">?</button>
-    </div>`;
+  function questionDoubtButton(questionId, active = false, extraClass = '') {
+    return `<button class="question-doubt-toggle ${active?'active':''} ${extraClass}" data-question-doubt="${esc(questionId)}" data-question-doubt-top type="button" aria-pressed="${active?'true':'false'}" title="${active?'Quitar duda':'Marcar pregunta con duda'}">?</button>`;
+  }
+
+  function refreshQuestionDoubtButtons(questionId, active) {
+    document.querySelectorAll('[data-question-doubt]').forEach(btn => {
+      if (btn.dataset.questionDoubt !== questionId) return;
+      btn.classList.toggle('active', Boolean(active));
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+      btn.title = active ? 'Quitar duda' : 'Marcar pregunta con duda';
+      if (btn.dataset.questionDoubtLabel != null) btn.textContent = active ? '✓ Duda registrada' : '? Marcar duda';
+    });
   }
 
   function optionList(q) {
@@ -6355,23 +6840,46 @@
     return lines.length ? `<div class="framework">${lines.map(line => `<div>${esc(line)}</div>`).join('')}</div>` : '';
   }
 
-  function bindPostAnswerUncertainButton(feedbackMeta, q, selected) {
+  function setContextQuestionDoubt(questionId, active) {
+    if (currentStudy?.scratch) {
+      currentStudy.scratch = setQuestionDoubt(currentStudy.scratch, questionId, active);
+      scheduleCurrentSessionSave();
+    } else if (currentExam?.state?.scratch) {
+      currentExam.state.scratch = setQuestionDoubt(currentExam.state.scratch, questionId, active);
+      persistExamState();
+    } else if (reviewContext?.scratch) {
+      reviewContext.scratch = setQuestionDoubt(reviewContext.scratch, questionId, active);
+    }
+  }
+
+  function bindPostAnswerUncertainButton(feedbackMeta, q) {
     const postBtn = document.getElementById('post-answer-uncertain');
-    if (!postBtn || postBtn.disabled) return;
+    if (!postBtn) return;
     postBtn.onclick = async () => {
+      const active = postBtn.dataset.active !== 'true';
       postBtn.disabled = true;
       const status = document.getElementById('post-answer-uncertain-status');
       if (status) status.textContent = 'Guardando…';
-      const updated = await markAttemptUncertainAfterFeedback(feedbackMeta.attemptId, q, selected);
+      setContextQuestionDoubt(q.id, active);
+      const updated = await setAttemptQuestionDoubtAfterFeedback(feedbackMeta.attemptId, q, active);
       if (!updated) {
+        setContextQuestionDoubt(q.id, !active);
         postBtn.disabled = false;
         if (status) status.textContent = 'No se pudo guardar. Intenta nuevamente.';
         return;
       }
-      postBtn.textContent = '✓ Marcada para repaso prioritario';
-      postBtn.classList.remove('warn-btn');
-      postBtn.classList.add('ghost');
-      if (status) status.textContent = 'Registrada como duda posterior a la corrección. La memoria y la prioridad ya fueron recalculadas.';
+      feedbackMeta.questionDoubt = active;
+      feedbackMeta.wasUncertainAtAnswer = active;
+      if (reviewContext?.attemptsByQuestion) reviewContext.attemptsByQuestion[q.id] = updated;
+      refreshQuestionDoubtButtons(q.id, active);
+      postBtn.dataset.active = active ? 'true' : 'false';
+      postBtn.textContent = active ? '✓ Duda registrada' : '? Marcar duda';
+      postBtn.classList.toggle('warn-btn', !active);
+      postBtn.classList.toggle('ghost', active);
+      postBtn.disabled = false;
+      if (status) status.textContent = active
+        ? 'Duda registrada. Se conserva tu resultado y la pregunta volverá antes al repaso.'
+        : 'Duda retirada. Se recalculó la memoria desde tus intentos.';
     };
   }
 
@@ -6402,8 +6910,8 @@
       }).filter(Boolean).join('');
     const quickReference = referenceQuickHtml(q);
 
-    const postMarkAvailable = Boolean(feedbackMeta.attemptId) && selected != null && feedbackMeta.allowPostMark !== false;
-    const alreadyUncertain = Boolean(feedbackMeta.wasUncertainAtAnswer) || uncertainOptions.length > 0;
+    const postMarkAvailable = Boolean(feedbackMeta.attemptId) && feedbackMeta.omitted !== true && feedbackMeta.allowPostMark !== false;
+    const alreadyUncertain = Boolean(feedbackMeta.questionDoubt ?? feedbackMeta.wasUncertainAtAnswer) || uncertainOptions.length > 0;
     const targetSeconds = Number(feedbackMeta.targetSeconds || effectiveTargetSeconds(q));
     const responseTimeMs = Number(feedbackMeta.responseTimeMs || 0);
     const responseSeconds = responseTimeMs > 0 ? responseTimeMs / 1000 : null;
@@ -6415,6 +6923,7 @@
       <p class="answer-line">Respuesta correcta: ${esc(officialDisplayLetter)}. ${esc(q?.official_answer_text || optionTextFor(q?.official_answer))}</p>
       ${responseSeconds != null ? `<div class="feedback-time ${responseSeconds <= targetSeconds ? 'ok' : responseSeconds <= targetSeconds * 1.6 ? 'warn' : 'bad'}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
       ${auditEditorialHtml(q)}
+      ${alreadyUncertain ? `<div class="explain-block uncertainty-box"><h4>❓ Duda registrada</h4><p>Marcaste la pregunta completa como dudosa. El marcador no genera contenido ni una nota por sí solo.</p></div>` : ''}
       ${hasEditorialText(q?.exam_logic) ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(cleanEditorialText(q.exam_logic))}</p></div>` : ''}
       ${correctText ? `<details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>` : ''}
       ${distractors ? `<details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>` : ''}
@@ -6426,17 +6935,17 @@
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
         <div>
-          <strong>¿Acertaste sin dominar realmente el razonamiento?</strong>
-          <p class="muted">Márcala como duda después de leer la explicación. Se conservará el acierto, pero volverá antes al repaso.</p>
+          <strong>¿Quieres conservar esta pregunta como duda?</strong>
+          <p class="muted">El ? es solo un marcador ligero de la pregunta: no crea notas ni observaciones. Si necesitas registrar qué falta aprender, usa Nota o Revisar pregunta.</p>
         </div>
-        <button id="post-answer-uncertain" class="btn ${alreadyUncertain ? 'ghost' : 'warn-btn'}" type="button" ${alreadyUncertain ? 'disabled' : ''}>
-          ${alreadyUncertain ? '✓ Ya registrada como dudosa' : '❓ No dominaba el razonamiento'}
+        <button id="post-answer-uncertain" data-active="${alreadyUncertain?'true':'false'}" data-question-doubt="${esc(q.id)}" data-question-doubt-label class="btn ${alreadyUncertain ? 'ghost' : 'warn-btn'}" type="button">
+          ${alreadyUncertain ? '✓ Duda registrada' : '? Marcar duda'}
         </button>
         <div id="post-answer-uncertain-status" class="muted post-answer-status"></div>
       </div>` : ''}
     </div>`;
 
-    bindPostAnswerUncertainButton(feedbackMeta, q, selected);
+    bindPostAnswerUncertainButton(feedbackMeta, q);
     bindReviewFlagButtons(target);
     bindLearningNoteButtons(target);
   }
@@ -6476,8 +6985,8 @@
     const timeLabel = responseSeconds == null
       ? ''
       : `${responseSeconds < 10 ? responseSeconds.toFixed(1) : Math.round(responseSeconds)} s`;
-    const postMarkAvailable = Boolean(feedbackMeta.attemptId) && selected != null && (!reviewOnly || feedbackMeta.allowPostMark);
-    const alreadyUncertain = Boolean(feedbackMeta.wasUncertainAtAnswer) || uncertainOptions.length > 0;
+    const postMarkAvailable = Boolean(feedbackMeta.attemptId) && feedbackMeta.omitted !== true && (!reviewOnly || feedbackMeta.allowPostMark !== false);
+    const alreadyUncertain = Boolean(feedbackMeta.questionDoubt ?? feedbackMeta.wasUncertainAtAnswer) || uncertainOptions.length > 0;
     const correctText = cleanEditorialText(q.correct_explanation);
     const distractors = feedbackOptions
       .filter(o => (o.sourceLetter || o.letter) !== q.official_answer)
@@ -6496,12 +7005,7 @@
 
       ${auditEditorialHtml(q)}
 
-      ${uncertainOptions.length ? `<div class="explain-block uncertainty-box"><h4>❓ Alternativas que marcaste como dudosas</h4><p>Esta pregunta se programará antes en tu repaso aunque la hayas acertado.</p>${uncertainOptions.map(letter => {
-        const text = q[`option_${letter.toLowerCase()}`] || '';
-        const reason = cleanEditorialText(letter === q.official_answer ? q.correct_explanation : q[`why_not_${letter.toLowerCase()}`]);
-        const displayLetter = displayLetterFor(letter);
-        return `<p><strong>${esc(displayLetter)}. ${esc(text)}</strong>${reason ? ` — ${esc(reason)}` : ''}</p>`;
-      }).join('')}</div>` : ''}
+      ${alreadyUncertain ? `<div class="explain-block uncertainty-box"><h4>❓ Duda registrada</h4><p>Marcaste la pregunta completa como dudosa. El marcador no genera contenido ni una nota por sí solo.</p></div>` : ''}
       ${hasEditorialText(q.exam_logic) ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(cleanEditorialText(q.exam_logic))}</p></div>` : ''}
       ${correctText ? `<details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>` : ''}
       ${distractors ? `<details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>` : ''}
@@ -6513,18 +7017,18 @@
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
         <div>
-          <strong>¿Acertaste sin dominar realmente el razonamiento?</strong>
-          <p class="muted">Puedes marcar la pregunta después de leer la corrección. Se contará como conocimiento frágil y volverá antes al repaso.</p>
+          <strong>¿Quieres conservar esta pregunta como duda?</strong>
+          <p class="muted">El ? es solo un marcador ligero de la pregunta: no crea notas ni observaciones. Si necesitas registrar qué falta aprender, usa Nota o Revisar pregunta.</p>
         </div>
-        <button id="post-answer-uncertain" class="btn ${alreadyUncertain ? 'ghost' : 'warn-btn'}" type="button" ${alreadyUncertain ? 'disabled' : ''}>
-          ${alreadyUncertain ? '✓ Ya registrada como dudosa' : '❓ No dominaba el razonamiento'}
+        <button id="post-answer-uncertain" data-active="${alreadyUncertain?'true':'false'}" data-question-doubt="${esc(q.id)}" data-question-doubt-label class="btn ${alreadyUncertain ? 'ghost' : 'warn-btn'}" type="button">
+          ${alreadyUncertain ? '✓ Duda registrada' : '? Marcar duda'}
         </button>
         <div id="post-answer-uncertain-status" class="muted post-answer-status"></div>
       </div>` : ''}
       ${!reviewOnly && onNext ? `<div class="footer-actions"><button id="next-feedback" class="btn primary">Siguiente pregunta →</button></div>` : ''}
     </div>`;
 
-    bindPostAnswerUncertainButton(feedbackMeta, q, selected);
+    bindPostAnswerUncertainButton(feedbackMeta, q);
     bindReviewFlagButtons(target);
     bindLearningNoteButtons(target);
     if (!reviewOnly && onNext) {
@@ -6540,7 +7044,8 @@
     const state = memoryByQuestion.get(q.id);
     const answeredAt = new Date().toISOString();
     const uncertainOptions = [...new Set((meta.uncertainOptions || []).filter(x => ['A','B','C','D','E'].includes(x)))];
-    const wasUncertain = uncertainOptions.length > 0;
+    const questionDoubt = Boolean(meta.questionDoubt) || uncertainOptions.length > 0;
+    const wasUncertain = questionDoubt;
     const didNotKnow = Boolean(meta.dontKnow);
     const baseMemoryRating = memoryRating(q, responseTimeMs, isCorrect, timedOut, normalizedTarget);
     const adjustedMemoryRating = wasUncertain && isCorrect ? Math.min(baseMemoryRating, 2) : baseMemoryRating;
@@ -6559,7 +7064,7 @@
       uncertainty_note: didNotKnow
         ? 'NO_SE_EXPLICITO'
         : wasUncertain
-          ? `Alternativas marcadas con ?: ${uncertainOptions.join(', ')}`
+          ? 'QUESTION_DOUBT'
           : null,
       normalized_speed: Number(((Number(responseTimeMs||0)/1000) / Math.max(1, normalizedTarget)).toFixed(4)),
       target_seconds: normalizedTarget,
@@ -6615,30 +7120,36 @@
     return state;
   }
 
-  async function markAttemptUncertainAfterFeedback(attemptId, q, selected) {
+  async function setAttemptQuestionDoubtAfterFeedback(attemptId, q, active) {
     if (!attemptId) return null;
-    const idx = attempts.findIndex(a => a.id === attemptId);
+    const idx = attempts.findIndex(a => String(a.id) === String(attemptId));
     if (idx < 0) return null;
 
     const current = attempts[idx];
-    const existingOptions = Array.isArray(current.uncertain_options) ? current.uncertain_options : [];
-    const uncertainOptions = [...new Set([...existingOptions, ...(selected ? [selected] : [])])];
-    const previousNote = String(current.uncertainty_note || '').trim();
-    const marker = 'POST_ANSWER_REASONING_MISMATCH';
-    const uncertaintyNote = previousNote.includes(marker)
-      ? previousNote
-      : [previousNote, marker].filter(Boolean).join(' | ');
+    const didNotKnow = String(current.uncertainty_note || '').includes('NO_SE_EXPLICITO');
 
+    const noteParts = String(current.uncertainty_note || '')
+      .split('|')
+      .map(part => part.trim())
+      .filter(Boolean)
+      .filter(part => !part.startsWith('Alternativas marcadas con ?:'))
+      .filter(part => !['QUESTION_DOUBT','POST_ANSWER_REASONING_MISMATCH'].includes(part));
+    if (active) noteParts.push('QUESTION_DOUBT');
+
+    const baseMemoryRating = memoryRating(q, current.response_time_ms, current.is_correct, current.timed_out, current.target_seconds);
+    const baseSpeedBucket = speedBucket(q, current.response_time_ms, current.is_correct, current.timed_out, current.target_seconds);
     const changes = {
-      was_uncertain: true,
-      uncertain_options: uncertainOptions,
-      uncertainty_note: uncertaintyNote,
-      memory_rating: current.is_correct ? Math.min(Number(current.memory_rating || 4), 2) : 1,
-      speed_bucket: current.is_correct ? 'uncertain_correct' : 'uncertain_incorrect',
+      was_uncertain:Boolean(active),
+      uncertain_options:[],
+      uncertainty_note:noteParts.length ? noteParts.join(' | ') : null,
+      memory_rating:didNotKnow ? current.memory_rating : (active && current.is_correct ? Math.min(baseMemoryRating, 2) : baseMemoryRating),
+      speed_bucket:didNotKnow ? current.speed_bucket : (active ? (current.is_correct ? 'uncertain_correct' : 'uncertain_incorrect') : baseSpeedBucket),
+      updated_at:new Date().toISOString(),
     };
 
-    let updated;
-    if (cloudConfigured) {
+    let updated = { ...current, ...changes };
+    const localOnly = !cloudConfigured || String(current.id || '').startsWith('local-');
+    if (!localOnly) {
       const { data, error } = await supa.from('attempts')
         .update(changes)
         .eq('id', attemptId)
@@ -6646,15 +7157,17 @@
         .select()
         .single();
       if (error) {
-        console.warn('No se pudo registrar la duda posterior:', error.message);
+        console.warn('No se pudo actualizar la duda de la pregunta:', error.message);
         return null;
       }
       updated = data;
-    } else {
-      updated = { ...current, ...changes };
+    } else if (cloudConfigured) {
+      const payload = { ...updated, id:undefined, syncStatus:undefined, user_id:user.id };
+      await sessionStore?.queueOperation('INSERT_ATTEMPT', payload, `INSERT_ATTEMPT:${updated.client_attempt_id}`);
     }
 
     attempts[idx] = updated;
+    await saveAttemptShadow(updated, localOnly ? (cloudConfigured ? 'pending' : 'local') : 'synced');
     if (!cloudConfigured) saveLocalAttempts();
     await rebuildMemoryForQuestion(q.id);
     return updated;
@@ -6923,6 +7436,23 @@
       });
   }
 
+  function sessionStateResultSummary(row) {
+    const state = normalizeSessionState(row?.state || {});
+    const answeredIds = answeredIdsFor(row, state);
+    let correct = 0;
+    for (const questionId of answeredIds) {
+      const q = questions.find(item => item.id === questionId);
+      if (!q) continue;
+      const response = sessionResponse(state, questionId);
+      if (!response.didNotKnow && !response.timedOut && response.selected === q.official_answer) correct += 1;
+    }
+    return {
+      answered:answeredIds.length,
+      correct,
+      accuracy:answeredIds.length ? Math.round(correct / answeredIds.length * 100) : null,
+    };
+  }
+
   function renderSessionHistoryCard(row) {
     const list = attemptsForSessionId(row.id);
     const summary = SessionCore.buildSessionSummary
@@ -6937,6 +7467,12 @@
           activeTimeMs:Number(row.active_time_ms || 0),
           completedAt:row.completed_at || row.updated_at,
         };
+    const stateSummary = sessionStateResultSummary(row);
+    if (stateSummary.answered > list.length) {
+      summary.answered = stateSummary.answered;
+      summary.correct = stateSummary.correct;
+      summary.accuracy = stateSummary.accuracy;
+    }
     const label = summary.title || studyModeLabel(row.config?.studyMode || row.config?.examType || row.mode);
     const completion = summary.partial ? '<span class="tag warn">Sesión parcial</span>' : '<span class="tag ok">Sesión completa</span>';
     const accuracy = summary.accuracy == null ? '—' : `${summary.accuracy}%`;
@@ -6989,6 +7525,8 @@
       sessionId:row.id,
       partial:Boolean(row.is_partial),
       questions:selectedQuestions,
+      allQuestions:selectedQuestions,
+      sessionTitle:row.title || studyModeLabel(row.config?.studyMode || row.config?.examType || row.mode),
       originalQuestionIds:row.question_ids || selectedQuestions.map(question => question.id),
       index:0,
       responses,
@@ -6997,9 +7535,10 @@
       optionOrders:state.optionOrders || {},
       shuffleOptions:row.config?.shuffleOptions !== false && row.config?.examLayout !== 'paper',
       attemptsByQuestion,
+      sessionDatasetRevision:row.config?.datasetRevision || null,
       returnDate:returnDate || isoDateLocal(row.completed_at || row.updated_at),
     };
-    renderReviewQuestion();
+    renderReviewSummary();
   }
 
   async function renderHistory(selectedDate = isoDateLocal()) {
@@ -7119,6 +7658,7 @@
         .join(' → ');
       lines.push(`${index + 1}. ${meta.label} — ${q.id}`);
       lines.push(`   Estado: ${state.label}`);
+      lines.push(`   Alcance: ${reviewLearningScopeMeta(flag.learning_scope).label}`);
       lines.push(`   Fuente: ${questionSourceLabel(q)}`);
       lines.push(`   Taxonomía: ${taxonomy || 'Sin taxonomía'}`);
       lines.push(`   Revisión de contenido al marcar: ${flag.content_revision || 'No registrada'}`);
@@ -7508,8 +8048,8 @@
     if (!note || !q) return;
     const modal = document.createElement('div');
     modal.className = 'review-flag-modal';
-    modal.innerHTML = `<div class="review-flag-dialog" role="dialog" aria-modal="true"><div class="review-flag-dialog-head"><div><h2>Registrar resolución</h2><p class="muted">Cierra la nota conservando la decisión tomada para Anki.</p></div><button class="btn small ghost" data-resolve-note-close>✕</button></div>
-      <label class="learning-note-label">Resultado<select id="resolve-note-action" class="input">${Object.entries(LEARNING_NOTE_OUTCOMES).map(([key,label]) => `<option value="${key}">${esc(label)}</option>`).join('')}</select></label>
+    modal.innerHTML = `<div class="review-flag-dialog" role="dialog" aria-modal="true"><div class="review-flag-dialog-head"><div><h2>Registrar resolución</h2><p class="muted">Toda nota conceptual se cierra con acción Anki. Si ya estaba bien cubierta, reexpón la tarjeta existente en vez de duplicarla.</p></div><button class="btn small ghost" data-resolve-note-close>✕</button></div>
+      <label class="learning-note-label">Resultado<select id="resolve-note-action" class="input">${ACTIVE_LEARNING_NOTE_OUTCOMES.map(key => `<option value="${key}">${esc(LEARNING_NOTE_OUTCOMES[key])}</option>`).join('')}</select></label>
       <label class="learning-note-label">Identificador del lote<input id="resolve-note-batch" class="input" placeholder="Ejemplo: NOTAS_ANKI_20260805_01"></label>
       <label class="learning-note-label">GUID Anki relacionado, si existe<input id="resolve-note-guid" class="input"></label>
       <label class="learning-note-label">Mazo<input id="resolve-note-deck" class="input" placeholder="RM_2026::Nuclear o RM_2026::General"></label>
@@ -7538,7 +8078,7 @@
     const closedCount = learningNoteHistory.filter(row => learningNoteStatus(row) !== 'OPEN').length;
     const counts = Object.fromEntries(Object.keys(LEARNING_NOTE_TYPES).map(key => [key, learningNotes.filter(row => row.note_type === key).length]));
     app.innerHTML = `<main class="shell">${topbar('Notas de aprendizaje', true)}
-      <section class="panel review-flags-hero learning-notes-hero"><div><h2>${isHistory?'Historial de notas':'Dudas personales para resolver'}</h2><p class="muted">Estas notas no indican que la pregunta esté mal. Sirven para exportar tus vacíos, resolverlos y deduplicarlos contra tu Anki actualizado.</p></div>${isHistory?'':`<div class="review-flags-actions"><button id="copy-learning-notes" class="btn primary" ${entries.length?'':'disabled'}>Copiar paquete</button><button id="download-learning-notes-md" class="btn" ${entries.length?'':'disabled'}>Descargar paquete .md</button><button id="download-learning-notes-csv" class="btn" ${entries.length?'':'disabled'}>CSV</button></div>`}</section>
+      <section class="panel review-flags-hero learning-notes-hero"><div><h2>${isHistory?'Historial de notas':'Dudas personales para resolver'}</h2><p class="muted">Estas notas no indican que la pregunta esté mal. Cada nota conceptual debe resolverse en Anki creando, actualizando o reexponiendo una tarjeta tras deduplicar.</p></div>${isHistory?'':`<div class="review-flags-actions"><button id="copy-learning-notes" class="btn primary" ${entries.length?'':'disabled'}>Copiar paquete</button><button id="download-learning-notes-md" class="btn" ${entries.length?'':'disabled'}>Descargar paquete .md</button><button id="download-learning-notes-csv" class="btn" ${entries.length?'':'disabled'}>CSV</button></div>`}</section>
       ${cloudConfigured && !learningNotesAvailable ? `<div class="banner"><strong>Activa esta función:</strong> ejecuta <code>${LEARNING_NOTES_MIGRATION}</code> en Supabase.</div>` : ''}
       <div class="review-flags-tabs"><button class="btn ${isHistory?'ghost':'primary'}" data-learning-notes-view="open">Pendientes (${learningNotes.length})</button><button class="btn ${isHistory?'primary':'ghost'}" data-learning-notes-view="history">Historial (${closedCount})</button></div>
       <section class="kpis review-flags-kpis"><div class="kpi"><div class="value">${learningNotes.length}</div><div class="label">Pendientes</div></div><div class="kpi"><div class="value">${counts.drug||0}</div><div class="label">Fármacos</div></div><div class="kpi"><div class="value">${counts.cutoff||0}</div><div class="label">Valores/dosis</div></div><div class="kpi"><div class="value">${closedCount}</div><div class="label">Cerradas</div></div></section>
@@ -7602,7 +8142,7 @@
             ${flag.resolution_summary ? `<p>${esc(flag.resolution_summary)}</p>` : ''}
           </div>` : '';
           return `<article class="review-flag-card ${isHistory ? 'closed' : ''}">
-            <div class="review-flag-card-head"><div class="meta-line"><span class="tag ${state.className}">${state.icon} ${esc(state.label)}</span><span class="tag warn">${meta.icon} ${esc(meta.label)}</span>${questionSourceTag(q)}<span class="tag">${esc(q.id)}</span></div>${isHistory ? '' : `<div class="review-flag-card-actions"><button class="btn small primary" type="button" data-resolve-review-flag-list="${esc(q.id)}">Registrar parche</button><button class="btn small danger ghost-danger" type="button" data-remove-review-flag-list="${esc(q.id)}">Quitar</button></div>`}</div>
+            <div class="review-flag-card-head"><div class="meta-line"><span class="tag ${state.className}">${state.icon} ${esc(state.label)}</span><span class="tag warn">${meta.icon} ${esc(meta.label)}</span><span class="tag">${reviewLearningScopeMeta(flag.learning_scope).icon} ${esc(reviewLearningScopeMeta(flag.learning_scope).label)}</span>${questionSourceTag(q)}<span class="tag">${esc(q.id)}</span></div>${isHistory ? '' : `<div class="review-flag-card-actions"><button class="btn small primary" type="button" data-resolve-review-flag-list="${esc(q.id)}">Registrar parche</button><button class="btn small danger ghost-danger" type="button" data-remove-review-flag-list="${esc(q.id)}">Quitar</button></div>`}</div>
             ${flag.user_note ? `<div class="review-flag-user-note"><strong>Tu observación</strong><p>${esc(flag.user_note)}</p></div>` : ''}
             <p class="review-flag-question">${esc(q.question)}</p>
             <p class="muted review-flag-taxonomy">${esc([q.area, q.specialty, q.topic, entity].filter(Boolean).join(' → '))}</p>

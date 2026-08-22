@@ -1,37 +1,62 @@
-# Residentado v1.4.3 — integridad de recuperaciones sobre Taxonomía V3 A16
+# Residentado v1.5.0 — Centro de revisión y circuito WebApp → Anki
 
-WebApp estática del banco de Residentado Médico Perú. Esta versión parte de v1.4.1 y aplica un hotfix de sincronización: evita que varias pestañas drenen simultáneamente la outbox, repara attempts huérfanos `23503` sin bloquear la cola y reduce guardados remotos redundantes de sesión. No cambia dataset, taxonomía, Supabase, memoria, scheduler ni simulacros.
+WebApp estática del banco de Residentado Médico Perú. Esta versión parte de **v1.4.3 R2** y mejora el flujo de revisión/estudio sin modificar el banco canónico, la taxonomía V3 A16, la rentabilidad, el algoritmo de memoria ni el scheduler.
 
 ## Estado
 
-- Frontend: `v1.4.3` / caché `residentado-v1-4-3`.
+- Frontend: `v1.5.0` / caché `residentado-v1-5-0`.
 - Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
 - Preguntas: 2.180 IDs estables.
-- Taxonomía: V3 A16, 287 topics activos.
-- Migración Supabase requerida por v1.4.3: **ninguna**.
-- Anki/TTS: **sin cambios** en este hotfix.
-- `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido v1.3.4.
+- Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
+- Migración Supabase requerida por v1.5.0: `MIGRATIONS/20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql`.
+- `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
+- Guardrails PT409/recovery de v1.4.3: preservados.
 
+## Centro de revisión
 
-## Hotfix v1.4.3: recuperaciones idempotentes
+La misma interfaz se reutiliza después de completar una sesión, después de un cierre parcial y al abrir una sesión desde **Historial**. El resumen muestra una hoja informativa con número original, estado, Tema y Entidad cuando está disponible.
 
-El incidente del 20/08/2026 demostró una secuencia 1:1 de siete `PT409` con siete sesiones `· recuperación local`. Los snapshots locales eran prefijos atrasados de sesiones ya más avanzadas o cerradas. Al cerrar esas copias, v1.4.2 podía reutilizar `client_attempt_id` históricos y hacer `upsert` con un `session_id` y `answered_at` nuevos.
+Filtros iniciales: `Todas`, `Incorrectas`, `No sé`, `? Duda`, `Notas`, `Marcadas`, `Revisar` y `Auditoría`. Al entrar a un filtro, Anterior/Siguiente recorre solo ese subconjunto y conserva la posición original de la pregunta dentro de la sesión.
 
-v1.4.3 evita la recuperación cuando el remoto ya contiene el snapshot local y hace idempotente la identidad de attempts a través de sesiones. Una recuperación legítima solo genera attempts para respuestas realmente nuevas.
+## Marcador `?`
 
-## Hotfix v1.4.2: sincronización/outbox
+`?` ahora pertenece a la **pregunta completa**, no a cada alternativa. Existe un control arriba de la pregunta y otro después de la explicación; ambos representan el mismo estado y se sincronizan.
 
-La auditoría de 24 h confirmó tres `23503` de `attempts_session_id_fkey` y una relación alta entre `save_practice_session_state` y respuestas. v1.4.2 añade un mutex de outbox entre pestañas, prioriza `CREATE_SESSION`, preserva localmente attempts cuyo padre remoto ya no existe y retira esos poison items de la cola activa.
+El marcador es deliberadamente ligero: no genera explicación, nota, flag de auditoría ni tarjeta Anki. Para registrar contenido se usan **Nota** o **Revisar pregunta**.
 
-La sesión pasa a persistencia local-first: IndexedDB recibe el checkpoint inmediatamente; el guardado remoto se consolida. En corrección inmediata no se dispara un save remoto antes de terminar de registrar el attempt, la navegación pura usa checkpoint diferido de 30 s y los RPC sin cambios persistibles se omiten. Ocultar/cerrar la pestaña sigue forzando guardado remoto inmediato.
+## Notas / Revisar pregunta → Anki
 
-La paridad de práctica de v1.4.1 —incluido `No sé` en prácticas cronometradas— se conserva.
+`Revisar pregunta` distingue:
 
-## Taxonomía V3 A16 preservada
+- `Contenido / duda`: crea o reutiliza una nota de aprendizaje y entra obligatoriamente al flujo Anki.
+- `Editorial / técnico`: se conserva solo para auditoría.
 
-La arquitectura v1.4.0 continúa intacta: la app carga `questions` + `rentability_topics`, compara `dataset_revision`, `taxonomy_version` y número de topics activos, valida el bundle completo y solo entonces reemplaza el corpus local en IndexedDB. La identidad del selector sigue siendo `rentability_topic_id`, con compatibilidad V2→V3 mediante aliases.
+Toda nota conceptual nueva debe cerrarse con una intervención Anki:
 
-La migración original A16 se conserva en `MIGRATIONS/20260818_TAXONOMY_V3_A16/` únicamente para trazabilidad, verificación y rollback. **No debe reejecutarse para instalar v1.4.2.**
+- `CREATE_NEW_CARD`
+- `UPDATE_EXISTING_CARD`
+- `REEXPOSE_EXISTING_CARD`
+
+Si el conocimiento ya existe correctamente en Anki, no se duplica; se reexpone la tarjeta existente con prioridad inmediata. Los outcomes históricos anteriores siguen siendo legibles, pero no se ofrecen para nuevos cierres.
+
+## `Continuar después` y cambio de día
+
+Una sesión dejada en `Continuar después` solo es reanudable durante el mismo día local. Al detectarse el cambio de día:
+
+- si tiene respuestas, pasa a **cierre parcial** y queda revisable en Historial;
+- si tiene 0 respuestas, pasa a `abandoned` y no ensucia el Historial útil;
+- el autocierre genera **0 attempts nuevos** y no actualiza memoria por respuestas heredadas;
+- un conflicto de `state_revision` durante este autocierre no crea una recovery: se relee el remoto y se reintenta únicamente la transición de estado.
+
+## Migración Supabase
+
+Ejecutar una vez, antes de usar los nuevos alcances de `Revisar pregunta`:
+
+```sql
+-- archivo completo: MIGRATIONS/20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql
+```
+
+La migración solo añade `question_review_flags.learning_scope` y amplía el `CHECK` de `question_learning_notes.anki_action` para aceptar `REEXPOSE_EXISTING_CARD`. No modifica `attempts`, `question_memory_state`, preguntas ni taxonomía.
 
 ## QA
 
@@ -41,13 +66,11 @@ python3 QA/qa_browser.py
 node QA/test_session_core.js
 ```
 
-Los checks cubren, entre otros: versión/caché, PT409, sesiones protegidas, mutex de outbox, reparación terminal de `23503`, reducción de saves redundantes, taxonomía V3, invalidación de corpus, cobertura dinámica y paridad de `No sé`.
-
 ## Publicación
 
-1. Reemplazar el repositorio/runtime por v1.4.2 y hacer commit/push.
-2. No ejecutar SQL ni modificar Supabase por este hotfix.
-3. Abrir la WebApp normalmente con conexión. El nuevo nombre de caché hace que el service worker sustituya el runtime anterior.
-4. Smoke recomendado: abrir dos pestañas, usar solo una; completar 3 preguntas (incluyendo `No sé`), cerrar parcial/revisar y reabrir. Confirmar progreso correcto y ausencia de sesiones duplicadas. La prueba detallada está en `docs/INSTRUCCIONES_APLICACION_V1_4_2.md`.
+1. Ejecutar la migración v1.5.0 en Supabase y verificarla.
+2. Reemplazar el repositorio por este build y hacer commit/push.
+3. Abrir la WebApp normalmente con conexión; el nombre nuevo de caché fuerza la sustitución del runtime anterior.
+4. Realizar el smoke de `docs/INSTRUCCIONES_APLICACION_V1_5_0.md`.
 
-No ejecutar migraciones antiguas por rutina.
+No reejecutar migraciones antiguas por rutina.
