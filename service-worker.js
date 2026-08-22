@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.4.3: evita recuperaciones fantasma por snapshots atrasados y replays de attempts heredados. Taxonomía V3/A16 intacta.
+// v1.5.0: Centro de revisión, duda a nivel de pregunta, cierre diario seguro y puente obligatorio de dudas conceptuales a Anki. Guardrails PT409 intactos.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-4-3';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-0';
 const ASSETS = [
   './',
   './index.html',

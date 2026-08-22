@@ -1,5 +1,23 @@
 # Changelog - Residentado
 
+## v1.5.0 - 2026-08-22
+
+Actualización de flujo de estudio y revisión sobre v1.4.3 R2. Requiere una migración pequeña de Supabase y no cambia preguntas, taxonomía, rentabilidad, algoritmo de memoria ni scheduler.
+
+- incorpora un **Centro de revisión** único para sesión completa, cierre parcial e Historial;
+- añade hoja informativa por pregunta con número original, estados, Tema y Entidad cuando existe;
+- añade filtros para incorrectas, `No sé`, duda `?`, notas, marcadas, `Revisar pregunta` y auditoría;
+- la navegación detallada recorre el subconjunto filtrado sin perder la posición original de la sesión;
+- convierte `?` en un marcador único de la pregunta, visible arriba y después de la explicación, y elimina el `?` por alternativa;
+- `?` no crea explicación, nota, flag ni intervención Anki por sí mismo;
+- distingue `Revisar pregunta` como **Contenido / duda** o **Editorial / técnico**;
+- toda observación conceptual crea/reutiliza una nota de aprendizaje y debe cerrarse en Anki como `CREATE_NEW_CARD`, `UPDATE_EXISTING_CARD` o `REEXPOSE_EXISTING_CARD`;
+- las sesiones dejadas en `Continuar después` caducan al cambiar el día local: si tienen respuestas pasan a cierre parcial revisable; si tienen 0 respuestas se abandonan;
+- el autocierre diario es una transición de estado: genera **0 attempts nuevos**, no ejecuta replay y no crea recovery por un conflicto de revisión;
+- preserva sin cambios `session-core.js` y `session-storage.js` y mantiene los guardrails del incidente PT409.
+
+Migración requerida: `MIGRATIONS/20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql`.
+
 ## v1.4.3 - 2026-08-21
 
 Hotfix de integridad de recuperaciones sobre v1.4.2. No requiere migración ni cambia dataset, taxonomía, algoritmo de memoria, scheduler o simulacros.

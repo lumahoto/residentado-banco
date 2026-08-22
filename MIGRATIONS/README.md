@@ -1,39 +1,40 @@
 # Migraciones de Supabase
 
-## Taxonomía V3 A16 — preparada, NO aplicada
+## Estado actual
 
-Para la migración taxonómica congelada del 18/08/2026 usar exclusivamente `20260818_TAXONOMY_V3_A16/README.md` y ejecutar sus SQL en el orden indicado. El frontend v1.4.0 debe desplegarse primero. La publicación de `questions`, `rentability_topics`, aliases y `dataset_revision` se cierra en una sola transacción y tiene rollback.
+La Taxonomía V3 A16 del 18/08/2026 **ya fue aplicada y verificada en producción**. Los SQL de `20260818_TAXONOMY_V3_A16/` se conservan para trazabilidad/rollback y **no deben reejecutarse por rutina**.
+
+## v1.5.0 — Centro de revisión / puente Anki
+
+Ejecutar una vez antes de usar los nuevos alcances de `Revisar pregunta`:
+
+`20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql`
+
+La migración es idempotente y limitada a esquema:
+
+- añade `question_review_flags.learning_scope` con `CONTENT`, `EDITORIAL_TECHNICAL` o `UNCLASSIFIED`;
+- amplía el `CHECK` de `question_learning_notes.anki_action` para aceptar `REEXPOSE_EXISTING_CARD`;
+- no modifica `attempts`, `practice_sessions`, `question_memory_state`, `questions`, `rentability_topics` ni taxonomía.
 
 ## Vigentes para reproducir el estado actual
 
-Ejecutar solo cuando corresponda y en el orden documentado por cada archivo:
+Ejecutar únicamente cuando corresponda y siguiendo la documentación de cada release:
 
 1. `20260805_FIX_SESSION_CONFLICT_PT409.sql`
 2. `20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql`
 3. `20260805_ADD_TTS_TOPIC_CATALOG_V061.sql`
 4. `20260805_FIX_TTS_TOPIC_CATALOG_READONLY_C1.sql`
+5. `20260818_TAXONOMY_V3_A16/` — ya aplicada; conservar, no reejecutar rutinariamente.
+6. `20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql` — requerida por v1.5.0.
 
-Las migraciones son intencionalmente archivos separados: una migración por cambio facilita auditoría, orden, idempotencia y rollback conceptual. No deben fusionarse en un único SQL de ejecución.
+Las migraciones se mantienen separadas para facilitar auditoría, idempotencia y trazabilidad.
 
 ## Históricas
 
-`legacy/` conserva las migraciones anteriores necesarias para reconstruir la evolución desde v0.5 hasta v1.0.0. No deben ejecutarse rutinariamente sobre la base vigente.
+`legacy/` conserva migraciones anteriores necesarias para reconstruir la evolución desde v0.5 hasta v1.0.0. No deben ejecutarse rutinariamente sobre la base vigente.
 
-## Nota histórica original
+## Notas de continuidad
 
-# Migraciones v1.1.1
-
-20260805_FIX_SESSION_CONFLICT_PT409.sql es idempotente y reproduce el hotfix aplicado.
-
-No se incluye rollback a 40001 porque reintroduciria la causa del incidente. Cualquier rollback de frontend debe conservar la funcion con PT409.
-
-## v1.2.0 — notas personales de aprendizaje
-
-Ejecutar `20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql` una sola vez antes de usar las notas en la cuenta. La migración es idempotente, crea una tabla separada de los flags de auditoría, aplica RLS por usuario y conserva el historial de cierre/Anki.
-
-## Catálogo TTS V061 — aplicado y verificado el 5 de agosto de 2026
-
-- `20260805_ADD_TTS_TOPIC_CATALOG_V061.sql`: crea y carga `public.tts_topic_catalog` con TTS_001–089.
-- `20260805_FIX_TTS_TOPIC_CATALOG_READONLY_C1.sql`: retira privilegios heredados y deja SELECT únicamente para `authenticated`.
-- Estado confirmado: 89 filas, 0 IDs sin correspondencia, RLS activo, 1 política SELECT, 0 políticas de escritura y control solo lectura PASS.
-- No volver a ejecutar por rutina durante el despliegue v1.3.0; se conservan aquí para trazabilidad.
+- El hotfix PT409 debe conservar SQLSTATE `PT409`; no existe rollback recomendado a `40001`.
+- `20260805_ADD_QUESTION_LEARNING_NOTES_V1_2_0.sql` creó la tabla separada de notas personales con RLS por usuario e historial de cierre/Anki.
+- El catálogo TTS V061 se conserva como capa histórica de runtime; su evolución operativa se gestiona aparte y no debe mezclarse con esta migración v1.5.0.
