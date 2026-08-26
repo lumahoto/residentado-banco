@@ -1,3 +1,16 @@
+## v1.5.3 - 2026-08-26
+
+Reconciliación selectiva sobre el baseline real v1.5.2. No cambia Supabase, dataset, taxonomía, algoritmo de memoria, scheduler, PT409/recovery ni simulacros.
+
+- separa en práctica personalizada **qué preguntas se seleccionan** (`Aleatorio` o `Más rentables primero`) de **cómo se presentan** (`Aleatorio` o `Respetar selección`), manteniendo defaults Aleatorio/Aleatorio y mezcla de alternativas independiente;
+- `Más rentables primero` usa exclusivamente rentabilidad canónica: MUY_ALTA → ALTA → MEDIA → BAJA, score descendente dentro del tier y `question_id` como desempate estable; no incorpora rendimiento personal, lentitud, memoria, duda ni vencimiento;
+- conserva literalmente la semántica legacy `randomize` del builder de simulacro; las sesiones creadas persisten `question_ids` definitivos y no se rebarajan al reanudar;
+- recupera la infraestructura **QRV2** en dos capas: Núcleo rápido + Detalle útil, con Tema/Entidad/Aborda/Fase/Pivote/Perfil, referente específico, listas legibles, `reference_notes` como Notas generales y `audit_source_urls` como Fuentes y trazabilidad;
+- corrige la regresión farmacológica que sustituía títulos específicos por un encabezado genérico;
+- `Revisar pregunta → Contenido clínico` vuelve a ser exclusivamente un flag de auditoría: ya no crea/reutiliza `question_learning_notes` ni exige Anki. Las Notas siguen siendo explícitas e independientes y las históricas no se eliminan;
+- supersede prospectivamente la semántica de v1.5.0 que acoplaba flag CONTENT → Nota/Anki, sin reescribir historial;
+- no crea `QA_RELEASE_V1_5_3.md`, README versionado, decision log ni instrucciones por versión: el historial se acumula en los artefactos estables.
+
 ## v1.5.2 - 2026-08-26
 
 Parche mínimo posterior a auditoría independiente de v1.5.1. No modifica la fórmula de memoria ni reprograma datos persistidos.

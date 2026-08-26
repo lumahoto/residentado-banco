@@ -1,36 +1,37 @@
 {
-  "release_id": "REL-20260826-V1.5.2-PREEXAM-RETENTION-ALIGNMENT",
-  "version": "1.5.2",
+  "release_id": "REL-20260826-V1.5.3-CUSTOM-QUEUE-QRV2-FLAG-DECOUPLE",
+  "version": "1.5.3",
   "date": "2026-08-26",
   "base": {
-    "version": "1.5.1",
-    "archive": "260826_residentado-banco-main_v151_PREEXAM_SCHEDULER.zip"
+    "version": "1.5.2",
+    "archive": "260826_1342_residentado-banco-main_v152.zip"
   },
-  "status": "READY_FOR_GITHUB_REPLACEMENT_NO_NEW_SUPABASE_MIGRATION",
-  "release_type": "PREEXAM_RETENTION_ALIGNMENT",
+  "status": "READY_FOR_GITHUB_DESKTOP_PATCH_NO_NEW_SUPABASE_MIGRATION",
+  "release_type": "CUSTOM_PRACTICE_QRV2_FLAG_NOTE_DECOUPLING",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
     "taxonomy_change": false,
     "memory_algorithm_change": false,
-    "scheduler_change": true,
+    "scheduler_change": false,
     "simulators_changed": false,
-    "practice_ui_change": false,
+    "practice_ui_change": true,
+    "quick_reference_change": true,
+    "review_flag_semantics_change": true,
     "runtime_sync_change": false
   },
   "changes": {
-    "SCHED_COVERAGE_151": "Coverage phase is driven by remaining high-value unseen questions rather than ending rigidly 10 days before the exam. High-tier first exposure remains eligible until exam-3; valuable MEDIA coverage is targeted until exam-5.",
-    "SCHED_HIGH_GOAL_151": "MUY_ALTA/ALTA unseen questions are targeted for first-pass completion around exam-9 with up to 120 new questions/day, dynamically recalculated from remaining coverage.",
-    "SCHED_DUE_151": "Due workload runs in parallel up to 140/day during coverage rescue, without modifying memory stability, target retention, or due_at.",
-    "SCHED_ANTISTARVE_151": "Due queue interleaves oldest overdue MUY_ALTA/ALTA questions into early positions so partial sessions cannot indefinitely starve old high-value reviews.",
-    "MEMORY_PRESERVED_151": "Custom memory model and targetRetention remain unchanged; question_memory_state is not reset or migrated.",
-    "SESSION_GUARDRAILS_151": "PT409/recovery/day-boundary/session persistence code is unchanged.",
-    "SCHED_RETENTION_ALIGN_152": "Review eligibility now uses due_at OR estimated recall below the current targetRetention, so retention-target increases act as a virtual reschedule without rewriting question_memory_state.",
-    "MEMORY_PRESERVED_152": "No stability, difficulty, due_at, attempts, or question_memory_state values are rewritten."
+    "CUSTOM_SELECTION_153": "Practice builder separates canonical selectionOrder from presentationOrder; defaults remain RANDOM/RANDOM.",
+    "CUSTOM_RENTABILITY_153": "RENTABILITY selection uses tier MUY_ALTA>ALTA>MEDIA>BAJA, canonical score descending, stable question_id tie-break; no personal performance signals.",
+    "SIMULATOR_PRESERVED_153": "Exam/custom simulator keeps v1.5.2 randomize semantics.",
+    "QRV2_RECONCILIATION_153": "Selective QRV2 renderer reconciliation on top of v1.5.2 with explicit referent, context, two visible layers, preserved notes and separate source traceability.",
+    "FLAG_NOTE_DECOUPLE_153": "CONTENT review flags no longer create/reuse learning notes or require Anki; historical notes remain untouched.",
+    "SCHEDULER_PRESERVED_153": "v1.5.2 retention alignment, coverage rescue and anti-starvation remain unchanged.",
+    "DOC_GUARDRAIL_153": "No new version-specific QA release, README, decision-log or application-instruction files are created."
   },
   "supabase_migration": {
     "required": false,
-    "note": "No new migration. v1.5.0 migration remains prerequisite only if it was never applied."
+    "note": "No migration. Existing v1.5.0 review-scope schema remains compatible; v1.5.3 changes frontend semantics only."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
@@ -42,8 +43,17 @@
   "dataset_revision": "QUESTIONS-TAXV3-A16-20260818-R1",
   "modified_runtime_files": [
     "app.js",
+    "styles.css",
     "version.js",
     "service-worker.js"
+  ],
+  "modified_stable_project_files": [
+    "README.md",
+    "CHANGELOG.md",
+    "RELEASE_MANIFEST.json",
+    "CHECKSUMS_SHA256.txt",
+    "QA/qa_static.py",
+    "QA/qa_browser.py"
   ],
   "unchanged_critical_files": [
     "session-core.js",

@@ -1360,7 +1360,9 @@
     ['Mecanismo y diana', /\b(?:mecanismo|inhibe|bloquea|activa|receptor|diana|polimerasa|subunidad|s[ií]ntesis de pared|canal|enzima)\b/i],
     ['Espectro o cobertura', /\b(?:espectro|cubre|cobertura|grampositivo|gramnegativo|pseudomonas|anaerobio|meticilina|resistencia|susceptibilidad)\b/i],
     ['Indicación', /\b(?:indicado|indicaci[oó]n|tratamiento|elecci[oó]n|preferente|se usa|utiliza|[uú]til)\b/i],
-    ['Toxicidad o reacción adversa', /\b(?:toxicidad|t[oó]xico|advers[ao]|nefrotoxic|ototoxic|hepatotoxic|prolonga el qt|hiperpotasemia|hipopotasemia)\b/i],
+    ['Evento adverso', /\b(?:evento|tendinitis|rotura|toxicidad|t[oó]xico|advers[ao]|nefrotoxic|ototoxic|hepatotoxic|prolonga el qt|hiperpotasemia|hipopotasemia)\b/i],
+    ['Factores de riesgo', /\b(?:factor(?:es)? de riesgo|riesgo mayor|aumenta el riesgo|predispone|predisponen)\b/i],
+    ['Conducta', /\b(?:conducta|suspender|retirar|interrumpir|monitorizar|vigilar|evitar carga|ajustar dosis)\b/i],
     ['Contraindicación o precaución', /\b(?:contraindicado|contraindicaci[oó]n|evitar|precauci[oó]n|no usar|riesgo de)\b/i],
     ['Antídoto o reversión', /\b(?:ant[ií]doto|reversi[oó]n|revierte|neutraliza|n-acetilciste[ií]na|pralidoxima|naloxona|flumazenil)\b/i],
   ];
@@ -1381,24 +1383,101 @@
     return cards ? `<div class="pharm-grid">${cards}</div>` : '';
   }
 
+  function qrv2Profile(q = {}) {
+    const aspect = taxonomyKey(cleanEditorialText(q.tested_aspect_primary));
+    const phase = taxonomyKey(cleanEditorialText(q.management_phase));
+    const operation = taxonomyKey(cleanEditorialText(q.cognitive_operation));
+    const combined = `${aspect} ${phase} ${operation}`;
+    if (/diferencial|discrimina|distinguir|comparar/.test(combined)) return 'Diagnóstico diferencial';
+    if (/tratamiento|manejo|conducta|terap|intervencion|profilaxis/.test(combined)) return 'Tratamiento / conducta';
+    if (pharmacologyRelevant(q) || /farmac|toxicidad|reaccion adversa|interaccion/.test(combined)) return 'Farmacología';
+    if (/clasificacion|estadia|estadificacion|score|escala|grado/.test(combined)) return 'Clasificación / score';
+    if (/prueba|test|examen auxiliar|tamiz|screen|diagnostico por/.test(combined)) return 'Prueba diagnóstica';
+    if (/etiolog|factor de riesgo|complicacion|pronostico/.test(combined)) return 'Etiología / riesgo / complicación';
+    if (/fisiopat|mecanismo/.test(combined)) return 'Fisiopatología / mecanismo';
+    if (/anatom|histol|embriol/.test(combined)) return 'Anatomía / histología / embriología';
+    if (/prevencion|vacun|norma|salud publica/.test(combined)) return 'Prevención / normativa';
+    if (/calculo|valor|desarrollo|percentil/.test(combined)) return 'Cálculo / valor / desarrollo';
+    return 'Diagnóstico / reconocimiento';
+  }
+
+  function qrv2MigrationStatus(q = {}) {
+    const raw = cleanEditorialText(q.qrv2_status || q.qrv2_migration_status || q.quick_reference_status).toUpperCase();
+    if (raw.includes('VERIFIED')) return { code:'QRV2_VERIFIED', label:'QRV2 verificado' };
+    if (raw.includes('DRAFT')) return { code:'QRV2_DRAFT', label:'QRV2 en revisión' };
+    return { code:'LEGACY_ONLY', label:'Pendiente de migración QRV2' };
+  }
+
+  function referenceListHtml(value = '') {
+    const items = splitReferenceSentences(value);
+    if (!items.length) return '';
+    if (items.length === 1) return `<p>${esc(items[0])}</p>`;
+    return `<ul class="qrv2-list">${items.map(item => `<li>${esc(item)}</li>`).join('')}</ul>`;
+  }
+
+  function auditSourceLinks(value = '') {
+    const raw = String(value ?? '');
+    const matches = raw.match(/https?:\/\/[^\s<>"']+/gi) || [];
+    const urls = [...new Set(matches.map(item => item.replace(/[),.;]+$/, '')))];
+    return urls.map((url, index) => {
+      try {
+        const parsed = new URL(url);
+        if (!['http:','https:'].includes(parsed.protocol)) return '';
+        const label = `${parsed.hostname.replace(/^www\./, '')}${urls.length > 1 ? ` · ${index + 1}` : ''}`;
+        return `<li><a href="${esc(parsed.href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a></li>`;
+      } catch { return ''; }
+    }).filter(Boolean).join('');
+  }
+
   function referenceQuickHtml(q = {}) {
     const comparison = cleanEditorialText(q.comparison_framework);
+    const comparisonTitle = cleanEditorialText(q.comparison_title);
+    const topic = cleanTaxonomyLabel(q.rentability_topic_label || q.topic);
+    const entity = cleanTaxonomyLabel(q.canonical_entity || q.subtopic);
+    const aspect = cleanEditorialText(q.tested_aspect_primary);
+    const phase = cleanEditorialText(q.management_phase);
+    const pivot = cleanEditorialText(q.pivot_text);
+    const rule = cleanEditorialText(q.exam_logic);
     const abbreviations = cleanEditorialText(q.abbreviations);
-    const sections = [];
+    const notes = cleanEditorialText(q.reference_notes);
+    const sourceLinks = auditSourceLinks(q.audit_source_urls);
+    const profile = qrv2Profile(q);
+    const migration = qrv2MigrationStatus(q);
+    const referent = comparisonTitle || entity || topic || 'Referencia rápida';
 
-    if (comparison) {
-      if (pharmacologyRelevant(q)) {
-        const structured = pharmacologyFrameworkHtml(comparison);
-        if (structured) sections.push(`<div class="reference-section pharmacology-section"><h4>💊 Fármacos y antibióticos</h4>${structured}</div>`);
-      } else {
-        sections.push(`<div class="reference-section"><h4>📊 ${esc(cleanEditorialText(q.comparison_title) || 'Comparación y criterios')}</h4>${frameworkHtml(comparison)}</div>`);
-      }
+    const contextItems = [
+      topic ? ['Tema', topic] : null,
+      entity ? ['Entidad', entity] : null,
+      aspect ? ['Aborda', aspect] : null,
+      phase ? ['Fase', phase] : null,
+      pivot ? ['Dato pivote', pivot] : null,
+      ['Perfil', profile],
+      ['Estado', migration.code],
+    ].filter(Boolean);
+
+    const nucleusItems = [];
+    if (entity && taxonomyKey(entity) !== taxonomyKey(referent)) nucleusItems.push(`<li><strong>Qué es / entidad:</strong> ${esc(entity)}</li>`);
+    if (pivot) nucleusItems.push(`<li><strong>Dato pivote:</strong> ${esc(pivot)}</li>`);
+    if (rule) nucleusItems.push(`<li><strong>Regla decisoria:</strong> ${esc(rule)}</li>`);
+
+    const detail = comparison
+      ? (pharmacologyRelevant(q) ? pharmacologyFrameworkHtml(comparison) : referenceListHtml(comparison))
+      : '';
+
+    const hasUseful = Boolean(comparison || pivot || rule || abbreviations || notes || sourceLinks || entity || topic);
+    if (!hasUseful) {
+      return `<section class="explain-block quick-reference qrv2-reference"><div class="qrv2-title-row"><h4>📚 Referencia rápida</h4><span class="qrv2-status legacy">Pendiente de migración QRV2</span></div><p class="muted">No hay contenido estructurado auditado para mostrar aquí. La WebApp no sintetiza contenido clínico ausente.</p></section>`;
     }
-    if (abbreviations) {
-      sections.push(`<div class="reference-section"><h4>🔤 Siglas, epónimos y términos</h4><p>${esc(abbreviations)}</p></div>`);
-    }
-    if (!sections.length) return '';
-    return `<details class="explain-block quick-reference"><summary><strong>📚 Referencia rápida</strong><span>criterios, escalas, valores, dosis y comparaciones</span></summary><div class="quick-reference-body">${sections.join('')}</div></details>`;
+
+    return `<section class="explain-block quick-reference qrv2-reference">
+      <div class="qrv2-title-row"><div><small class="qrv2-kicker">Referencia rápida · ${esc(profile)}</small><h4>📚 ${esc(referent)}</h4></div><span class="qrv2-status ${migration.code === 'QRV2_VERIFIED' ? 'verified' : migration.code === 'QRV2_DRAFT' ? 'draft' : 'legacy'}">${esc(migration.label)}</span></div>
+      <div class="qrv2-context">${contextItems.map(([label,value]) => `<span><strong>${esc(label)}:</strong> ${esc(value)}</span>`).join('')}</div>
+      <section class="qrv2-layer qrv2-nucleus"><h5>Núcleo rápido</h5>${nucleusItems.length ? `<ul class="qrv2-list">${nucleusItems.join('')}</ul>` : '<p class="muted">Núcleo estructurado pendiente de migración; se conserva el contenido existente sin inventar datos.</p>'}</section>
+      <section class="qrv2-layer qrv2-detail"><h5>Detalle útil</h5>${detail || '<p class="muted">Detalle estructurado pendiente de migración QRV2.</p>'}</section>
+      ${abbreviations ? `<section class="qrv2-layer qrv2-glossary"><h5>🔤 Siglas, epónimos y términos</h5>${referenceListHtml(abbreviations)}</section>` : ''}
+      ${notes ? `<details class="qrv2-collapsible"><summary><strong>Notas generales</strong><span>contenido previo preservado</span></summary><div class="qrv2-collapsible-body"><p>${esc(notes)}</p></div></details>` : ''}
+      ${sourceLinks ? `<details class="qrv2-collapsible"><summary><strong>Fuentes y trazabilidad</strong><span>auditoría</span></summary><div class="qrv2-collapsible-body"><ul class="qrv2-source-list">${sourceLinks}</ul></div></details>` : ''}
+    </section>`;
   }
 
   function auditEditorialHtml(q = {}) {
@@ -1800,7 +1879,7 @@
   const ACTIVE_LEARNING_NOTE_OUTCOMES = ['CREATE_NEW_CARD','UPDATE_EXISTING_CARD','REEXPOSE_EXISTING_CARD'];
 
   const REVIEW_LEARNING_SCOPES = {
-    CONTENT: { label:'Contenido / duda', icon:'🧠', ankiRequired:true },
+    CONTENT: { label:'Contenido clínico', icon:'🧠', ankiRequired:false },
     EDITORIAL_TECHNICAL: { label:'Editorial / técnico', icon:'🛠', ankiRequired:false },
     UNCLASSIFIED: { label:'Sin clasificar', icon:'•', ankiRequired:false },
   };
@@ -2111,16 +2190,6 @@
     return reviewLearningScopeAvailable;
   }
 
-  async function ensureLearningNoteForContentReview(questionId, flagType, userNote = '') {
-    const existing = learningNoteFor(questionId);
-    if (existing) return existing;
-    const q = questions.find(item => item.id === questionId);
-    const noteType = flagType === 'explanation' ? 'explanation' : 'general';
-    const text = cleanEditorialText(userNote)
-      || `Marqué ${questionId} para revisar por contenido/duda. Necesito consolidar el concepto evaluado: ${q?.question || 'revisar la pregunta fuente.'}`;
-    return saveQuestionLearningNote(questionId, noteType, text);
-  }
-
   async function saveQuestionReviewFlag(questionId, flagType, userNote = '', learningScope = 'CONTENT') {
     if (!REVIEW_FLAG_TYPES[flagType]) return null;
     if (!REVIEW_LEARNING_SCOPES[learningScope]) learningScope = 'CONTENT';
@@ -2128,16 +2197,8 @@
       alert(reviewLearningScopeUnavailableMessage());
       return null;
     }
-    if (learningScope === 'CONTENT' && cloudConfigured && !learningNotesAvailable) {
-      alert(learningNotesUnavailableMessage());
-      return null;
-    }
     const now = new Date().toISOString();
     const note = String(userNote ?? '').replace(/\r/g, '').trim().slice(0, 2000) || null;
-    if (learningScope === 'CONTENT' && !learningNoteFor(questionId)) {
-      const learningNote = await ensureLearningNoteForContentReview(questionId, flagType, note || '');
-      if (!learningNote) return null;
-    }
     const previous = reviewFlagFor(questionId);
     const previousClosed = latestClosedFlagFor(questionId);
     let row = null;
@@ -2283,14 +2344,14 @@
         <div><h2 id="review-flag-modal-title">Marcar para auditoría</h2><p class="muted">${esc(q.id)} · ${esc(questionSourceLabel(q))}</p></div>
         <button class="btn small ghost" type="button" data-close-review-flag aria-label="Cerrar">✕</button>
       </div>
-      <p>Selecciona el tipo, el alcance y describe qué debe revisarse. Una observación de <strong>Contenido / duda</strong> entra también a tus notas y al flujo Anki obligatorio.</p>
+      <p>Selecciona el tipo, el alcance y describe qué debe revisarse. Los flags son observaciones del banco/presentación; una <strong>Nota de aprendizaje</strong> solo se crea cuando la registras explícitamente.</p>
       <div class="review-flag-choice-grid" role="radiogroup" aria-label="Tipo de observación">
         <button class="review-flag-choice ${selectedType==='statement'?'selected':''}" type="button" data-set-review-flag="statement" role="radio" aria-checked="${selectedType==='statement'}"><strong>📝 Revisar enunciado</strong><span>Redacción, datos clínicos, alternativas o ambigüedad.</span></button>
         <button class="review-flag-choice ${selectedType==='explanation'?'selected':''}" type="button" data-set-review-flag="explanation" role="radio" aria-checked="${selectedType==='explanation'}"><strong>💬 Revisar explicación</strong><span>Explicación insuficiente, confusa, desactualizada o tautológica.</span></button>
         <button class="review-flag-choice ${selectedType==='general'?'selected':''}" type="button" data-set-review-flag="general" role="radio" aria-checked="${selectedType==='general'}"><strong>⚑ Revisar</strong><span>Observación general o motivo todavía no definido.</span></button>
       </div>
       <div class="review-learning-scope" role="radiogroup" aria-label="Alcance de la observación">
-        <button class="review-flag-choice ${selectedScope==='CONTENT'?'selected':''}" type="button" data-set-review-scope="CONTENT" role="radio" aria-checked="${selectedScope==='CONTENT'}"><strong>🧠 Contenido / duda</strong><span>También crea o reutiliza una nota de aprendizaje y exige acción Anki.</span></button>
+        <button class="review-flag-choice ${selectedScope==='CONTENT'?'selected':''}" type="button" data-set-review-scope="CONTENT" role="radio" aria-checked="${selectedScope==='CONTENT'}"><strong>🧠 Contenido clínico</strong><span>Auditoría del contenido, clave, explicación o criterio médico. No crea una Nota ni obliga una acción Anki.</span></button>
         <button class="review-flag-choice ${selectedScope==='EDITORIAL_TECHNICAL'?'selected':''}" type="button" data-set-review-scope="EDITORIAL_TECHNICAL" role="radio" aria-checked="${selectedScope==='EDITORIAL_TECHNICAL'}"><strong>🛠 Editorial / técnico</strong><span>Solo auditoría: typo, formato, texto cortado, duplicación o interfaz.</span></button>
       </div>
       <label class="review-flag-note-label" for="review-flag-note"><strong>Describe el problema</strong><span class="muted">Opcional · máximo 2000 caracteres</span></label>
@@ -5345,7 +5406,11 @@
 
             <fieldset><legend>Cantidad</legend>
               <label>Número de preguntas<input id="question-count" class="input" type="number" min="1" max="2000" value="${isExam ? 80 : 15}" required></label>
-              <label class="inline-check"><input id="randomize" type="checkbox" checked> <span>Orden aleatorio de preguntas</span></label>
+              ${isExam ? `<label class="inline-check"><input id="randomize" type="checkbox" checked> <span>Orden aleatorio de preguntas</span></label>` : `
+                <label>Seleccionar preguntas por<select id="selection-order" class="input"><option value="RANDOM" selected>Aleatorio</option><option value="RENTABILITY">Más rentables primero</option></select></label>
+                <label>Orden dentro de la sesión<select id="presentation-order" class="input"><option value="RANDOM" selected>Aleatorio</option><option value="QUEUE">Respetar selección</option></select></label>
+                <small class="muted">Más rentables primero: MUY_ALTA → ALTA → MEDIA → BAJA y, dentro de cada tier, mayor score. El orden de presentación se configura aparte.</small>
+              `}
               <label class="inline-check"><input id="shuffle-options" type="checkbox" checked> <span>Mezclar alternativas</span></label>
             </fieldset>
 
@@ -5473,9 +5538,15 @@
         errorEl.textContent = `Pediste ${config.count}, pero con estos filtros solo hay ${pool.length}. Reduce la cantidad o amplía los filtros.`;
         return;
       }
-      const selected = (config.randomize ? shuffle(pool) : pool).slice(0, config.count);
-      if (mode === 'exam') await launchExam(selected, config);
-      else launchStudy(selected, config);
+      if (mode === 'exam') {
+        const selected = (config.randomize ? shuffle(pool) : pool).slice(0, config.count);
+        await launchExam(selected, config);
+      } else {
+        const queue = orderSelectionPool(pool, config.selectionOrder);
+        const chosen = queue.slice(0, config.count);
+        const presented = orderSessionQuestions(chosen, config.presentationOrder);
+        launchStudy(presented, config);
+      }
     });
   }
 
@@ -5484,7 +5555,6 @@
     const base = {
       mode,
       count: Number(document.getElementById('question-count').value),
-      randomize: document.getElementById('randomize').checked,
       shuffleOptions: document.getElementById('shuffle-options').checked,
       poolType: document.getElementById('pool-type').value,
       rentability: document.getElementById('rentability').value,
@@ -5493,6 +5563,15 @@
       topicPaths: checked('topicPath'),
       feedback: document.getElementById('feedback-mode').value,
     };
+    if (mode === 'exam') {
+      // Simulacro: contrato legacy v1.5.2 preservado deliberadamente.
+      base.randomize = document.getElementById('randomize').checked;
+    } else {
+      base.selectionOrder = document.getElementById('selection-order').value === 'RENTABILITY' ? 'RENTABILITY' : 'RANDOM';
+      base.presentationOrder = document.getElementById('presentation-order').value === 'QUEUE' ? 'QUEUE' : 'RANDOM';
+      // Campo legacy informativo: true solo cuando la combinación reproduce el comportamiento clásico completo.
+      base.randomize = base.selectionOrder === 'RANDOM' && base.presentationOrder === 'RANDOM';
+    }
     if (mode === 'exam') {
       base.totalSeconds = Math.max(60, Number(document.getElementById('total-minutes').value) * 60);
       base.breakAfter = Math.max(0, Number(document.getElementById('break-after').value || 0));
@@ -5505,6 +5584,34 @@
       base.title = `Sesión de ${base.count} preguntas`;
     }
     return base;
+  }
+
+  function canonicalRentabilityScore(q = {}) {
+    const explicit = [q.exam_rentability_score, q.rentability_score]
+      .map(value => value === null || value === undefined || value === '' ? NaN : Number(value))
+      .find(Number.isFinite);
+    if (Number.isFinite(explicit)) return explicit <= 1 ? explicit * 100 : explicit;
+    const runtime = Number(corpusRentabilityByQuestion.get(q.id)?.score);
+    if (Number.isFinite(runtime)) return runtime <= 1 ? runtime * 100 : runtime;
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  function compareCanonicalRentability(a, b) {
+    const tierDelta = rentabilityTierRank(b) - rentabilityTierRank(a);
+    if (tierDelta) return tierDelta;
+    const aScore = canonicalRentabilityScore(a);
+    const bScore = canonicalRentabilityScore(b);
+    if (aScore !== bScore) return bScore > aScore ? 1 : -1;
+    return localeSort(a?.id, b?.id);
+  }
+
+  function orderSelectionPool(pool = [], selectionOrder = 'RANDOM') {
+    if (selectionOrder === 'RENTABILITY') return [...pool].sort(compareCanonicalRentability);
+    return shuffle(pool);
+  }
+
+  function orderSessionQuestions(chosen = [], presentationOrder = 'RANDOM') {
+    return presentationOrder === 'QUEUE' ? [...chosen] : shuffle(chosen);
   }
 
   function filterPool(config) {
@@ -7016,19 +7123,18 @@
       ${responseSeconds != null ? `<div class="feedback-time ${responseSeconds <= targetSeconds ? 'ok' : responseSeconds <= targetSeconds * 1.6 ? 'warn' : 'bad'}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
       ${auditEditorialHtml(q)}
       ${alreadyUncertain ? `<div class="explain-block uncertainty-box"><h4>❓ Duda registrada</h4><p>Marcaste la pregunta completa como dudosa. El marcador no genera contenido ni una nota por sí solo.</p></div>` : ''}
-      ${hasEditorialText(q?.exam_logic) ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(cleanEditorialText(q.exam_logic))}</p></div>` : ''}
+      ${quickReference}
       ${correctText ? `<details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>` : ''}
       ${distractors ? `<details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>` : ''}
       ${hasEditorialText(q?.common_trap) ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(cleanEditorialText(q.common_trap))}</p></div>` : ''}
       ${hasEditorialText(q?.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(cleanEditorialText(q.exam_pearl))}</p></div>` : ''}
       ${hasEditorialText(q?.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(cleanEditorialText(q.memory_hook))}</p></div>` : ''}
-      ${quickReference}
       <div class="learning-note-action"><div><strong>¿Qué te falta entender o recordar?</strong><p class="muted">Guarda una duda personal para resolverla después y compararla con tu Anki. Es independiente de los flags de auditoría.</p></div>${learningNoteButton(q)}</div>
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
         <div>
           <strong>¿Quieres conservar esta pregunta como duda?</strong>
-          <p class="muted">El ? es solo un marcador ligero de la pregunta: no crea notas ni observaciones. Si necesitas registrar qué falta aprender, usa Nota o Revisar pregunta.</p>
+          <p class="muted">El ? es solo un marcador ligero de la pregunta: no crea notas ni observaciones. Si necesitas registrar qué falta aprender, usa Nota.</p>
         </div>
         <button id="post-answer-uncertain" data-active="${alreadyUncertain?'true':'false'}" data-question-doubt="${esc(q.id)}" data-question-doubt-label class="btn ${alreadyUncertain ? 'ghost' : 'warn-btn'}" type="button">
           ${alreadyUncertain ? '✓ Duda registrada' : '? Marcar duda'}
@@ -7098,19 +7204,18 @@
       ${auditEditorialHtml(q)}
 
       ${alreadyUncertain ? `<div class="explain-block uncertainty-box"><h4>❓ Duda registrada</h4><p>Marcaste la pregunta completa como dudosa. El marcador no genera contenido ni una nota por sí solo.</p></div>` : ''}
-      ${hasEditorialText(q.exam_logic) ? `<div class="explain-block quick-logic"><h4>🧠 Lógica rápida</h4><p>${esc(cleanEditorialText(q.exam_logic))}</p></div>` : ''}
+      ${quickReference}
       ${correctText ? `<details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>` : ''}
       ${distractors ? `<details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>` : ''}
       ${hasEditorialText(q.common_trap) ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(cleanEditorialText(q.common_trap))}</p></div>` : ''}
       ${hasEditorialText(q.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(cleanEditorialText(q.exam_pearl))}</p></div>` : ''}
       ${hasEditorialText(q.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(cleanEditorialText(q.memory_hook))}</p></div>` : ''}
-      ${quickReference}
       <div class="learning-note-action"><div><strong>¿Qué te falta entender o recordar?</strong><p class="muted">Guarda una duda personal para resolverla después y compararla con tu Anki. Es independiente de los flags de auditoría.</p></div>${learningNoteButton(q)}</div>
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
         <div>
           <strong>¿Quieres conservar esta pregunta como duda?</strong>
-          <p class="muted">El ? es solo un marcador ligero de la pregunta: no crea notas ni observaciones. Si necesitas registrar qué falta aprender, usa Nota o Revisar pregunta.</p>
+          <p class="muted">El ? es solo un marcador ligero de la pregunta: no crea notas ni observaciones. Si necesitas registrar qué falta aprender, usa Nota.</p>
         </div>
         <button id="post-answer-uncertain" data-active="${alreadyUncertain?'true':'false'}" data-question-doubt="${esc(q.id)}" data-question-doubt-label class="btn ${alreadyUncertain ? 'ghost' : 'warn-btn'}" type="button">
           ${alreadyUncertain ? '✓ Duda registrada' : '? Marcar duda'}

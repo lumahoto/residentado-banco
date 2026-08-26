@@ -1541,47 +1541,54 @@ details.explain-block summary { cursor: pointer; }
   .question-media img { max-height: 300px; }
 }
 
-/* ===== v1.0.0 · cierre editorial y trazabilidad de auditoría ===== */
+/* ===== Referencia rápida QRV2 · dos capas ===== */
 .quick-reference {
-  padding: 0;
   overflow: hidden;
   background: color-mix(in srgb, var(--brand) 5%, var(--panel));
 }
-.quick-reference > summary {
+.qrv2-reference { padding: 14px; }
+.qrv2-title-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding: 14px;
-  list-style: none;
+  gap: 14px;
 }
-.quick-reference > summary::-webkit-details-marker { display: none; }
-.quick-reference > summary::after {
-  content: '⌄';
-  font-size: 1.1rem;
-  transition: transform .16s ease;
+.qrv2-title-row h4 { margin: 3px 0 0; font-size: 1.06rem; }
+.qrv2-kicker { color: var(--muted); font-weight: 700; letter-spacing: .01em; }
+.qrv2-status {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: .72rem;
+  font-weight: 800;
+  background: var(--panel-2);
 }
-.quick-reference[open] > summary::after { transform: rotate(180deg); }
-.quick-reference > summary span {
-  color: var(--muted);
-  font-size: .82rem;
-  font-weight: 500;
-  text-align: right;
+.qrv2-status.verified { border-color: color-mix(in srgb, var(--ok) 50%, var(--border)); }
+.qrv2-status.draft { border-color: color-mix(in srgb, var(--warn) 55%, var(--border)); }
+.qrv2-status.legacy { color: var(--muted); }
+.qrv2-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0;
 }
-.quick-reference-body {
-  display: grid;
-  gap: 12px;
-  padding: 0 14px 14px;
-  border-top: 1px solid var(--border);
+.qrv2-context span {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: var(--panel-2);
+  font-size: .78rem;
 }
-.reference-section {
-  padding-top: 12px;
-}
-.reference-section + .reference-section {
+.qrv2-layer {
+  padding: 12px 0;
   border-top: 1px dashed var(--border);
 }
-.reference-section h4 { margin: 0 0 9px; }
-.reference-section p { white-space: pre-line; }
+.qrv2-layer h5 { margin: 0 0 8px; color: var(--brand-2); font-size: .88rem; }
+.qrv2-layer p { margin: 6px 0; white-space: pre-line; }
+.qrv2-nucleus { border-top-style: solid; }
+.qrv2-list { margin: 6px 0 0; padding-left: 1.2rem; }
+.qrv2-list li { margin: 6px 0; line-height: 1.45; }
 .pharm-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1594,12 +1601,24 @@ details.explain-block summary { cursor: pointer; }
   border-radius: 12px;
   background: var(--panel-2);
 }
-.pharm-aspect h5 {
-  margin: 0 0 7px;
-  color: var(--brand-2);
-  font-size: .84rem;
-}
+.pharm-aspect h5 { margin: 0 0 7px; color: var(--brand-2); font-size: .84rem; }
 .pharm-aspect p { margin: 5px 0; font-size: .92rem; }
+.qrv2-collapsible { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px; }
+.qrv2-collapsible > summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  list-style: none;
+  padding: 6px 0;
+}
+.qrv2-collapsible > summary::-webkit-details-marker { display: none; }
+.qrv2-collapsible > summary span { color: var(--muted); font-size: .78rem; }
+.qrv2-collapsible-body { padding: 2px 0 4px; }
+.qrv2-collapsible-body p { white-space: pre-line; }
+.qrv2-source-list { margin: 4px 0; padding-left: 1.2rem; }
+.qrv2-source-list li { margin: 5px 0; overflow-wrap: anywhere; }
+.qrv2-source-list a { color: var(--brand-2); }
 
 .review-flag-close-actions,
 .review-flag-card-actions,
@@ -1645,8 +1664,8 @@ details.explain-block summary { cursor: pointer; }
 
 @media (max-width: 760px) {
   .pharm-grid { grid-template-columns: 1fr; }
-  .quick-reference > summary { align-items: flex-start; flex-direction: column; }
-  .quick-reference > summary span { text-align: left; }
+  .qrv2-title-row { flex-direction: column; }
+  .qrv2-status { align-self: flex-start; }
   .review-flags-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-flag-card-actions,
   .review-flags-tabs { width: 100%; }

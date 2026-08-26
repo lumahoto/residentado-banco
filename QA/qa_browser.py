@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.5.2: Taxonomía V3/A16 + paridad de práctica. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.5.3: práctica personalizada + QRV2 + no regresión A16. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -14,7 +14,7 @@ html = '<!doctype html><html><head><meta charset="utf-8"><style>' + (ROOT/'style
 for filename in SCRIPTS:
     html += '<script>' + (ROOT/filename).read_text(encoding='utf-8').replace('</script>', '<\\/script>') + '</script>'
 html += '<script>window.__TTS_CATALOG__=' + json.dumps(CATALOG, ensure_ascii=False) + ';window.fetch=async input=>{if(String(input).includes("tts_catalog.json"))return {ok:true,status:200,json:async()=>window.__TTS_CATALOG__};throw new Error("offline smoke");};'
-html += 'if(window.PILOT_QUESTIONS){window.PILOT_QUESTIONS.forEach(q=>Object.assign(q,{rentability_topic_id:' + json.dumps(FIRST['topicId']) + ',rentability_topic_label:' + json.dumps(FIRST['topicLabel'],ensure_ascii=False) + ',rentability_tier:"MUY_ALTA",exam_rentability_score:90.53,canonical_area:"Medicina Interna",canonical_specialty:"Endocrinología y Metabolismo"}));}</script>'
+html += 'if(window.PILOT_QUESTIONS){window.PILOT_QUESTIONS.forEach((q,i)=>Object.assign(q,{rentability_topic_id:' + json.dumps(FIRST['topicId']) + ',rentability_topic_label:' + json.dumps(FIRST['topicLabel'],ensure_ascii=False) + ',rentability_tier:"MUY_ALTA",exam_rentability_score:10+i,canonical_area:"Medicina Interna",canonical_specialty:"Endocrinología y Metabolismo"}));const g=window.PILOT_QUESTIONS[window.PILOT_QUESTIONS.length-1];Object.assign(g,{comparison_title:"Fluoroquinolonas — lesión tendinosa",comparison_framework:"Evento: tendinitis o rotura del Aquiles. Riesgo mayor: edad y corticoides. Conducta: suspender y evaluar rotura.",canonical_entity:"Tendinopatía por fluoroquinolonas",tested_aspect_primary:"Toxicidad, reacción adversa o interacción",pivot_text:"Tendinopatía y rotura de Aquiles",exam_logic:"Quinolona + dolor del talón = pensar en lesión del Aquiles.",abbreviations:"FQ: fluoroquinolonas.",reference_notes:"Contenido legacy preservado.",audit_source_urls:"https://example.org/source"});window.__EXPECTED_RENT_QUESTION__=g.question;}</script>'
 html += '<script>' + (ROOT/'app.js').read_text(encoding='utf-8').replace('</script>', '<\\/script>') + '</script></body></html>'
 
 with sync_playwright() as p:
@@ -28,7 +28,7 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.5.2' in page.locator('body').inner_text()
+    assert 'v1.5.3' in page.locator('body').inner_text()
 
     page.get_by_role('button', name='📊 MI ESTADO').click()
     page.wait_for_timeout(150)
@@ -54,14 +54,20 @@ with sync_playwright() as p:
     page.wait_for_timeout(100)
     assert page.locator('#rentability option[value="muy_alta"]').count() == 1
     assert page.locator('input[name="topicPath"]').first.get_attribute('value').startswith('TOPIC_ID:')
+    assert page.locator('#selection-order').input_value() == 'RANDOM'
+    assert page.locator('#presentation-order').input_value() == 'RANDOM'
+    assert page.locator('#randomize').count() == 0
 
-    # v1.5.1 preserva de v1.4.1: una práctica personalizada cronometrada conserva la acción No sé.
+    # v1.5.3: selección RENTABILITY + presentación QUEUE debe escoger primero la pregunta con mayor score.
+    page.locator('#selection-order').select_option('RENTABILITY')
+    page.locator('#presentation-order').select_option('QUEUE')
     page.locator('#question-count').fill('1')
     page.locator('#time-mode').select_option('per_question')
     page.locator('#seconds-per-question').fill('30')
     page.locator('#feedback-mode').select_option('immediate')
     page.locator('#builder-form').evaluate('(form) => form.requestSubmit()')
     page.wait_for_timeout(150)
+    assert page.locator('.q-text').inner_text() == page.evaluate('window.__EXPECTED_RENT_QUESTION__')
     assert page.locator('#dont-know-study').count() == 1
     assert 'No sé · mostrar respuesta' in page.locator('#dont-know-study').inner_text()
     assert page.locator('.uncertainty-toggle').count() == 0
@@ -72,6 +78,12 @@ with sync_playwright() as p:
     page.wait_for_timeout(250)
     assert 'No sabía' in page.locator('#feedback').inner_text()
     assert 'Tiempo agotado' not in page.locator('#feedback').inner_text()
+    feedback_text = page.locator('#feedback').inner_text()
+    assert 'Fluoroquinolonas — lesión tendinosa' in feedback_text
+    assert 'Núcleo rápido' in feedback_text and 'Detalle útil' in feedback_text
+    assert 'Siglas, epónimos y términos' in feedback_text
+    assert page.locator('#feedback details', has_text='Notas generales').count() == 1
+    assert page.locator('#feedback details', has_text='Fuentes y trazabilidad').count() == 1
     assert page.locator('[data-question-doubt-label]').count() == 1
     assert 'Duda registrada' in page.locator('[data-question-doubt-label]').inner_text()
     page.locator('#cancel-study').click()
@@ -87,10 +99,17 @@ with sync_playwright() as p:
     page.locator('[data-question-review-flag]').click()
     page.wait_for_timeout(100)
     assert page.locator('[data-set-review-scope="CONTENT"]').count() == 1
-    page.locator('#review-flag-note').fill('Necesito consolidar el concepto evaluado.')
+    assert 'Contenido clínico' in page.locator('[data-set-review-scope="CONTENT"]').inner_text()
+    page.locator('#review-flag-note').fill('Revisar el contenido clínico de esta pregunta.')
     page.locator('#review-flag-form').evaluate('(form) => form.requestSubmit()')
     page.wait_for_timeout(200)
     assert page.locator('[data-question-learning-note]').count() == 1
+    assert 'Añadir nota' in page.locator('[data-question-learning-note]').inner_text()
+    # La Nota solo aparece tras una acción explícita del usuario.
+    page.locator('[data-question-learning-note]').click()
+    page.locator('#learning-note-text').fill('Necesito consolidar el concepto evaluado.')
+    page.locator('#learning-note-save').click()
+    page.wait_for_timeout(150)
     assert 'Editar nota' in page.locator('[data-question-learning-note]').inner_text()
     page.locator('#cancel-study').click()
     page.get_by_role('button', name='Cerrar sesión parcial y revisar respondidas').click()
@@ -109,4 +128,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.5.2 PREEXAM RETENTION: OK')
+print('QA navegador v1.5.3 CUSTOM QUEUE + QRV2: OK')

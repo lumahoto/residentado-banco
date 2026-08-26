@@ -1,25 +1,30 @@
-# Residentado v1.5.2 — Rescate preexamen del scheduler
+# Residentado v1.5.3 — Práctica personalizada + QRV2
 
-WebApp estática del banco de Residentado Médico Perú. Esta versión parte de **v1.5.0** y corrige únicamente la política de selección preexamen. Mantiene sin cambios el banco canónico, la taxonomía V3 A16, la rentabilidad, la fórmula de memoria y los guardrails de sesiones/PT409.
+WebApp estática del banco de Residentado Médico Perú. v1.5.3 parte del **baseline real v1.5.2** y reconcilia la selección de práctica personalizada, el renderer QRV2 y la separación estricta entre flags de auditoría y Notas. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
 
 ## Estado
 
-- Frontend: `v1.5.1` / caché `residentado-v1-5-1`.
+- Frontend: `v1.5.3` / caché `residentado-v1-5-3`.
 - Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- **No hay migración nueva en v1.5.1.** La migración v1.5.0 sigue siendo requisito solo si todavía no fue aplicada.
+- **No hay migración nueva en v1.5.3.**
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
-- Guardrails PT409/recovery de v1.4.3: preservados.
+- Scheduler de rescate/retención v1.5.2 y guardrails PT409/recovery: preservados.
 
+## Práctica personalizada v1.5.3
 
-## Scheduler preexamen v1.5.1
+La selección y la presentación son controles independientes:
 
-- La fase de cobertura ya no termina mecánicamente a 10 días del examen. Mientras queden preguntas MUY_ALTA/ALTA sin primera exposición, siguen siendo elegibles hasta 3 días antes del examen; MEDIA se prioriza hasta 5 días antes.
-- La meta de nuevas se recalcula desde lo que realmente falta, con tope de 120/día.
-- Los repasos vencidos se mantienen en paralelo, con tope de 140/día durante rescate.
-- La cola de vencidas aplica **anti-starvation**: intercala en posiciones tempranas las MUY_ALTA/ALTA con mayor atraso junto con la prioridad adaptativa habitual.
-- No se modifica `stability_days`, `difficulty`, `targetRetention`, `due_at` ni `question_memory_state`; no hay reset de progreso.
+- **Seleccionar preguntas por:** `Aleatorio` o `Más rentables primero`.
+- **Orden dentro de la sesión:** `Aleatorio` o `Respetar selección`.
+- **Mezclar alternativas:** independiente de ambas.
+
+Los defaults siguen siendo Aleatorio/Aleatorio para conservar el comportamiento histórico. `Más rentables primero` ordena por tier canónico MUY_ALTA → ALTA → MEDIA → BAJA y por score descendente dentro del tier; no utiliza rendimiento personal ni señales del scheduler. El simulacro conserva su semántica v1.5.2.
+
+## Referencia rápida QRV2
+
+La explicación vuelve a mostrar contexto universal y una referencia en dos capas: **Núcleo rápido** y **Detalle útil**. El renderer preserva el referente específico (`comparison_title`/Entidad), Tema, Aborda, Fase, Dato pivote, perfil, siglas/epónimos, `reference_notes` como **Notas generales** y `audit_source_urls` como **Fuentes y trazabilidad**. Si falta contenido estructurado, indica pendiente de migración en vez de inventar contenido clínico.
 
 ## Centro de revisión
 
@@ -31,16 +36,17 @@ Filtros iniciales: `Todas`, `Incorrectas`, `No sé`, `? Duda`, `Notas`, `Marcada
 
 `?` ahora pertenece a la **pregunta completa**, no a cada alternativa. Existe un control arriba de la pregunta y otro después de la explicación; ambos representan el mismo estado y se sincronizan.
 
-El marcador es deliberadamente ligero: no genera explicación, nota, flag de auditoría ni tarjeta Anki. Para registrar contenido se usan **Nota** o **Revisar pregunta**.
+El marcador es deliberadamente ligero: no genera explicación, nota, flag de auditoría ni tarjeta Anki. Para registrar una duda personal se usa **Nota**; para auditar el banco se usa **Revisar pregunta**.
 
-## Notas / Revisar pregunta → Anki
+## Notas y Revisar pregunta
 
-`Revisar pregunta` distingue:
+Son carriles independientes:
 
-- `Contenido / duda`: crea o reutiliza una nota de aprendizaje y entra obligatoriamente al flujo Anki.
-- `Editorial / técnico`: se conserva solo para auditoría.
+- `Revisar pregunta → Contenido clínico`: observación del banco/contenido; **no crea Nota ni obliga Anki**.
+- `Revisar pregunta → Editorial / técnico`: observación de presentación o interfaz.
+- `Nota de aprendizaje`: solo se crea explícitamente cuando el usuario registra una duda personal.
 
-Toda nota conceptual nueva debe cerrarse con una intervención Anki:
+Las Notas conceptuales existentes conservan su flujo de cierre con una intervención Anki:
 
 - `CREATE_NEW_CARD`
 - `UPDATE_EXISTING_CARD`

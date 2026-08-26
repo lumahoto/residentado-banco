@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.5.2: alinea elegibilidad de repaso con targetRetention vigente; memoria y guardrails PT409 intactos.
+// v1.5.3: práctica personalizada separa selección/presentación; QRV2 y flags/notas sin tocar scheduler ni PT409.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-2';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-3';
 const ASSETS = [
   './',
   './index.html',

@@ -32,10 +32,18 @@ manifest = json.loads((ROOT/'RELEASE_MANIFEST.json').read_text(encoding='utf-8')
 w3 = (ROOT/'w3-tools.js').read_text(encoding='utf-8')
 w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
+# Guardrail documental: v1.5.3 no crea archivos versionados auxiliares nuevos.
+for forbidden in [
+    ROOT/'QA'/'QA_RELEASE_V1_5_3.md',
+    ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_5_3.md',
+    ROOT/'docs'/'DECISION_LOG_V1_5_3.md',
+]:
+    require(not forbidden.exists(), f'Proliferación documental no permitida: {forbidden.relative_to(ROOT)}')
+
 # Release/version consistency.
-require("version: '1.5.2'" in version, 'version.js no declara 1.5.2')
-require("cacheName: 'residentado-v1-5-2'" in version, 'version.js no declara cache v1.5.2')
-require(manifest.get('version') == '1.5.2', 'RELEASE_MANIFEST no coincide con v1.5.2')
+require("version: '1.5.3'" in version, 'version.js no declara 1.5.3')
+require("cacheName: 'residentado-v1-5-3'" in version, 'version.js no declara cache v1.5.3')
+require(manifest.get('version') == '1.5.3', 'RELEASE_MANIFEST no coincide con v1.5.3')
 require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
@@ -72,7 +80,7 @@ require("Recovery attempt identity not loaded; refusing to fabricate a duplicate
 require('detachInheritedAttemptIdentity(currentStudy, q.id)' in app, 'Respuesta nueva en recovery de práctica no separa identidad heredada')
 require('detachInheritedAttemptIdentity(currentExam, q.id)' in app, 'Respuesta nueva en recovery de simulacro no separa identidad heredada')
 
-# v1.5.2: preserva v1.5.1 y alinea elegibilidad de repaso con la retención vigente.
+# v1.5.3: preserva scheduler/guardrails v1.5.2 y cambia solo práctica personalizada, QRV2 y semántica flag/nota.
 require('function renderReviewSummary()' in app and 'REVIEW_FILTERS' in app, 'Falta Centro de revisión único')
 for token in ["['incorrect','Incorrectas']", "['dont_know','No sé']", "['doubt','? Duda']", "['notes','Notas']", "['marked','Marcadas']", "['review_flag','Revisar']", "['audit','Auditoría']"]:
     require(token in app, f'Falta filtro del Centro de revisión: {token}')
@@ -80,7 +88,9 @@ require('canonical_entity || q.subtopic' in app and 'review-question-row' in app
 require('data-question-doubt-top' in app and 'data-question-doubt-label' in app, 'La duda no tiene controles superior/inferior sincronizados')
 require('data-uncertain-toggle' not in app, 'Se reintrodujo el ? por alternativa')
 require("REEXPOSE_EXISTING_CARD" in app and "ACTIVE_LEARNING_NOTE_OUTCOMES" in app, 'Falta reexposición Anki obligatoria')
-require("learningScope === 'CONTENT'" in app and 'ensureLearningNoteForContentReview' in app, 'Revisar pregunta de contenido no alimenta notas/Anki')
+require('ensureLearningNoteForContentReview' not in app, 'v1.5.3 reintrodujo acoplamiento automático flag CONTENT → Nota')
+require("CONTENT: { label:'Contenido clínico', icon:'🧠', ankiRequired:false }" in app, 'CONTENT no está definido como auditoría independiente')
+require("learningScope === 'CONTENT' && cloudConfigured && !learningNotesAvailable" not in app, 'Flag CONTENT todavía depende de disponibilidad de Notes')
 require('EDITORIAL_TECHNICAL' in app and 'data-set-review-scope' in app, 'Falta separación Contenido vs Editorial/técnico')
 require('function expireActiveSessionAtDayBoundary' in app and "closed_reason:hasAnswers ? 'day_expired_partial' : 'day_expired_empty'" in app, 'Falta autocierre diario')
 require('statusOnly:true' in app, 'El autocierre diario no usa cierre status-only')
@@ -91,6 +101,25 @@ require((ROOT/'MIGRATIONS/20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql').exists(
 mig150=(ROOT/'MIGRATIONS/20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql').read_text(encoding='utf-8')
 require('learning_scope' in mig150 and 'REEXPOSE_EXISTING_CARD' in mig150, 'Migración v1.5.0 incompleta')
 require('update public.attempts' not in mig150.lower() and 'update public.question_memory_state' not in mig150.lower(), 'Migración v1.5.0 toca progreso de usuario')
+
+# v1.5.3 práctica personalizada: selección y presentación son contratos separados.
+for token in ['id="selection-order"', 'id="presentation-order"', "function orderSelectionPool", "function orderSessionQuestions", "function compareCanonicalRentability"]:
+    require(token in app, f'Falta contrato de práctica personalizada v1.5.3: {token}')
+require("selectionOrder === 'RENTABILITY'" in app and "presentationOrder === 'QUEUE'" in app, 'Faltan ramas RENTABILITY/QUEUE')
+require("rentabilityTierRank(b) - rentabilityTierRank(a)" in app and "bScore > aScore ? 1 : -1" in app and "localeSort(a?.id, b?.id)" in app, 'Ranking canónico no tiene tier + score + desempate estable')
+require('questionPriority(' not in app[app.find('function orderSelectionPool'):app.find('function filterPool')], 'Selección por rentabilidad contaminada con prioridad personal')
+require("if (mode === 'exam') {\n        const selected = (config.randomize ? shuffle(pool) : pool).slice(0, config.count);" in app, 'Simulacro no conserva randomize legacy v1.5.2')
+require(manifest.get('scope', {}).get('simulators_changed') is False, 'Manifest marca simuladores cambiados por error')
+require(manifest.get('scope', {}).get('practice_ui_change') is True, 'Manifest no marca cambio de práctica personalizada')
+
+# v1.5.3 QRV2: dos capas, referente explícito y legacy/fuentes preservados.
+for token in ['function qrv2Profile', 'function qrv2MigrationStatus', 'Núcleo rápido', 'Detalle útil', 'Notas generales', 'Fuentes y trazabilidad', 'q.reference_notes', 'q.audit_source_urls']:
+    require(token in app, f'Falta componente QRV2 v1.5.3: {token}')
+require('const referent = comparisonTitle || entity || topic' in app, 'QRV2 no prioriza comparison_title/Entidad como referente explícito')
+require('💊 Fármacos y antibióticos' not in app, 'QRV2 conserva encabezado farmacológico genérico que oculta el referente')
+require('rel="noopener noreferrer"' in app, 'Fuentes QRV2 no protegen enlaces externos')
+require(manifest.get('scope', {}).get('quick_reference_change') is True, 'Manifest no marca cambio QRV2')
+require(manifest.get('scope', {}).get('review_flag_semantics_change') is True, 'Manifest no marca desacoplamiento flag/nota')
 
 # Taxonomía V3: identidad estable y compatibilidad de aliases.
 require('TOPIC_ID:${encodeURIComponent(stableId)}' in app, 'El selector no serializa rentability_topic_id estable')
@@ -207,11 +236,11 @@ require('function reviewEligible(q, now = new Date())' in app, 'Falta elegibilid
 require('return recall < retention;' in app, 'La cola de repaso no respeta targetRetention vigente')
 require('const due = valid.filter(q => reviewEligible(q, now));' in app, 'El plan diario no usa la misma elegibilidad dinámica')
 require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'Manifest marca cambio de memoria por error')
-require(manifest.get('scope', {}).get('scheduler_change') is True, 'Manifest no marca cambio de scheduler')
-require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.2 no debe requerir nueva migración')
+require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.5.3 no debe marcar cambio de scheduler')
+require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.3 no debe requerir nueva migración')
 
 if errors:
-    print('QA v1.5.2 PREEXAM RETENTION: FAIL')
+    print('QA v1.5.3 CUSTOM QUEUE + QRV2: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.5.2 PREEXAM RETENTION: OK')
+print('QA v1.5.3 CUSTOM QUEUE + QRV2: OK')
