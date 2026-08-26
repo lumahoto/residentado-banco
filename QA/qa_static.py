@@ -33,9 +33,9 @@ w3 = (ROOT/'w3-tools.js').read_text(encoding='utf-8')
 w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
 # Release/version consistency.
-require("version: '1.5.0'" in version, 'version.js no declara 1.5.0')
-require("cacheName: 'residentado-v1-5-0'" in version, 'version.js no declara cache v1.5.0')
-require(manifest.get('version') == '1.5.0', 'RELEASE_MANIFEST no coincide con v1.5.0')
+require("version: '1.5.1'" in version, 'version.js no declara 1.5.1')
+require("cacheName: 'residentado-v1-5-1'" in version, 'version.js no declara cache v1.5.1')
+require(manifest.get('version') == '1.5.1', 'RELEASE_MANIFEST no coincide con v1.5.1')
 require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
@@ -72,7 +72,7 @@ require("Recovery attempt identity not loaded; refusing to fabricate a duplicate
 require('detachInheritedAttemptIdentity(currentStudy, q.id)' in app, 'Respuesta nueva en recovery de práctica no separa identidad heredada')
 require('detachInheritedAttemptIdentity(currentExam, q.id)' in app, 'Respuesta nueva en recovery de simulacro no separa identidad heredada')
 
-# v1.5.0: Centro de revisión, duda de pregunta, cierre diario y puente Anki.
+# v1.5.1: preserva Centro de revisión v1.5.0 y añade rescate preexamen del scheduler.
 require('function renderReviewSummary()' in app and 'REVIEW_FILTERS' in app, 'Falta Centro de revisión único')
 for token in ["['incorrect','Incorrectas']", "['dont_know','No sé']", "['doubt','? Duda']", "['notes','Notas']", "['marked','Marcadas']", "['review_flag','Revisar']", "['audit','Auditoría']"]:
     require(token in app, f'Falta filtro del Centro de revisión: {token}')
@@ -194,8 +194,21 @@ if(snap.totalQuestions!==2180 || snap.totalTopics!==287)process.exit(5);
 node = subprocess.run(['node','-e',node_test,str(ROOT/'w4-data.js'),str(ROOT/'w3-tools.js')],capture_output=True,text=True)
 require(node.returncode == 0, f'Falló unit bundle/cobertura V3: {node.stdout} {node.stderr}')
 
+
+# v1.5.1 scheduler rescue: selection changes only; memory/session core remain protected.
+require('function dueReviewPool' in app and 'anti-starvation preexamen' in app, 'Falta anti-starvation de vencidas v1.5.1')
+require("return dueReviewPool(now);" in app, "smartPool('due') no usa la cola anti-starvation")
+require('function highCoverageGoalIso' in app and 'shiftLocalDate(exam, -9)' in app, 'Falta objetivo relativo de cobertura ALTA')
+require('function valuableCoverageGoalIso' in app and 'shiftLocalDate(exam, -5)' in app, 'Falta objetivo de cobertura MEDIA rentable')
+require('function highCoverageCutoffIso' in app and 'shiftLocalDate(exam, -3)' in app, 'Falta cutoff tardío de ALTA')
+require('const newTarget = Math.min(120' in app, 'Nuevo tope de cobertura v1.5.1 no está aplicado')
+require('Math.min(140, Math.max(90' in app, 'Bloque vencido de rescate v1.5.1 no está aplicado')
+require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'Manifest marca cambio de memoria por error')
+require(manifest.get('scope', {}).get('scheduler_change') is True, 'Manifest no marca cambio de scheduler')
+require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.1 no debe requerir nueva migración')
+
 if errors:
-    print('QA v1.5.0 REVIEW CENTER: FAIL')
+    print('QA v1.5.1 PREEXAM SCHEDULER: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.5.0 REVIEW CENTER: OK')
+print('QA v1.5.1 PREEXAM SCHEDULER: OK')
