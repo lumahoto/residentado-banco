@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.5.1: Taxonomía V3/A16 + paridad de práctica. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.5.2: Taxonomía V3/A16 + paridad de práctica. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -28,7 +28,7 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.5.1' in page.locator('body').inner_text()
+    assert 'v1.5.2' in page.locator('body').inner_text()
 
     page.get_by_role('button', name='📊 MI ESTADO').click()
     page.wait_for_timeout(150)
@@ -109,4 +109,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.5.1 PREEXAM SCHEDULER: OK')
+print('QA navegador v1.5.2 PREEXAM RETENTION: OK')

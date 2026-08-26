@@ -1,3 +1,13 @@
+## v1.5.2 - 2026-08-26
+
+Parche mínimo posterior a auditoría independiente de v1.5.1. No modifica la fórmula de memoria ni reprograma datos persistidos.
+
+- corrige una incoherencia entre `targetRetention` y `due_at`: una pregunta entra al pool de repaso si ya venció **o** si su recuerdo estimado cayó bajo la retención objetivo vigente;
+- hace que el conteo del plan diario use la misma regla de elegibilidad;
+- conserva anti-starvation, cobertura dinámica, límites diarios, PT409/recovery y cierre diario de v1.5.1;
+- no requiere migración SQL ni cambios en `question_memory_state`;
+- funciona como un **reschedule virtual** al subir la retención preexamen, sin tocar historial.
+
 ## v1.5.1 - 2026-08-26
 
 Parche preexamen del scheduler basado en la auditoría de `attempts`, `question_memory_state` y `practice_sessions` del 26/08/2026. No modifica la fórmula de memoria, los datos de Supabase, la taxonomía ni los guardrails de sesión.

@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.5.1: rescate preexamen del scheduler (anti-starvation + cobertura dinámica). Memoria y guardrails PT409 intactos.
+// v1.5.2: alinea elegibilidad de repaso con targetRetention vigente; memoria y guardrails PT409 intactos.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-1';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-2';
 const ASSETS = [
   './',
   './index.html',
