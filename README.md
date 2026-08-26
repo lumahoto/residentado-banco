@@ -1,4 +1,4 @@
-# Residentado v1.5.1 — Rescate preexamen del scheduler
+# Residentado v1.5.2 — Rescate preexamen del scheduler
 
 WebApp estática del banco de Residentado Médico Perú. Esta versión parte de **v1.5.0** y corrige únicamente la política de selección preexamen. Mantiene sin cambios el banco canónico, la taxonomía V3 A16, la rentabilidad, la fórmula de memoria y los guardrails de sesiones/PT409.
 

@@ -3793,12 +3793,24 @@
     return Math.max(0, (now.getTime() - dueMs) / 86400000);
   }
 
+  function reviewEligible(q, now = new Date()) {
+    if (!q || observed(q)) return false;
+    const state = memoryByQuestion.get(q.id);
+    if (!state?.due_at || !state?.last_attempt_at || !Number(state?.stability_days)) return false;
+    const dueMs = new Date(state.due_at).getTime();
+    if (Number.isFinite(dueMs) && dueMs <= now.getTime()) return true;
+
+    // v1.5.2 — al cambiar la retención objetivo no reescribimos due_at histórico,
+    // pero la selección debe respetar el objetivo vigente. Esto equivale a un
+    // reschedule virtual: si el recuerdo estimado ya cayó bajo targetRetention,
+    // la pregunta entra al pool aunque su due_at antiguo aún esté en el futuro.
+    const recall = estimateRecall(state, now);
+    const retention = targetRetention(isoDateLocal(now), q);
+    return recall < retention;
+  }
+
   function dueReviewPool(now = new Date()) {
-    const due = questions.filter(q => {
-      if (observed(q)) return false;
-      const state = memoryByQuestion.get(q.id);
-      return state?.due_at && new Date(state.due_at) <= now;
-    });
+    const due = questions.filter(q => reviewEligible(q, now));
     const priority = sortByPriority(due, now, { diversifyYears:true, tolerance:0.35 });
     const staleHigh = due
       .filter(q => rentabilityTierRank(q) >= 3)
@@ -3871,8 +3883,8 @@
     const now = new Date();
     const nonObserved = questions.filter(q => !observed(q));
     if (kind === 'due') {
-      // Solo incluye vencidas. v1.5.1 añade anti-starvation de MUY_ALTA/ALTA antiguas
-      // sin tocar estabilidad, dificultad, retención objetivo ni due_at.
+      // Incluye vencidas por due_at y, desde v1.5.2, preguntas cuyo recuerdo estimado
+      // ya cayó bajo la retención objetivo vigente. No reescribe due_at ni memoria.
       return dueReviewPool(now);
     }
     if (kind === 'new') {
@@ -4365,10 +4377,7 @@
     const valid = questions.filter(q => !observed(q));
     const seen = new Set(attempts.map(a => a.question_id));
     const unseen = valid.filter(q => !seen.has(q.id));
-    const due = valid.filter(q => {
-      const st = memoryByQuestion.get(q.id);
-      return st?.due_at && new Date(st.due_at) <= now;
-    });
+    const due = valid.filter(q => reviewEligible(q, now));
     const highDue = due.filter(q => rentabilityTierRank(q) >= 3);
     const highUnseen = unseen.filter(q => rentabilityTierRank(q) >= 3);
     const valuableUnseen = unseen.filter(q => rentabilityTierRank(q) >= 2);

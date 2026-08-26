@@ -1,13 +1,13 @@
 {
-  "release_id": "REL-20260826-V1.5.1-PREEXAM-SCHEDULER-RESCUE",
-  "version": "1.5.1",
+  "release_id": "REL-20260826-V1.5.2-PREEXAM-RETENTION-ALIGNMENT",
+  "version": "1.5.2",
   "date": "2026-08-26",
   "base": {
-    "version": "1.5.0",
-    "archive": "260826_1202_residentado-banco-main.zip"
+    "version": "1.5.1",
+    "archive": "260826_residentado-banco-main_v151_PREEXAM_SCHEDULER.zip"
   },
   "status": "READY_FOR_GITHUB_REPLACEMENT_NO_NEW_SUPABASE_MIGRATION",
-  "release_type": "PREEXAM_SCHEDULER_RESCUE",
+  "release_type": "PREEXAM_RETENTION_ALIGNMENT",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
@@ -24,7 +24,9 @@
     "SCHED_DUE_151": "Due workload runs in parallel up to 140/day during coverage rescue, without modifying memory stability, target retention, or due_at.",
     "SCHED_ANTISTARVE_151": "Due queue interleaves oldest overdue MUY_ALTA/ALTA questions into early positions so partial sessions cannot indefinitely starve old high-value reviews.",
     "MEMORY_PRESERVED_151": "Custom memory model and targetRetention remain unchanged; question_memory_state is not reset or migrated.",
-    "SESSION_GUARDRAILS_151": "PT409/recovery/day-boundary/session persistence code is unchanged."
+    "SESSION_GUARDRAILS_151": "PT409/recovery/day-boundary/session persistence code is unchanged.",
+    "SCHED_RETENTION_ALIGN_152": "Review eligibility now uses due_at OR estimated recall below the current targetRetention, so retention-target increases act as a virtual reschedule without rewriting question_memory_state.",
+    "MEMORY_PRESERVED_152": "No stability, difficulty, due_at, attempts, or question_memory_state values are rewritten."
   },
   "supabase_migration": {
     "required": false,

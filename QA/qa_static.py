@@ -33,9 +33,9 @@ w3 = (ROOT/'w3-tools.js').read_text(encoding='utf-8')
 w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
 # Release/version consistency.
-require("version: '1.5.1'" in version, 'version.js no declara 1.5.1')
-require("cacheName: 'residentado-v1-5-1'" in version, 'version.js no declara cache v1.5.1')
-require(manifest.get('version') == '1.5.1', 'RELEASE_MANIFEST no coincide con v1.5.1')
+require("version: '1.5.2'" in version, 'version.js no declara 1.5.2')
+require("cacheName: 'residentado-v1-5-2'" in version, 'version.js no declara cache v1.5.2')
+require(manifest.get('version') == '1.5.2', 'RELEASE_MANIFEST no coincide con v1.5.2')
 require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
@@ -72,7 +72,7 @@ require("Recovery attempt identity not loaded; refusing to fabricate a duplicate
 require('detachInheritedAttemptIdentity(currentStudy, q.id)' in app, 'Respuesta nueva en recovery de práctica no separa identidad heredada')
 require('detachInheritedAttemptIdentity(currentExam, q.id)' in app, 'Respuesta nueva en recovery de simulacro no separa identidad heredada')
 
-# v1.5.1: preserva Centro de revisión v1.5.0 y añade rescate preexamen del scheduler.
+# v1.5.2: preserva v1.5.1 y alinea elegibilidad de repaso con la retención vigente.
 require('function renderReviewSummary()' in app and 'REVIEW_FILTERS' in app, 'Falta Centro de revisión único')
 for token in ["['incorrect','Incorrectas']", "['dont_know','No sé']", "['doubt','? Duda']", "['notes','Notas']", "['marked','Marcadas']", "['review_flag','Revisar']", "['audit','Auditoría']"]:
     require(token in app, f'Falta filtro del Centro de revisión: {token}')
@@ -203,12 +203,15 @@ require('function valuableCoverageGoalIso' in app and 'shiftLocalDate(exam, -5)'
 require('function highCoverageCutoffIso' in app and 'shiftLocalDate(exam, -3)' in app, 'Falta cutoff tardío de ALTA')
 require('const newTarget = Math.min(120' in app, 'Nuevo tope de cobertura v1.5.1 no está aplicado')
 require('Math.min(140, Math.max(90' in app, 'Bloque vencido de rescate v1.5.1 no está aplicado')
+require('function reviewEligible(q, now = new Date())' in app, 'Falta elegibilidad dinámica de repaso v1.5.2')
+require('return recall < retention;' in app, 'La cola de repaso no respeta targetRetention vigente')
+require('const due = valid.filter(q => reviewEligible(q, now));' in app, 'El plan diario no usa la misma elegibilidad dinámica')
 require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'Manifest marca cambio de memoria por error')
 require(manifest.get('scope', {}).get('scheduler_change') is True, 'Manifest no marca cambio de scheduler')
-require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.1 no debe requerir nueva migración')
+require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.2 no debe requerir nueva migración')
 
 if errors:
-    print('QA v1.5.1 PREEXAM SCHEDULER: FAIL')
+    print('QA v1.5.2 PREEXAM RETENTION: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.5.1 PREEXAM SCHEDULER: OK')
+print('QA v1.5.2 PREEXAM RETENTION: OK')
