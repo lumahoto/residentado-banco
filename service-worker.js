@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.5.3: práctica personalizada separa selección/presentación; QRV2 y flags/notas sin tocar scheduler ni PT409.
+// v1.5.4: mantiene v1.5.3 y limpia la UI de estudio ocultando trazabilidad editorial no pedagógica.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-3';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-4';
 const ASSETS = [
   './',
   './index.html',

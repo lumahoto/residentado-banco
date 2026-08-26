@@ -1439,7 +1439,6 @@
     const pivot = cleanEditorialText(q.pivot_text);
     const rule = cleanEditorialText(q.exam_logic);
     const abbreviations = cleanEditorialText(q.abbreviations);
-    const notes = cleanEditorialText(q.reference_notes);
     const sourceLinks = auditSourceLinks(q.audit_source_urls);
     const profile = qrv2Profile(q);
     const migration = qrv2MigrationStatus(q);
@@ -1464,7 +1463,7 @@
       ? (pharmacologyRelevant(q) ? pharmacologyFrameworkHtml(comparison) : referenceListHtml(comparison))
       : '';
 
-    const hasUseful = Boolean(comparison || pivot || rule || abbreviations || notes || sourceLinks || entity || topic);
+    const hasUseful = Boolean(comparison || pivot || rule || abbreviations || sourceLinks || entity || topic);
     if (!hasUseful) {
       return `<section class="explain-block quick-reference qrv2-reference"><div class="qrv2-title-row"><h4>📚 Referencia rápida</h4><span class="qrv2-status legacy">Pendiente de migración QRV2</span></div><p class="muted">No hay contenido estructurado auditado para mostrar aquí. La WebApp no sintetiza contenido clínico ausente.</p></section>`;
     }
@@ -1475,7 +1474,6 @@
       <section class="qrv2-layer qrv2-nucleus"><h5>Núcleo rápido</h5>${nucleusItems.length ? `<ul class="qrv2-list">${nucleusItems.join('')}</ul>` : '<p class="muted">Núcleo estructurado pendiente de migración; se conserva el contenido existente sin inventar datos.</p>'}</section>
       <section class="qrv2-layer qrv2-detail"><h5>Detalle útil</h5>${detail || '<p class="muted">Detalle estructurado pendiente de migración QRV2.</p>'}</section>
       ${abbreviations ? `<section class="qrv2-layer qrv2-glossary"><h5>🔤 Siglas, epónimos y términos</h5>${referenceListHtml(abbreviations)}</section>` : ''}
-      ${notes ? `<details class="qrv2-collapsible"><summary><strong>Notas generales</strong><span>contenido previo preservado</span></summary><div class="qrv2-collapsible-body"><p>${esc(notes)}</p></div></details>` : ''}
       ${sourceLinks ? `<details class="qrv2-collapsible"><summary><strong>Fuentes y trazabilidad</strong><span>auditoría</span></summary><div class="qrv2-collapsible-body"><ul class="qrv2-source-list">${sourceLinks}</ul></div></details>` : ''}
     </section>`;
   }

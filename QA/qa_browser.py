@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.5.3: práctica personalizada + QRV2 + no regresión A16. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.5.4: práctica personalizada + QRV2 + no regresión A16. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -28,7 +28,7 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.5.3' in page.locator('body').inner_text()
+    assert 'v1.5.4' in page.locator('body').inner_text()
 
     page.get_by_role('button', name='📊 MI ESTADO').click()
     page.wait_for_timeout(150)
@@ -58,7 +58,7 @@ with sync_playwright() as p:
     assert page.locator('#presentation-order').input_value() == 'RANDOM'
     assert page.locator('#randomize').count() == 0
 
-    # v1.5.3: selección RENTABILITY + presentación QUEUE debe escoger primero la pregunta con mayor score.
+    # v1.5.4: selección RENTABILITY + presentación QUEUE debe escoger primero la pregunta con mayor score.
     page.locator('#selection-order').select_option('RENTABILITY')
     page.locator('#presentation-order').select_option('QUEUE')
     page.locator('#question-count').fill('1')
@@ -82,8 +82,10 @@ with sync_playwright() as p:
     assert 'Fluoroquinolonas — lesión tendinosa' in feedback_text
     assert 'Núcleo rápido' in feedback_text and 'Detalle útil' in feedback_text
     assert 'Siglas, epónimos y términos' in feedback_text
-    assert page.locator('#feedback details', has_text='Notas generales').count() == 1
+    assert page.locator('#feedback details', has_text='Notas generales').count() == 0
+    assert 'Contenido legacy preservado.' not in feedback_text
     assert page.locator('#feedback details', has_text='Fuentes y trazabilidad').count() == 1
+    assert page.evaluate("""() => { const ref=document.querySelector('#feedback .qrv2-reference'); const note=document.querySelector('#feedback .learning-note-action'); return Boolean(ref && note && (ref.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING)); }""")
     assert page.locator('[data-question-doubt-label]').count() == 1
     assert 'Duda registrada' in page.locator('[data-question-doubt-label]').inner_text()
     page.locator('#cancel-study').click()
@@ -128,4 +130,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.5.3 CUSTOM QUEUE + QRV2: OK')
+print('QA navegador v1.5.4 CUSTOM QUEUE + QRV2: OK')
