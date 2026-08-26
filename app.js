@@ -3785,6 +3785,65 @@
     return 0;
   }
 
+  function overdueDays(q, now = new Date()) {
+    const state = memoryByQuestion.get(q?.id);
+    if (!state?.due_at) return 0;
+    const dueMs = new Date(state.due_at).getTime();
+    if (!Number.isFinite(dueMs)) return 0;
+    return Math.max(0, (now.getTime() - dueMs) / 86400000);
+  }
+
+  function dueReviewPool(now = new Date()) {
+    const due = questions.filter(q => {
+      if (observed(q)) return false;
+      const state = memoryByQuestion.get(q.id);
+      return state?.due_at && new Date(state.due_at) <= now;
+    });
+    const priority = sortByPriority(due, now, { diversifyYears:true, tolerance:0.35 });
+    const staleHigh = due
+      .filter(q => rentabilityTierRank(q) >= 3)
+      .slice()
+      .sort((a,b) => {
+        const ageDiff = overdueDays(b, now) - overdueDays(a, now);
+        if (Math.abs(ageDiff) > 1e-9) return ageDiff;
+        return questionPriority(b, now) - questionPriority(a, now) || a.id.localeCompare(b.id);
+      });
+
+    // v1.5.1 — anti-starvation preexamen.
+    // Una cola que se responde parcialmente no puede esconder indefinidamente preguntas
+    // MUY_ALTA/ALTA antiguamente vencidas detrás de las mismas preguntas de score alto.
+    // Aproximadamente una de cada dos posiciones iniciales se reserva para la vencida
+    // MUY_ALTA/ALTA más antigua todavía no incluida; el resto conserva prioridad adaptativa.
+    if (!staleHigh.length) return priority;
+    const result = [];
+    const used = new Set();
+    let staleIndex = 0;
+    let priorityIndex = 0;
+    const take = q => {
+      if (!q || used.has(q.id)) return false;
+      used.add(q.id);
+      result.push(q);
+      return true;
+    };
+    while (result.length < due.length) {
+      const preferStale = result.length % 2 === 0;
+      if (preferStale) {
+        while (staleIndex < staleHigh.length && !take(staleHigh[staleIndex])) staleIndex += 1;
+        if (staleIndex < staleHigh.length) staleIndex += 1;
+      }
+      while (priorityIndex < priority.length && !take(priority[priorityIndex])) priorityIndex += 1;
+      if (priorityIndex < priority.length) priorityIndex += 1;
+      if (result.length >= due.length) break;
+      if (!preferStale) {
+        while (staleIndex < staleHigh.length && !take(staleHigh[staleIndex])) staleIndex += 1;
+        if (staleIndex < staleHigh.length) staleIndex += 1;
+      }
+      if (staleIndex >= staleHigh.length && priorityIndex >= priority.length) break;
+    }
+    for (const q of priority) take(q);
+    return result;
+  }
+
   function unseenCoveragePool(now = new Date()) {
     const seen = new Set(attempts.map(a => a.question_id));
     const unseen = questions.filter(q => !observed(q) && !seen.has(q.id));
@@ -3812,13 +3871,9 @@
     const now = new Date();
     const nonObserved = questions.filter(q => !observed(q));
     if (kind === 'due') {
-      const due = nonObserved.filter(q => {
-        const st = memoryByQuestion.get(q.id);
-        return st && new Date(st.due_at) <= now;
-      });
-      // Solo mezcla años entre repasos ya vencidos y de prioridad muy parecida:
-      // nunca introduce preguntas no vencidas para "diversificar".
-      return sortByPriority(due, now, { diversifyYears:true, tolerance:0.35 });
+      // Solo incluye vencidas. v1.5.1 añade anti-starvation de MUY_ALTA/ALTA antiguas
+      // sin tocar estabilidad, dificultad, retención objetivo ni due_at.
+      return dueReviewPool(now);
     }
     if (kind === 'new') {
       const unseen = nonObserved.filter(q => !attempts.some(a => a.question_id === q.id));
@@ -4333,15 +4388,41 @@
     return shiftLocalDate(exam, -10);
   }
 
+  function highCoverageGoalIso() {
+    const exam = profile?.exam_date || DEFAULT_PROFILE.exam_date;
+    return shiftLocalDate(exam, -9);
+  }
+
+  function valuableCoverageGoalIso() {
+    const exam = profile?.exam_date || DEFAULT_PROFILE.exam_date;
+    return shiftLocalDate(exam, -5);
+  }
+
+  function highCoverageCutoffIso() {
+    const exam = profile?.exam_date || DEFAULT_PROFILE.exam_date;
+    return shiftLocalDate(exam, -3);
+  }
+
   function buildTodayPlan() {
     const today = isoDateLocal();
     const now = new Date();
     const stats = planCoverageSnapshot(now);
     const exam = profile?.exam_date || DEFAULT_PROFILE.exam_date;
     const daysExam = Math.max(0, daysUntil(exam));
-    const deadline = coverageDeadlineIso();
-    const coverageDaysLeft = Math.max(1, Math.floor(daysBetween(today, deadline)) + 1);
-    const coverageSprint = today <= deadline && stats.unseenTotal > 0;
+    const legacyDeadline = coverageDeadlineIso();
+    const highGoal = highCoverageGoalIso();
+    const valuableGoal = valuableCoverageGoalIso();
+    const highCutoff = highCoverageCutoffIso();
+
+    // v1.5.1 — el cambio de fase depende de cobertura útil real, no de una fecha rígida.
+    // MUY_ALTA/ALTA pueden seguir entrando como nuevas hasta 3 días antes del examen si
+    // aún quedan; MEDIA se intenta cerrar hasta 5 días antes. BAJA no prolonga la fase.
+    const highCoverageSprint = stats.highUnseen > 0 && today <= highCutoff;
+    const valuableCoverageSprint = !highCoverageSprint && stats.valuableUnseen > 0 && today <= valuableGoal;
+    const coverageSprint = highCoverageSprint || valuableCoverageSprint;
+    const coverageGoal = highCoverageSprint ? highGoal : valuableGoal;
+    const coverageRemaining = highCoverageSprint ? stats.highUnseen : stats.valuableUnseen;
+    const coverageDaysLeft = Math.max(1, Math.floor(daysBetween(today, coverageGoal)) + 1);
 
     let specs = [];
     let phase;
@@ -4349,14 +4430,14 @@
     if (daysExam <= 0) {
       phase = { key:'exam', name:'Día del examen', objective:'Ejecutar. No aprender temas grandes nuevos.' };
     } else if (coverageSprint) {
-      // El volumen nuevo se deriva de lo que falta y de una fecha de cierre de primera
-      // vuelta situada 10 días antes del examen. No existe deuda histórica por viajes.
-      const newTarget = Math.min(140, Math.max(1, Math.ceil(stats.unseenTotal / coverageDaysLeft)));
+      // Primera exposición de alto retorno: objetivo relativo al examen y a lo que falta.
+      // El tope de 120 evita que la cobertura nueva destruya la recuperación espaciada.
+      const newTarget = Math.min(120, Math.max(1, Math.ceil(coverageRemaining / coverageDaysLeft)));
 
-      // El backlog MUY_ALTA/ALTA se intenta normalizar en ~5 días sin permitir que
-      // vuelva a desplazar la cobertura nueva.
+      // El backlog vencido se recupera en paralelo. La cola `due` reserva posiciones
+      // tempranas para MUY_ALTA/ALTA antiguas, de modo que sesiones parciales no las oculten.
       const dueTarget = stats.dueTotal
-        ? Math.min(110, Math.max(50, Math.ceil((stats.highDue + Math.max(0, stats.dueTotal - stats.highDue) * 0.35) / 5)))
+        ? Math.min(140, Math.max(90, Math.ceil((stats.highDue + Math.max(0, stats.dueTotal - stats.highDue) * 0.35) / 3)))
         : 0;
 
       const fragileTarget = Math.min(25, smartPool('fragile').length);
@@ -4370,8 +4451,10 @@
       ];
       phase = {
         key:'coverage_sprint',
-        name:'Cobertura intensiva',
-        objective:`Cerrar la primera vuelta útil antes del ${new Date(parseLocalDate(deadline)).toLocaleDateString('es-PE',{day:'2-digit',month:'2-digit'})}, priorizando ALTA antes de MEDIA.`,
+        name:highCoverageSprint ? 'Rescate ALTA + memoria' : 'Cobertura MEDIA rentable',
+        objective:highCoverageSprint
+          ? `Cerrar MUY_ALTA/ALTA nuevas idealmente antes del ${new Date(parseLocalDate(highGoal)).toLocaleDateString('es-PE',{day:'2-digit',month:'2-digit'})}, sin abandonar vencidas antiguas.`
+          : `Cerrar cobertura MUY_ALTA/ALTA y avanzar MEDIA rentable idealmente antes del ${new Date(parseLocalDate(valuableGoal)).toLocaleDateString('es-PE',{day:'2-digit',month:'2-digit'})}.`,
       };
     } else {
       const residualNew = stats.valuableUnseen > 0
@@ -4410,12 +4493,12 @@
     const done = tasks.reduce((sum,t)=>sum+t.completed,0);
     const otherToday = Math.max(0, dailyActual(today) - done);
     const next = tasks.find(t => t.remaining > 0) || null;
-    const maxCoverageCapacity = coverageDaysLeft * 140;
-    const coverageRisk = coverageSprint && stats.unseenTotal > maxCoverageCapacity;
+    const maxCoverageCapacity = coverageDaysLeft * 120;
+    const coverageRisk = coverageSprint && coverageRemaining > maxCoverageCapacity;
 
     return {
       today, phase, done, otherToday, adjustedTarget, tasks, next,
-      coverageDeadline:deadline,
+      coverageDeadline:coverageSprint ? coverageGoal : legacyDeadline,
       coverageDaysLeft,
       coverageRisk,
       stats,

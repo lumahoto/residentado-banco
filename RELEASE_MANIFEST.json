@@ -1,35 +1,34 @@
 {
-  "release_id": "REL-20260822-V1.5.0-REVIEW-CENTER-STUDY-LOOP",
-  "version": "1.5.0",
-  "date": "2026-08-22",
+  "release_id": "REL-20260826-V1.5.1-PREEXAM-SCHEDULER-RESCUE",
+  "version": "1.5.1",
+  "date": "2026-08-26",
   "base": {
-    "version": "1.4.3 R2",
-    "archive": "260821_residentado-banco-main_v143r2_c1(1).zip"
+    "version": "1.5.0",
+    "archive": "260826_1202_residentado-banco-main.zip"
   },
-  "status": "READY_FOR_GITHUB_REPLACEMENT_REQUIRES_SUPABASE_MIGRATION",
-  "release_type": "REVIEW_CENTER_STUDY_LOOP",
+  "status": "READY_FOR_GITHUB_REPLACEMENT_NO_NEW_SUPABASE_MIGRATION",
+  "release_type": "PREEXAM_SCHEDULER_RESCUE",
   "scope": {
-    "supabase_migration_required": true,
+    "supabase_migration_required": false,
     "dataset_change": false,
     "taxonomy_change": false,
     "memory_algorithm_change": false,
-    "scheduler_change": false,
-    "simulators_changed": true,
-    "practice_ui_change": true,
-    "runtime_sync_change": true
+    "scheduler_change": true,
+    "simulators_changed": false,
+    "practice_ui_change": false,
+    "runtime_sync_change": false
   },
   "changes": {
-    "REVIEW_CENTER_001": "A single informative Review Center is reused after full completion, partial close, and from History; rows show original question number, states, topic, and entity when available.",
-    "REVIEW_FILTERS_001": "Review filters include incorrect, No sé, question-level doubt, notes, personal marks, review flags, and audit state, with subset navigation preserving original session position.",
-    "QUESTION_DOUBT_001": "The ? marker is question-level rather than per-alternative, with synchronized controls above the question and after the explanation; it does not create notes or audit flags.",
-    "DAY_BOUNDARY_001": "Continue-later sessions expire on the next local day. Answered sessions become partial history; empty sessions are abandoned. The transition creates zero new attempts.",
-    "DAY_BOUNDARY_PT409_001": "Status-only day-boundary closure never calls attempt materialization and never creates a recovery on a revision-only conflict; it re-reads remote status/revision and retries status only.",
-    "ANKI_OBSERVATION_001": "Content/doubt review flags require an associated learning note; learning notes can only be resolved with CREATE_NEW_CARD, UPDATE_EXISTING_CARD, or REEXPOSE_EXISTING_CARD. Legacy outcomes remain readable only.",
-    "REVIEW_SCOPE_001": "Review flags explicitly distinguish CONTENT from EDITORIAL_TECHNICAL; only content/doubt enters the mandatory Anki reinforcement flow."
+    "SCHED_COVERAGE_151": "Coverage phase is driven by remaining high-value unseen questions rather than ending rigidly 10 days before the exam. High-tier first exposure remains eligible until exam-3; valuable MEDIA coverage is targeted until exam-5.",
+    "SCHED_HIGH_GOAL_151": "MUY_ALTA/ALTA unseen questions are targeted for first-pass completion around exam-9 with up to 120 new questions/day, dynamically recalculated from remaining coverage.",
+    "SCHED_DUE_151": "Due workload runs in parallel up to 140/day during coverage rescue, without modifying memory stability, target retention, or due_at.",
+    "SCHED_ANTISTARVE_151": "Due queue interleaves oldest overdue MUY_ALTA/ALTA questions into early positions so partial sessions cannot indefinitely starve old high-value reviews.",
+    "MEMORY_PRESERVED_151": "Custom memory model and targetRetention remain unchanged; question_memory_state is not reset or migrated.",
+    "SESSION_GUARDRAILS_151": "PT409/recovery/day-boundary/session persistence code is unchanged."
   },
   "supabase_migration": {
-    "file": "MIGRATIONS/20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql",
-    "purpose": "Adds question_review_flags.learning_scope and permits REEXPOSE_EXISTING_CARD in question_learning_notes.anki_action without touching user attempts, memory, questions, or taxonomy."
+    "required": false,
+    "note": "No new migration. v1.5.0 migration remains prerequisite only if it was never applied."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
@@ -41,7 +40,6 @@
   "dataset_revision": "QUESTIONS-TAXV3-A16-20260818-R1",
   "modified_runtime_files": [
     "app.js",
-    "styles.css",
     "version.js",
     "service-worker.js"
   ],
@@ -57,6 +55,6 @@
     "static_command": "python3 QA/qa_static.py",
     "browser_command": "python3 QA/qa_browser.py",
     "session_core_unit_command": "node QA/test_session_core.js",
-    "manual_smoke": "PENDING_USER_DEPLOYMENT"
+    "manual_smoke": "RECOMMENDED_BEFORE_FULL_STUDY_DAY"
   }
 }

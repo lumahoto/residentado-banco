@@ -1,3 +1,16 @@
+## v1.5.1 - 2026-08-26
+
+Parche preexamen del scheduler basado en la auditoría de `attempts`, `question_memory_state` y `practice_sessions` del 26/08/2026. No modifica la fórmula de memoria, los datos de Supabase, la taxonomía ni los guardrails de sesión.
+
+- reemplaza el corte rígido de cobertura a examen-10 por una política dinámica según cobertura útil pendiente;
+- mantiene nuevas MUY_ALTA/ALTA elegibles hasta examen-3 y busca cerrar su primera vuelta alrededor de examen-9;
+- mantiene cobertura MEDIA rentable hasta examen-5;
+- limita nuevas a 120/día durante rescate para reservar tiempo a recuperación espaciada;
+- aumenta el bloque de vencidas durante rescate hasta 140/día, en paralelo con cobertura;
+- introduce anti-starvation: la cola `due` intercala las MUY_ALTA/ALTA más antiguamente vencidas en posiciones tempranas junto con la prioridad adaptativa;
+- preserva `stability_days`, `difficulty`, `targetRetention`, `due_at`, reconstrucción determinista de memoria, PT409/recovery y cierre diario;
+- no requiere migración SQL nueva.
+
 # Changelog - Residentado
 
 ## v1.5.0 - 2026-08-22

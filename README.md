@@ -1,16 +1,25 @@
-# Residentado v1.5.0 — Centro de revisión y circuito WebApp → Anki
+# Residentado v1.5.1 — Rescate preexamen del scheduler
 
-WebApp estática del banco de Residentado Médico Perú. Esta versión parte de **v1.4.3 R2** y mejora el flujo de revisión/estudio sin modificar el banco canónico, la taxonomía V3 A16, la rentabilidad, el algoritmo de memoria ni el scheduler.
+WebApp estática del banco de Residentado Médico Perú. Esta versión parte de **v1.5.0** y corrige únicamente la política de selección preexamen. Mantiene sin cambios el banco canónico, la taxonomía V3 A16, la rentabilidad, la fórmula de memoria y los guardrails de sesiones/PT409.
 
 ## Estado
 
-- Frontend: `v1.5.0` / caché `residentado-v1-5-0`.
+- Frontend: `v1.5.1` / caché `residentado-v1-5-1`.
 - Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- Migración Supabase requerida por v1.5.0: `MIGRATIONS/20260822_REVIEW_CENTER_ANKI_SCOPE_V1_5_0.sql`.
+- **No hay migración nueva en v1.5.1.** La migración v1.5.0 sigue siendo requisito solo si todavía no fue aplicada.
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
 - Guardrails PT409/recovery de v1.4.3: preservados.
+
+
+## Scheduler preexamen v1.5.1
+
+- La fase de cobertura ya no termina mecánicamente a 10 días del examen. Mientras queden preguntas MUY_ALTA/ALTA sin primera exposición, siguen siendo elegibles hasta 3 días antes del examen; MEDIA se prioriza hasta 5 días antes.
+- La meta de nuevas se recalcula desde lo que realmente falta, con tope de 120/día.
+- Los repasos vencidos se mantienen en paralelo, con tope de 140/día durante rescate.
+- La cola de vencidas aplica **anti-starvation**: intercala en posiciones tempranas las MUY_ALTA/ALTA con mayor atraso junto con la prioridad adaptativa habitual.
+- No se modifica `stability_days`, `difficulty`, `targetRetention`, `due_at` ni `question_memory_state`; no hay reset de progreso.
 
 ## Centro de revisión
 
@@ -68,9 +77,9 @@ node QA/test_session_core.js
 
 ## Publicación
 
-1. Ejecutar la migración v1.5.0 en Supabase y verificarla.
+1. Si v1.5.0 ya estaba operativo, **no ejecutar SQL nuevo**.
 2. Reemplazar el repositorio por este build y hacer commit/push.
 3. Abrir la WebApp normalmente con conexión; el nombre nuevo de caché fuerza la sustitución del runtime anterior.
-4. Realizar el smoke de `docs/INSTRUCCIONES_APLICACION_V1_5_0.md`.
+4. Realizar el smoke de `docs/INSTRUCCIONES_APLICACION_V1_5_1.md`.
 
 No reejecutar migraciones antiguas por rutina.

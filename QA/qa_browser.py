@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.5.0: Taxonomía V3/A16 + paridad de práctica. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.5.1: Taxonomía V3/A16 + paridad de práctica. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -28,7 +28,7 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.5.0' in page.locator('body').inner_text()
+    assert 'v1.5.1' in page.locator('body').inner_text()
 
     page.get_by_role('button', name='📊 MI ESTADO').click()
     page.wait_for_timeout(150)
@@ -55,7 +55,7 @@ with sync_playwright() as p:
     assert page.locator('#rentability option[value="muy_alta"]').count() == 1
     assert page.locator('input[name="topicPath"]').first.get_attribute('value').startswith('TOPIC_ID:')
 
-    # v1.5.0 preserva de v1.4.1: una práctica personalizada cronometrada conserva la acción No sé.
+    # v1.5.1 preserva de v1.4.1: una práctica personalizada cronometrada conserva la acción No sé.
     page.locator('#question-count').fill('1')
     page.locator('#time-mode').select_option('per_question')
     page.locator('#seconds-per-question').fill('30')
@@ -109,4 +109,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.5.0 REVIEW CENTER: OK')
+print('QA navegador v1.5.1 PREEXAM SCHEDULER: OK')
