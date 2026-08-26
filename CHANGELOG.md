@@ -1,3 +1,14 @@
+## v1.5.4 - 2026-08-26
+
+Parche acumulativo sobre v1.5.2 que conserva íntegramente v1.5.3 y simplifica la experiencia de estudio sin alterar lógica principal ni Supabase.
+
+- mantiene Referencia rápida QRV2 por encima del bloque **Añadir nota** y añade QA explícito para impedir que el orden vuelva a invertirse;
+- deja de renderizar `reference_notes` / **Notas generales** en la WebApp de estudio porque contiene trazabilidad editorial/QA sin utilidad directa para resolver preguntas;
+- conserva `reference_notes` íntegro en Supabase/dataset/exportaciones: no se borra ni migra información;
+- mantiene `audit_source_urls` como **Fuentes y trazabilidad**, colapsado y secundario;
+- no cambia práctica personalizada, simulacros, scheduler, memoria, PT409/recovery, sesiones, taxonomía ni dataset;
+- no crea documentos auxiliares versionados nuevos.
+
 ## v1.5.3 - 2026-08-26
 
 Reconciliación selectiva sobre el baseline real v1.5.2. No cambia Supabase, dataset, taxonomía, algoritmo de memoria, scheduler, PT409/recovery ni simulacros.

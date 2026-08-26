@@ -1,18 +1,18 @@
-# Residentado v1.5.3 — Práctica personalizada + QRV2
+# Residentado v1.5.4 — Práctica personalizada + QRV2 limpio
 
-WebApp estática del banco de Residentado Médico Perú. v1.5.3 parte del **baseline real v1.5.2** y reconcilia la selección de práctica personalizada, el renderer QRV2 y la separación estricta entre flags de auditoría y Notas. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
+WebApp estática del banco de Residentado Médico Perú. v1.5.4 es un parche acumulativo sobre el **baseline real v1.5.2**: incluye v1.5.3 y reconcilia la selección de práctica personalizada, el renderer QRV2 y la separación estricta entre flags de auditoría y Notas. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
 
 ## Estado
 
-- Frontend: `v1.5.3` / caché `residentado-v1-5-3`.
+- Frontend: `v1.5.4` / caché `residentado-v1-5-4`.
 - Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- **No hay migración nueva en v1.5.3.**
+- **No hay migración nueva en v1.5.4.**
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
 - Scheduler de rescate/retención v1.5.2 y guardrails PT409/recovery: preservados.
 
-## Práctica personalizada v1.5.3
+## Práctica personalizada v1.5.4
 
 La selección y la presentación son controles independientes:
 
@@ -24,7 +24,7 @@ Los defaults siguen siendo Aleatorio/Aleatorio para conservar el comportamiento 
 
 ## Referencia rápida QRV2
 
-La explicación vuelve a mostrar contexto universal y una referencia en dos capas: **Núcleo rápido** y **Detalle útil**. El renderer preserva el referente específico (`comparison_title`/Entidad), Tema, Aborda, Fase, Dato pivote, perfil, siglas/epónimos, `reference_notes` como **Notas generales** y `audit_source_urls` como **Fuentes y trazabilidad**. Si falta contenido estructurado, indica pendiente de migración en vez de inventar contenido clínico.
+La explicación muestra contexto universal y una referencia en dos capas: **Núcleo rápido** y **Detalle útil**. El renderer preserva el referente específico (`comparison_title`/Entidad), Tema, Aborda, Fase, Dato pivote, perfil y siglas/epónimos. `reference_notes` se conserva en Supabase/datos para trazabilidad pero **no se renderiza en la experiencia de estudio**; `audit_source_urls` permanece como **Fuentes y trazabilidad**, colapsado. La Referencia rápida queda antes de **Añadir nota**. Si falta contenido estructurado, indica pendiente de migración en vez de inventar contenido clínico.
 
 ## Centro de revisión
 

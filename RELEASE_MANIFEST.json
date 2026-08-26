@@ -1,13 +1,13 @@
 {
-  "release_id": "REL-20260826-V1.5.3-CUSTOM-QUEUE-QRV2-FLAG-DECOUPLE",
-  "version": "1.5.3",
+  "release_id": "REL-20260826-V1.5.4-STUDY-UI-TRACE-HIDE",
+  "version": "1.5.4",
   "date": "2026-08-26",
   "base": {
     "version": "1.5.2",
     "archive": "260826_1342_residentado-banco-main_v152.zip"
   },
-  "status": "READY_FOR_GITHUB_DESKTOP_PATCH_NO_NEW_SUPABASE_MIGRATION",
-  "release_type": "CUSTOM_PRACTICE_QRV2_FLAG_NOTE_DECOUPLING",
+  "status": "READY_FOR_GITHUB_DESKTOP_CUMULATIVE_PATCH_NO_NEW_SUPABASE_MIGRATION",
+  "release_type": "CUSTOM_PRACTICE_QRV2_STUDY_UI_CLEANUP_FLAG_NOTE_DECOUPLING",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
@@ -21,17 +21,18 @@
     "runtime_sync_change": false
   },
   "changes": {
-    "CUSTOM_SELECTION_153": "Practice builder separates canonical selectionOrder from presentationOrder; defaults remain RANDOM/RANDOM.",
-    "CUSTOM_RENTABILITY_153": "RENTABILITY selection uses tier MUY_ALTA>ALTA>MEDIA>BAJA, canonical score descending, stable question_id tie-break; no personal performance signals.",
-    "SIMULATOR_PRESERVED_153": "Exam/custom simulator keeps v1.5.2 randomize semantics.",
-    "QRV2_RECONCILIATION_153": "Selective QRV2 renderer reconciliation on top of v1.5.2 with explicit referent, context, two visible layers, preserved notes and separate source traceability.",
-    "FLAG_NOTE_DECOUPLE_153": "CONTENT review flags no longer create/reuse learning notes or require Anki; historical notes remain untouched.",
-    "SCHEDULER_PRESERVED_153": "v1.5.2 retention alignment, coverage rescue and anti-starvation remain unchanged.",
-    "DOC_GUARDRAIL_153": "No new version-specific QA release, README, decision-log or application-instruction files are created."
+    "CUSTOM_SELECTION_153_154": "Practice builder keeps v1.5.3 separation of canonical selectionOrder and presentationOrder; defaults RANDOM/RANDOM.",
+    "CUSTOM_RENTABILITY_153_154": "RENTABILITY uses canonical tier/score only; no personal performance signals.",
+    "SIMULATOR_PRESERVED_154": "Exam/custom simulator keeps v1.5.2 randomize semantics.",
+    "QRV2_STUDY_UI_154": "QRV2 keeps explicit referent and two useful layers; reference_notes remains in data for traceability but is not rendered in study UI; audit_source_urls remains collapsed as Fuentes y trazabilidad.",
+    "QRV2_ORDER_154": "Quick Reference is rendered before Add note in both feedback paths and QA locks this order.",
+    "FLAG_NOTE_DECOUPLE_153_154": "CONTENT review flags do not create/reuse learning notes or require Anki; historical notes remain untouched.",
+    "SCHEDULER_PRESERVED_154": "v1.5.2 retention alignment, coverage rescue and anti-starvation remain unchanged.",
+    "DOC_GUARDRAIL_154": "No new version-specific QA release, README, decision-log or application-instruction files are created."
   },
   "supabase_migration": {
     "required": false,
-    "note": "No migration. Existing v1.5.0 review-scope schema remains compatible; v1.5.3 changes frontend semantics only."
+    "note": "No migration. v1.5.4 is frontend-only and preserves reference_notes in Supabase/dataset while hiding it from study rendering."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
