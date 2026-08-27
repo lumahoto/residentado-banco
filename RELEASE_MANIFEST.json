@@ -1,13 +1,13 @@
 {
-  "release_id": "REL-20260826-V1.5.4-STUDY-UI-TRACE-HIDE",
-  "version": "1.5.4",
+  "release_id": "REL-20260826-V1.5.5-REVIEW-FLOW-ALIGNMENT",
+  "version": "1.5.5",
   "date": "2026-08-26",
   "base": {
-    "version": "1.5.2",
-    "archive": "260826_1342_residentado-banco-main_v152.zip"
+    "version": "1.5.4",
+    "archive": "260826_1812_residentado-banco-main_v154.zip"
   },
-  "status": "READY_FOR_GITHUB_DESKTOP_CUMULATIVE_PATCH_NO_NEW_SUPABASE_MIGRATION",
-  "release_type": "CUSTOM_PRACTICE_QRV2_STUDY_UI_CLEANUP_FLAG_NOTE_DECOUPLING",
+  "status": "READY_FOR_GITHUB_DESKTOP_PATCH_NO_NEW_SUPABASE_MIGRATION",
+  "release_type": "REVIEW_FEEDBACK_UI_ORDER_AND_ACTION_ALIGNMENT",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
@@ -17,22 +17,20 @@
     "simulators_changed": false,
     "practice_ui_change": true,
     "quick_reference_change": true,
-    "review_flag_semantics_change": true,
+    "review_flag_semantics_change": false,
     "runtime_sync_change": false
   },
   "changes": {
-    "CUSTOM_SELECTION_153_154": "Practice builder keeps v1.5.3 separation of canonical selectionOrder and presentationOrder; defaults RANDOM/RANDOM.",
-    "CUSTOM_RENTABILITY_153_154": "RENTABILITY uses canonical tier/score only; no personal performance signals.",
-    "SIMULATOR_PRESERVED_154": "Exam/custom simulator keeps v1.5.2 randomize semantics.",
-    "QRV2_STUDY_UI_154": "QRV2 keeps explicit referent and two useful layers; reference_notes remains in data for traceability but is not rendered in study UI; audit_source_urls remains collapsed as Fuentes y trazabilidad.",
-    "QRV2_ORDER_154": "Quick Reference is rendered before Add note in both feedback paths and QA locks this order.",
-    "FLAG_NOTE_DECOUPLE_153_154": "CONTENT review flags do not create/reuse learning notes or require Anki; historical notes remain untouched.",
-    "SCHEDULER_PRESERVED_154": "v1.5.2 retention alignment, coverage rescue and anti-starvation remain unchanged.",
-    "DOC_GUARDRAIL_154": "No new version-specific QA release, README, decision-log or application-instruction files are created."
+    "REVIEW_FLOW_ORDER_155": "Feedback order is explanation → distractors → trap → pearl → memory hook → Quick Reference → Add note → review flag → doubt → next.",
+    "QR_POSITION_155": "Quick Reference renders immediately after Gancho de memoria and before Add note in both feedback paths.",
+    "DOUBT_ALIGNMENT_155": "Post-answer Marcar duda aligns right on desktop and remains full-width on small screens.",
+    "NEXT_ALIGNMENT_155": "Bottom Siguiente pregunta aligns right via a dedicated feedback-only footer class.",
+    "SEMANTICS_PRESERVED_155": "No changes to doubt/note/flag meaning, scheduler, memory, sessions, PT409/recovery, Supabase, taxonomy or dataset.",
+    "DOC_GUARDRAIL_155": "No new version-specific QA release, decision-log or application-instruction files are created."
   },
   "supabase_migration": {
     "required": false,
-    "note": "No migration. v1.5.4 is frontend-only and preserves reference_notes in Supabase/dataset while hiding it from study rendering."
+    "note": "No migration. v1.5.5 is frontend-only."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",

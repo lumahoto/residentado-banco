@@ -1057,11 +1057,15 @@ details.explain-block summary { cursor: pointer; }
   line-height: 1.45;
 }
 .post-answer-reflection .btn {
-  justify-self: start;
+  justify-self: end;
 }
 .post-answer-status {
   min-height: 1.2em;
   font-size: .84rem;
+  text-align: right;
+}
+.feedback-next-actions {
+  justify-content: flex-end;
 }
 
 @media (max-width: 520px) {
@@ -1078,6 +1082,7 @@ details.explain-block summary { cursor: pointer; }
   .post-answer-reflection .btn {
     width: 100%;
   }
+  .post-answer-status { text-align: left; }
 }
 
 

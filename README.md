@@ -1,16 +1,23 @@
-# Residentado v1.5.4 — Práctica personalizada + QRV2 limpio
+# Residentado v1.5.5 — Flujo de revisión alineado
 
-WebApp estática del banco de Residentado Médico Perú. v1.5.4 es un parche acumulativo sobre el **baseline real v1.5.2**: incluye v1.5.3 y reconcilia la selección de práctica personalizada, el renderer QRV2 y la separación estricta entre flags de auditoría y Notas. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
+WebApp estática del banco de Residentado Médico Perú. v1.5.5 parte del **baseline real v1.5.4** y conserva todo su comportamiento; este release modifica únicamente el orden visual del feedback y la alineación de acciones. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
 
 ## Estado
 
-- Frontend: `v1.5.4` / caché `residentado-v1-5-4`.
+- Frontend: `v1.5.5` / caché `residentado-v1-5-5`.
 - Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- **No hay migración nueva en v1.5.4.**
+- **No hay migración nueva en v1.5.5.**
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
 - Scheduler de rescate/retención v1.5.2 y guardrails PT409/recovery: preservados.
+
+
+## Flujo de revisión v1.5.5
+
+Después de responder, la secuencia pedagógica es: **Por qué la clave es correcta → Por qué no las otras → Trampa frecuente → Perla de examen → Gancho de memoria → Referencia rápida → Añadir nota → Revisar pregunta → Marcar duda → Siguiente pregunta**. La Referencia rápida queda inmediatamente después del Gancho de memoria y antes de la Nota.
+
+En escritorio, **Marcar duda** y **Siguiente pregunta** se alinean a la derecha, igual que las demás acciones del bloque. En móvil se conserva el botón de duda a ancho completo para accesibilidad táctil. No cambia ninguna semántica de duda, Nota, flag, navegación, memoria o sesión.
 
 ## Práctica personalizada v1.5.4
 

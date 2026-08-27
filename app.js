@@ -7121,12 +7121,12 @@
       ${responseSeconds != null ? `<div class="feedback-time ${responseSeconds <= targetSeconds ? 'ok' : responseSeconds <= targetSeconds * 1.6 ? 'warn' : 'bad'}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
       ${auditEditorialHtml(q)}
       ${alreadyUncertain ? `<div class="explain-block uncertainty-box"><h4>❓ Duda registrada</h4><p>Marcaste la pregunta completa como dudosa. El marcador no genera contenido ni una nota por sí solo.</p></div>` : ''}
-      ${quickReference}
       ${correctText ? `<details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>` : ''}
       ${distractors ? `<details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>` : ''}
       ${hasEditorialText(q?.common_trap) ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(cleanEditorialText(q.common_trap))}</p></div>` : ''}
       ${hasEditorialText(q?.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(cleanEditorialText(q.exam_pearl))}</p></div>` : ''}
       ${hasEditorialText(q?.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(cleanEditorialText(q.memory_hook))}</p></div>` : ''}
+      ${quickReference}
       <div class="learning-note-action"><div><strong>¿Qué te falta entender o recordar?</strong><p class="muted">Guarda una duda personal para resolverla después y compararla con tu Anki. Es independiente de los flags de auditoría.</p></div>${learningNoteButton(q)}</div>
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
@@ -7202,12 +7202,12 @@
       ${auditEditorialHtml(q)}
 
       ${alreadyUncertain ? `<div class="explain-block uncertainty-box"><h4>❓ Duda registrada</h4><p>Marcaste la pregunta completa como dudosa. El marcador no genera contenido ni una nota por sí solo.</p></div>` : ''}
-      ${quickReference}
       ${correctText ? `<details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>` : ''}
       ${distractors ? `<details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>` : ''}
       ${hasEditorialText(q.common_trap) ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(cleanEditorialText(q.common_trap))}</p></div>` : ''}
       ${hasEditorialText(q.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(cleanEditorialText(q.exam_pearl))}</p></div>` : ''}
       ${hasEditorialText(q.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(cleanEditorialText(q.memory_hook))}</p></div>` : ''}
+      ${quickReference}
       <div class="learning-note-action"><div><strong>¿Qué te falta entender o recordar?</strong><p class="muted">Guarda una duda personal para resolverla después y compararla con tu Anki. Es independiente de los flags de auditoría.</p></div>${learningNoteButton(q)}</div>
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
       ${postMarkAvailable ? `<div class="post-answer-reflection">
@@ -7220,7 +7220,7 @@
         </button>
         <div id="post-answer-uncertain-status" class="muted post-answer-status"></div>
       </div>` : ''}
-      ${!reviewOnly && onNext ? `<div class="footer-actions"><button id="next-feedback" class="btn primary">Siguiente pregunta →</button></div>` : ''}
+      ${!reviewOnly && onNext ? `<div class="footer-actions feedback-next-actions"><button id="next-feedback" class="btn primary">Siguiente pregunta →</button></div>` : ''}
     </div>`;
 
     bindPostAnswerUncertainButton(feedbackMeta, q);

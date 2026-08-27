@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.5.4: mantiene v1.5.3 y limpia la UI de estudio ocultando trazabilidad editorial no pedagógica.
+// v1.5.5: reordena el flujo de revisión y alinea acciones sin tocar datos, scheduler ni sesiones.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-4';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-5';
 const ASSETS = [
   './',
   './index.html',
