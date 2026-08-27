@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.5.4: práctica personalizada + QRV2 + no regresión A16. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.5.5: orden de feedback + QRV2 + no regresión A16. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -14,7 +14,7 @@ html = '<!doctype html><html><head><meta charset="utf-8"><style>' + (ROOT/'style
 for filename in SCRIPTS:
     html += '<script>' + (ROOT/filename).read_text(encoding='utf-8').replace('</script>', '<\\/script>') + '</script>'
 html += '<script>window.__TTS_CATALOG__=' + json.dumps(CATALOG, ensure_ascii=False) + ';window.fetch=async input=>{if(String(input).includes("tts_catalog.json"))return {ok:true,status:200,json:async()=>window.__TTS_CATALOG__};throw new Error("offline smoke");};'
-html += 'if(window.PILOT_QUESTIONS){window.PILOT_QUESTIONS.forEach((q,i)=>Object.assign(q,{rentability_topic_id:' + json.dumps(FIRST['topicId']) + ',rentability_topic_label:' + json.dumps(FIRST['topicLabel'],ensure_ascii=False) + ',rentability_tier:"MUY_ALTA",exam_rentability_score:10+i,canonical_area:"Medicina Interna",canonical_specialty:"Endocrinología y Metabolismo"}));const g=window.PILOT_QUESTIONS[window.PILOT_QUESTIONS.length-1];Object.assign(g,{comparison_title:"Fluoroquinolonas — lesión tendinosa",comparison_framework:"Evento: tendinitis o rotura del Aquiles. Riesgo mayor: edad y corticoides. Conducta: suspender y evaluar rotura.",canonical_entity:"Tendinopatía por fluoroquinolonas",tested_aspect_primary:"Toxicidad, reacción adversa o interacción",pivot_text:"Tendinopatía y rotura de Aquiles",exam_logic:"Quinolona + dolor del talón = pensar en lesión del Aquiles.",abbreviations:"FQ: fluoroquinolonas.",reference_notes:"Contenido legacy preservado.",audit_source_urls:"https://example.org/source"});window.__EXPECTED_RENT_QUESTION__=g.question;}</script>'
+html += 'if(window.PILOT_QUESTIONS){window.PILOT_QUESTIONS.forEach((q,i)=>Object.assign(q,{rentability_topic_id:' + json.dumps(FIRST['topicId']) + ',rentability_topic_label:' + json.dumps(FIRST['topicLabel'],ensure_ascii=False) + ',rentability_tier:"MUY_ALTA",exam_rentability_score:10+i,canonical_area:"Medicina Interna",canonical_specialty:"Endocrinología y Metabolismo"}));const g=window.PILOT_QUESTIONS[window.PILOT_QUESTIONS.length-1];Object.assign(g,{comparison_title:"Fluoroquinolonas — lesión tendinosa",comparison_framework:"Evento: tendinitis o rotura del Aquiles. Riesgo mayor: edad y corticoides. Conducta: suspender y evaluar rotura.",canonical_entity:"Tendinopatía por fluoroquinolonas",tested_aspect_primary:"Toxicidad, reacción adversa o interacción",pivot_text:"Tendinopatía y rotura de Aquiles",exam_logic:"Quinolona + dolor del talón = pensar en lesión del Aquiles.",abbreviations:"FQ: fluoroquinolonas.",memory_hook:"Gancho QA: quinolona + Aquiles.",reference_notes:"Contenido legacy preservado.",audit_source_urls:"https://example.org/source"});window.__EXPECTED_RENT_QUESTION__=g.question;}</script>'
 html += '<script>' + (ROOT/'app.js').read_text(encoding='utf-8').replace('</script>', '<\\/script>') + '</script></body></html>'
 
 with sync_playwright() as p:
@@ -28,7 +28,7 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.5.4' in page.locator('body').inner_text()
+    assert 'v1.5.5' in page.locator('body').inner_text()
 
     page.get_by_role('button', name='📊 MI ESTADO').click()
     page.wait_for_timeout(150)
@@ -58,7 +58,7 @@ with sync_playwright() as p:
     assert page.locator('#presentation-order').input_value() == 'RANDOM'
     assert page.locator('#randomize').count() == 0
 
-    # v1.5.4: selección RENTABILITY + presentación QUEUE debe escoger primero la pregunta con mayor score.
+    # Selección RENTABILITY + presentación QUEUE heredada debe seguir escogiendo mayor score.
     page.locator('#selection-order').select_option('RENTABILITY')
     page.locator('#presentation-order').select_option('QUEUE')
     page.locator('#question-count').fill('1')
@@ -85,8 +85,11 @@ with sync_playwright() as p:
     assert page.locator('#feedback details', has_text='Notas generales').count() == 0
     assert 'Contenido legacy preservado.' not in feedback_text
     assert page.locator('#feedback details', has_text='Fuentes y trazabilidad').count() == 1
-    assert page.evaluate("""() => { const ref=document.querySelector('#feedback .qrv2-reference'); const note=document.querySelector('#feedback .learning-note-action'); return Boolean(ref && note && (ref.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING)); }""")
+    assert page.evaluate("""() => { const memory=document.querySelector('#feedback .memory'); const ref=document.querySelector('#feedback .qrv2-reference'); const note=document.querySelector('#feedback .learning-note-action'); return Boolean(memory && ref && note && (memory.compareDocumentPosition(ref) & Node.DOCUMENT_POSITION_FOLLOWING) && (ref.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING)); }""")
     assert page.locator('[data-question-doubt-label]').count() == 1
+    assert page.evaluate("""() => getComputedStyle(document.querySelector('#post-answer-uncertain')).justifySelf === 'end'""")
+    assert page.locator('.feedback-next-actions #next-feedback').count() == 1
+    assert page.evaluate("""() => getComputedStyle(document.querySelector('.feedback-next-actions')).justifyContent === 'flex-end'""")
     assert 'Duda registrada' in page.locator('[data-question-doubt-label]').inner_text()
     page.locator('#cancel-study').click()
     page.get_by_role('button', name='Cerrar sesión parcial y revisar respondidas').click()
@@ -130,4 +133,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.5.4 CUSTOM QUEUE + QRV2: OK')
+print('QA navegador v1.5.5 REVIEW FLOW ALIGNMENT: OK')

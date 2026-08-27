@@ -1,3 +1,13 @@
+## v1.5.5 - 2026-08-26
+
+Parche visual mínimo sobre v1.5.4. No modifica Supabase, dataset, taxonomía, scheduler, memoria, PT409/recovery ni semántica de Notas/flags/dudas.
+
+- mueve **Referencia rápida** para que aparezca después de **Gancho de memoria** y justo antes de **Añadir nota** en ambos renderers de feedback;
+- alinea **Marcar duda** a la derecha en escritorio, preservando ancho completo en móvil;
+- alinea **Siguiente pregunta** a la derecha sin alterar los demás `.footer-actions` de la WebApp;
+- añade QA de orden DOM y alineación para impedir regresiones;
+- no crea archivos auxiliares versionados nuevos.
+
 ## v1.5.4 - 2026-08-26
 
 Parche acumulativo sobre v1.5.2 que conserva íntegramente v1.5.3 y simplifica la experiencia de estudio sin alterar lógica principal ni Supabase.
