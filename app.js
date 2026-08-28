@@ -5245,13 +5245,13 @@
         <div class="plan-meta"><span>Por ver válidas: <strong>${plan.stats.unseenTotal}</strong></span><span>ALTA/MUY_ALTA por ver: <strong>${plan.stats.highUnseen}</strong></span><span>Vencidas rentables: <strong>${plan.stats.highDue}</strong></span><span>Ritmo 7 días: <strong>${pace7.toFixed(0)}/día</strong></span><span>Lentas: <strong>${slowCount}</strong></span></div>
       </section>
 
-      ${priorityReadingAlertMarkup(readingAlert, 'dashboard-reading')}
-
       ${primaryActiveSession
         ? `<button id="next-task-btn" class="next-task resume-task"><span><small>CONTINUAR SESIÓN</small><strong>${esc(primaryActiveSession.title || (primaryActiveSession.mode === 'exam' ? 'Simulacro' : 'Práctica'))}</strong><em>${primaryAnswered}/${primaryPlanned} respondidas · continúa exactamente donde quedaste</em></span><b>▶</b></button>`
         : plan.next
           ? `<button id="next-task-btn" class="next-task"><span><small>SIGUIENTE TAREA</small><strong>${esc(plan.next.label)}</strong><em>${plan.next.remaining} pendientes de este bloque</em></span><b>▶</b></button>`
           : `<div class="banner"><strong>Checklist principal completa.</strong> Usa Practicar para adelantar trabajo de mañana.</div>`}
+
+      ${priorityReadingAlertMarkup(readingAlert, 'dashboard-reading')}
 
       <section class="checklist panel"><div class="section-head"><div><h2>Checklist de hoy</h2><p class="muted">La app decide el orden. Si un bloque quedó abierto, el botón continúa esa sesión y no crea otra.</p></div></div>
         <div class="checklist-items">${plan.tasks.map(t => {
@@ -6919,6 +6919,7 @@
   }
 
   function reviewFilterLabel(filter = reviewContext?.filter || 'all') {
+    if (reviewContext?.type === 'history_day_filter') return reviewContext.dayFilterLabel || 'Todas';
     return REVIEW_FILTERS.find(([key]) => key === filter)?.[1] || 'Todas';
   }
 
@@ -6980,6 +6981,7 @@
     const filterCounts = Object.fromEntries(REVIEW_FILTERS.map(([key]) => [key, all.filter(q => reviewFilterMatch(q,key)).length]));
     const title = reviewContext.sessionTitle || (partial ? 'Sesión parcial' : 'Sesión completada');
     const historyReview = String(reviewContext.type || '').startsWith('history_');
+    const historyDayReview = reviewContext.type === 'history_day_filter';
     const accuracy = answered ? Math.round(correct / answered * 100) : 0;
     const currentDatasetRevision = datasetManifest?.dataset_revision || null;
     const corpusChangedSinceSession = Boolean(
@@ -6992,14 +6994,14 @@
     app.innerHTML = `<main class="shell">${topbar('Centro de revisión', true)}
       ${corpusChangedSinceSession ? `<div class="banner"><strong>Corpus actualizado desde esta sesión.</strong> La revisión muestra el contenido vigente; el resultado histórico de tu intento se conserva. No se atribuye retroactivamente el texto actual a la versión que viste entonces.</div>` : ''}
       <section class="panel review-summary-hero">
-        <div><span class="roadmap-kicker">${partial?'CIERRE PARCIAL':'REVISIÓN DE SESIÓN'}</span><h2>${esc(title)}</h2><p class="muted">${answered} respondidas${partial ? ` de ${planned} planificadas` : ''} · ${correct} correctas · ${accuracy}% de acierto</p></div>
-        <div class="review-summary-score"><strong>${correct}/${answered || 0}</strong><small>correctas / respondidas</small></div>
+        <div><span class="roadmap-kicker">${historyDayReview?'REVISIÓN DEL DÍA':partial?'CIERRE PARCIAL':'REVISIÓN DE SESIÓN'}</span><h2>${esc(title)}</h2><p class="muted">${historyDayReview ? `${answered} preguntas únicas · filtro ${esc(reviewFilterLabel())}` : `${answered} respondidas${partial ? ` de ${planned} planificadas` : ''}`} · ${correct} correctas · ${accuracy}% de acierto</p></div>
+        <div class="review-summary-score"><strong>${correct}/${answered || 0}</strong><small>correctas / revisadas</small></div>
       </section>
       <section class="panel review-center-panel">
-        <div class="review-filter-bar" aria-label="Filtros de revisión">
+        ${historyDayReview ? '' : `<div class="review-filter-bar" aria-label="Filtros de revisión">
           ${REVIEW_FILTERS.map(([key,label]) => `<button class="review-filter-chip ${reviewContext.filter===key || (!reviewContext.filter && key==='all')?'active':''}" data-review-filter="${key}" type="button">${esc(label)} <strong>${filterCounts[key]}</strong></button>`).join('')}
-        </div>
-        <div class="review-sort-bar"><span><strong>${esc(reviewFilterLabel())}</strong> · ${visible.length} pregunta${visible.length===1?'':'s'}</span><div><button class="btn small ${reviewContext.sort!=='topic'?'primary':'ghost'}" data-review-sort="session" type="button">Orden de sesión</button><button class="btn small ${reviewContext.sort==='topic'?'primary':'ghost'}" data-review-sort="topic" type="button">Tema</button></div></div>
+        </div>`}
+        <div class="review-sort-bar"><span><strong>${esc(reviewFilterLabel())}</strong> · ${visible.length} pregunta${visible.length===1?'':'s'}</span><div><button class="btn small ${reviewContext.sort!=='topic'?'primary':'ghost'}" data-review-sort="session" type="button">${historyDayReview?'Orden del día':'Orden de sesión'}</button><button class="btn small ${reviewContext.sort==='topic'?'primary':'ghost'}" data-review-sort="topic" type="button">Tema</button></div></div>
         <div class="review-question-list">${visible.length ? visible.map(reviewQuestionRow).join('') : '<div class="empty">No hay preguntas con este filtro.</div>'}</div>
       </section>
       <div class="footer-actions"><button class="btn primary" data-review-summary-exit type="button">${historyReview?'Volver al historial':'Volver al inicio'}</button></div>
@@ -7035,6 +7037,8 @@
     if (!q) return renderReviewSummary();
     const historyReview = String(reviewContext?.type || '').startsWith('history_');
     const historySessionReview = reviewContext?.type === 'history_session';
+    const historyLegacyAttempt = reviewContext?.type === 'history_legacy_attempt';
+    const historyDayReview = reviewContext?.type === 'history_day_filter';
     const specificQueryReview = reviewContext?.type === 'specific_query';
     const meta = reviewResponseMeta(q);
     const { selected, didNotKnow, timedOut, omitted, correct } = meta;
@@ -7046,7 +7050,7 @@
     const originalIndex = originalIds.indexOf(q.id);
     const filterPosition = `${reviewFilterLabel()} ${reviewContext.index+1} de ${reviewContext.questions.length}`;
     const originalPositionMarkup = originalIndex >= 0 && !specificQueryReview
-      ? `<small class="review-original-position">${esc(filterPosition)} · pregunta ${originalIndex+1} de ${originalIds.length} de la sesión original</small>`
+      ? `<small class="review-original-position">${esc(filterPosition)} · pregunta ${originalIndex+1} de ${originalIds.length}${historyDayReview?' del filtro del día':' de la sesión original'}</small>`
       : '';
     const sessionAttempt = reviewContext?.attemptsByQuestion?.[q.id] || null;
     const sessionScopedReview = Boolean(reviewContext?.sessionId);
@@ -7071,11 +7075,11 @@
         </div>
         ${originalPositionMarkup}
       </div>
-      <section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${questionDoubtButton(q.id, questionDoubt)}${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${questionDoubt?'<span class="tag warn">❓ Duda registrada</span>':''}${meta.note?'<span class="tag">🗒 Nota</span>':''}${meta.marked?'<span class="tag warn">⚑ Marcada</span>':''}${meta.flag?'<span class="tag warn">⚐ Revisar</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p>${questionMediaHtml(q)}<div class="options">${reviewOptions.map(o => {
+      <section class="panel question-card"><div class="q-head"><span class="tag">${reviewContext.index+1}/${reviewContext.questions.length}</span>${historyDayReview?'':questionDoubtButton(q.id, questionDoubt)}${questionSourceTag(q)}<span class="tag">${esc(q.topic)}</span>${taxonomyEntityTag(q)}${auditBadge(q)}${didNotKnow?'<span class="tag warn">🤷 No sé</span>':''}${timedOut?'<span class="tag bad">⏱ Tiempo agotado</span>':''}${omitted?'<span class="tag">Sin respuesta</span>':''}${questionDoubt?'<span class="tag warn">❓ Duda registrada</span>':''}${meta.note?'<span class="tag">🗒 Nota</span>':''}${meta.marked?'<span class="tag warn">⚑ Marcada</span>':''}${meta.flag?'<span class="tag warn">⚐ Revisar</span>':''}</div><div class="q-body"><p class="q-text">${esc(q.question)}</p>${questionMediaHtml(q)}<div class="options">${reviewOptions.map(o => {
         const sourceLetter = o.sourceLetter || o.letter;
         return `<div class="option ${sourceLetter===q.official_answer?'correct':sourceLetter===selected?'wrong':'dimmed'}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></div>`;
       }).join('')}</div></div><div id="feedback"></div></section>
-      <div class="footer-actions review-footer-actions"><button class="btn ghost" data-review-prev ${historyReview && !historySessionReview?'style="visibility:hidden"':(reviewContext.index===0?'disabled':'')}>← Anterior</button>${!specificQueryReview?'<button class="btn ghost" data-review-summary>Volver al resumen</button>':''}<button class="btn danger ghost-danger" data-review-exit>Salir</button><button class="btn primary" data-review-next>${specificQueryReview?(reviewContext.index+1===reviewContext.questions.length?'Volver al selector':'Siguiente →'):(reviewContext.index+1===reviewContext.questions.length?'Volver al resumen':'Siguiente →')}</button></div>
+      <div class="footer-actions review-footer-actions"><button class="btn ghost" data-review-prev ${historyLegacyAttempt?'style="visibility:hidden"':(reviewContext.index===0?'disabled':'')}>← Anterior</button>${!specificQueryReview?'<button class="btn ghost" data-review-summary>Volver al resumen</button>':''}<button class="btn danger ghost-danger" data-review-exit>Salir</button><button class="btn primary" data-review-next>${specificQueryReview?(reviewContext.index+1===reviewContext.questions.length?'Volver al selector':'Siguiente →'):(reviewContext.index+1===reviewContext.questions.length?'Volver al resumen':'Siguiente →')}</button></div>
     </main>`;
     attachTopbar();
     const reviewFeedbackMeta = {
@@ -7084,7 +7088,7 @@
       targetSeconds:Number(latestAttempt?.target_seconds || effectiveTargetSeconds(q)),
       wasUncertainAtAnswer:Boolean(latestAttempt?.was_uncertain),
       questionDoubt,
-      allowPostMark:!omitted,
+      allowPostMark:!omitted && !historyDayReview,
       didNotKnow,
       omitted,
     };
@@ -7094,7 +7098,7 @@
     if (reviewFeedbackNode && !reviewFeedbackNode.innerHTML.trim()) renderReviewFeedbackFallback(q, selected, correct, timedOut, uncertainOptions, reviewFeedbackMeta);
 
     document.querySelectorAll('[data-question-doubt-top]').forEach(btn => {
-      if (btn.dataset.questionDoubt !== q.id) return;
+      if (historyDayReview || btn.dataset.questionDoubt !== q.id) return;
       btn.onclick = async () => {
         const active = !questionHasDoubt(reviewContext.scratch || {}, q.id);
         reviewContext.scratch = setQuestionDoubt(reviewContext.scratch || {}, q.id, active);
@@ -7142,7 +7146,7 @@
       reviewContext.index = value - 1;
       renderReviewQuestion();
     };
-    if (!historyReview || historySessionReview) document.querySelectorAll('[data-review-prev]').forEach(btn => btn.onclick = goReviewPrev);
+    if (!historyLegacyAttempt) document.querySelectorAll('[data-review-prev]').forEach(btn => btn.onclick = goReviewPrev);
     document.querySelectorAll('[data-review-next]').forEach(btn => btn.onclick = goReviewNext);
     document.querySelectorAll('[data-review-last]').forEach(btn => btn.onclick = () => { reviewContext.index = reviewContext.questions.length - 1; renderReviewQuestion(); });
     document.querySelectorAll('[data-review-exit]').forEach(btn => btn.onclick = exitReview);
@@ -7928,6 +7932,108 @@
     renderReviewSummary();
   }
 
+  const HISTORY_DAY_REVIEW_FILTERS = [
+    ['all','Todas'],
+    ['incorrect','Erradas'],
+    ['doubt','Duda ?'],
+    ['dont_know','No sé'],
+    ['slow','Lentas'],
+    ['review_flag','Revisar'],
+  ];
+
+  function historyDayReviewFilterLabel(filter = 'all') {
+    return HISTORY_DAY_REVIEW_FILTERS.find(([key]) => key === filter)?.[1] || 'Todas';
+  }
+
+  function historyDayAttemptIsSlow(attempt, q) {
+    if (!attempt || !q || !attempt.is_correct || attempt.was_uncertain || attempt.timed_out) return false;
+    const target = Number(attempt.target_seconds || effectiveTargetSeconds(q));
+    return target > 0 && Number(attempt.response_time_ms || 0) > target * 1000;
+  }
+
+  function historyDayAttemptMatches(attempt, q, filter = 'all') {
+    if (!attempt || !q) return false;
+    if (filter === 'incorrect') return !attempt.is_correct;
+    if (filter === 'doubt') return Boolean(attempt.was_uncertain);
+    if (filter === 'dont_know') return String(attempt.uncertainty_note || '').includes('NO_SE_EXPLICITO');
+    if (filter === 'slow') return historyDayAttemptIsSlow(attempt, q);
+    if (filter === 'review_flag') return Boolean(reviewFlagFor(q.id));
+    return true;
+  }
+
+  function historyDayReviewEntries(dayAttempts = [], qById = new Map(), filter = 'all') {
+    const grouped = new Map();
+    for (const attempt of dayAttempts) {
+      const q = qById.get(attempt.question_id);
+      if (!q) continue;
+      if (!grouped.has(q.id)) grouped.set(q.id, []);
+      grouped.get(q.id).push(attempt);
+    }
+    const entries = [];
+    for (const [questionId, rows] of grouped.entries()) {
+      const q = qById.get(questionId);
+      const eligible = filter === 'review_flag'
+        ? (reviewFlagFor(questionId) ? rows : [])
+        : rows.filter(attempt => historyDayAttemptMatches(attempt, q, filter));
+      if (!eligible.length) continue;
+      const attempt = eligible.slice().sort((a,b) => new Date(b.answered_at) - new Date(a.answered_at))[0];
+      entries.push({ q, attempt, dayAttemptCount:rows.length });
+    }
+    return entries.sort((a,b) => new Date(a.attempt.answered_at) - new Date(b.attempt.answered_at));
+  }
+
+  function historyDayReviewCounts(dayAttempts = [], qById = new Map()) {
+    return Object.fromEntries(HISTORY_DAY_REVIEW_FILTERS.map(([key]) => [key, historyDayReviewEntries(dayAttempts, qById, key).length]));
+  }
+
+  function historyDayScratch(entries = []) {
+    const scratch = {};
+    for (const { q, attempt } of entries) {
+      const uncertainOptions = Array.isArray(attempt?.uncertain_options) ? attempt.uncertain_options : [];
+      if (!uncertainOptions.length) continue;
+      scratch[q.id] = Object.fromEntries(uncertainOptions.map(letter => [letter, 'tentative']));
+    }
+    return scratch;
+  }
+
+  function openHistoryDayReview(dateIso, filter = 'all') {
+    const qById = new Map(questions.map(q => [q.id, q]));
+    const dayAttempts = attempts
+      .filter(attempt => isoDateLocal(attempt.answered_at) === dateIso)
+      .sort((a,b) => new Date(a.answered_at) - new Date(b.answered_at));
+    const entries = historyDayReviewEntries(dayAttempts, qById, filter);
+    if (!entries.length) return renderHistory(dateIso);
+    const responses = {};
+    const attemptsByQuestion = {};
+    for (const { q, attempt } of entries) {
+      responses[q.id] = responseFromAttempt(attempt);
+      attemptsByQuestion[q.id] = attempt;
+    }
+    const selectedQuestions = entries.map(entry => entry.q);
+    const label = historyDayReviewFilterLabel(filter);
+    reviewContext = {
+      type:'history_day_filter',
+      dayFilter:filter,
+      dayFilterLabel:label,
+      questions:selectedQuestions,
+      allQuestions:selectedQuestions,
+      originalQuestionIds:selectedQuestions.map(q => q.id),
+      sessionTitle:`Revisión del día · ${label}`,
+      index:0,
+      filter:'all',
+      sort:'session',
+      responses,
+      scratch:historyDayScratch(entries),
+      marked:{},
+      optionOrders:{},
+      shuffleOptions:false,
+      attemptsByQuestion,
+      returnDate:dateIso,
+      readOnlyHistoryDay:true,
+    };
+    renderReviewSummary();
+  }
+
   async function renderHistory(selectedDate = isoDateLocal()) {
     clearTimer();
     const dateIso = /^\d{4}-\d{2}-\d{2}$/.test(String(selectedDate)) ? String(selectedDate) : isoDateLocal();
@@ -7941,6 +8047,7 @@
     const morning = dayAttempts.filter(a => halfDayKey(a) === 'morning');
     const afternoon = dayAttempts.filter(a => halfDayKey(a) === 'afternoon');
     const daySummary = summarizeAttemptList(dayAttempts);
+    const dayReviewCounts = historyDayReviewCounts(dayAttempts, qById);
     const today = isoDateLocal();
     const recentDates = Array.from({length:14}, (_,i) => shiftLocalDate(today, -i));
 
@@ -7960,6 +8067,14 @@
         <div class="kpi"><div class="value">${pct(daySummary.correct,daySummary.total)}</div><div class="label">Acierto</div></div>
         <div class="kpi"><div class="value">${daySummary.avgMs?`${(daySummary.avgMs/1000).toFixed(1)} s`:'—'}</div><div class="label">Tiempo medio</div></div>
         <div class="kpi"><div class="value">${daySummary.uncertain}</div><div class="label">Con duda</div></div>
+      </section>
+
+      <section class="panel history-day-review-panel">
+        <div class="section-head"><div><h2>Revisión del día</h2><p class="muted">Repasa respuestas ya registradas sin crear una nueva sesión, nuevos intentos ni modificar tu programación.</p></div><span class="tag">${dayReviewCounts.all} únicas</span></div>
+        <div class="history-day-review-actions" aria-label="Filtros para revisar las preguntas del día">
+          ${HISTORY_DAY_REVIEW_FILTERS.map(([key,label]) => `<button class="btn small ghost history-day-review-chip" data-history-day-review="${key}" type="button" ${dayReviewCounts[key] ? '' : 'disabled'}>${esc(label)} <strong>${dayReviewCounts[key]}</strong></button>`).join('')}
+        </div>
+        <p class="muted history-day-review-note">Una pregunta aparece una sola vez dentro de cada filtro. Si tuvo varios intentos, se muestra el intento más reciente que cumple ese criterio.</p>
       </section>
 
       <section class="history-half-grid">
@@ -8000,6 +8115,7 @@
     document.getElementById('history-next-day').onclick = () => renderHistory(shiftLocalDate(dateIso,1));
     document.getElementById('history-date').onchange = ev => renderHistory(ev.target.value);
     document.querySelectorAll('[data-history-date]').forEach(btn => btn.onclick = () => renderHistory(btn.dataset.historyDate));
+    document.querySelectorAll('[data-history-day-review]').forEach(btn => btn.onclick = () => openHistoryDayReview(dateIso, btn.dataset.historyDayReview));
     document.querySelectorAll('[data-history-session]').forEach(btn => btn.onclick = () => openHistorySession(btn.dataset.historySession,dateIso));
     document.querySelectorAll('[data-history-attempt]').forEach(btn => btn.onclick = () => openHistoryAttempt(btn.dataset.historyAttempt,dateIso));
     const loadMore = document.getElementById('history-load-more');

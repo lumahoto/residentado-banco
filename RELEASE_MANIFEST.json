@@ -1,42 +1,41 @@
 {
-  "release_id": "REL-20260828-V1.5.7-REALISTIC-TWO-PART-EXAM",
-  "version": "1.5.7",
+  "release_id": "REL-20260828-V1.5.8-DASHBOARD-HISTORY-DAY-REVIEW",
+  "version": "1.5.8",
   "date": "2026-08-28",
   "base": {
-    "version": "1.5.5",
-    "archive": "260826_2021_residentado-banco-main_v155.zip",
-    "note": "v1.5.6 was prepared but not applied; v1.5.7 incorporates its approved frontend changes directly over the v1.5.5 baseline."
+    "version": "1.5.7",
+    "archive": "260828_0156_residentado-banco-main_v157.zip",
+    "note": "v1.5.8 is a focused frontend patch over the deployed v1.5.7 baseline."
   },
   "status": "READY_FOR_GITHUB_DESKTOP_PATCH_NO_NEW_SUPABASE_MIGRATION",
-  "release_type": "NAMED_SOURCES_QR_COLLAPSIBLE_AND_REALISTIC_TWO_PART_EXAM",
+  "release_type": "DASHBOARD_PRIORITY_ORDER_AND_READ_ONLY_HISTORY_DAY_REVIEW",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
     "taxonomy_change": false,
     "memory_algorithm_change": false,
     "scheduler_change": false,
-    "simulators_changed": true,
+    "simulators_changed": false,
     "practice_ui_change": true,
-    "quick_reference_change": true,
+    "quick_reference_change": false,
     "review_flag_semantics_change": false,
-    "runtime_sync_change": false
+    "runtime_sync_change": false,
+    "dashboard_order_change": true,
+    "history_day_review_change": true
   },
   "changes": {
-    "NAMED_SOURCES_157": "Carries forward the approved v1.5.6 named-source parser and safe http/https rendering over the real v1.5.5 baseline.",
-    "QUICK_REFERENCE_COLLAPSIBLE_157": "Carries forward the full Quick Reference collapsible block, with nested Fuentes y trazabilidad.",
-    "OFFICIAL_2026_TWO_PART_157": "Adds explicit realistic 2026 mode: 200 questions, Part A 100/120 min, 60-minute intermission, Part B 100/120 min.",
-    "PART_ISOLATION_157": "Part B is hidden and unreachable until Part A is closed; after the intermission Part A cannot be edited.",
-    "INDEPENDENT_CLOCKS_157": "Part B starts with a fresh 120-minute clock; unused Part A time does not transfer.",
-    "TIMEOUT_TRANSITION_157": "Part A timeout transitions to the intermission; Part B timeout submits the exam.",
-    "HISTORICAL_INTEGRITY_157": "Historical catalog now requires exact 1..100 numbering, or 1..90 for 2020, without duplicates or gaps.",
-    "HISTORICAL_AB_157": "Historical A+B uses isolated A/intermission/B blocks; 100-question parts use 120 minutes and the 2020 90-question exception is proportionally timed at 108 minutes per part.",
-    "OVERVIEW_TIMER_157": "Review-before-submit continues consuming the active part clock.",
-    "RESPONSIVE_157": "Footer actions wrap safely, including a 320–360 px fallback.",
-    "SEMANTICS_PRESERVED_157": "No changes to scheduler, memory, Supabase, taxonomy, dataset, notes/flags, PT409/recovery or protected session-core/session-storage files."
+    "DASHBOARD_NEXT_TASK_FIRST_158": "Moves Next task / Continue session immediately below HOY and before academic/adaptive priority-reading alerts; technical blocking banners remain above.",
+    "HISTORY_DAY_REVIEW_158": "Adds filtered review of unique questions already answered on the selected date: Todas, Erradas, Duda ?, No sé, Lentas and Revisar.",
+    "READ_ONLY_REVIEW_158": "History day review is an ephemeral reviewContext only; opening/navigating it creates no practice_session, attempt, memory update, outbox/recovery operation or automatic note/flag.",
+    "LATEST_QUALIFYING_ATTEMPT_158": "Each question appears once per filter and displays the latest attempt from that date that qualifies for the selected filter; a wrong-then-correct question remains available in Erradas.",
+    "SLOW_SEMANTICS_158": "Lentas reuses the existing speed rule: correct, not uncertain, not timed out, and response_time_ms above the stored/effective target.",
+    "DOUBT_READ_ONLY_158": "The day-review view suppresses interactive ? controls so reviewing cannot mutate was_uncertain/question_memory_state; existing doubt is shown as read-only evidence.",
+    "EXPLICIT_ACTIONS_PRESERVED_158": "Existing explicit Añadir nota and Revisar pregunta actions remain available inside review; they are never triggered by navigation.",
+    "SEMANTICS_PRESERVED_158": "No changes to scheduler, memory algorithm, Supabase schema, dataset, taxonomy, PT409/recovery or protected session files."
   },
   "supabase_migration": {
     "required": false,
-    "note": "No migration. v1.5.7 is frontend-only."
+    "note": "No migration. v1.5.8 is frontend-only and reads existing attempts/flags."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
@@ -72,7 +71,8 @@
     "static_command": "python3 QA/qa_static.py",
     "browser_command": "python3 QA/qa_browser.py",
     "session_core_unit_command": "node QA/test_session_core.js",
-    "simulator_regression": "OFFICIAL_2026_TWO_PART_AND_HISTORICAL_AB_BROWSER_SMOKE",
-    "manual_smoke": "RECOMMENDED_BEFORE_FULL_SIMULATION"
+    "history_day_review_regression": "FILTER_COUNTS_DEDUPE_READ_ONLY_NAVIGATION_NO_ATTEMPT_SESSION_MEMORY_WRITE",
+    "responsive_regression": "DASHBOARD_AND_HISTORY_DAY_REVIEW_320_TO_1440",
+    "manual_smoke": "RECOMMENDED_AFTER_DEPLOY"
   }
 }

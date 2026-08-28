@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.5.7: QRV2 plegable + referencias nominadas + regresión de simulacros. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.5.8: Dashboard, revisión del día read-only, QRV2 y regresión de simulacros. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -15,6 +15,26 @@ for filename in SCRIPTS:
     html += '<script>' + (ROOT/filename).read_text(encoding='utf-8').replace('</script>', '<\\/script>') + '</script>'
 html += '<script>window.__TTS_CATALOG__=' + json.dumps(CATALOG, ensure_ascii=False) + ';window.fetch=async input=>{if(String(input).includes("tts_catalog.json"))return {ok:true,status:200,json:async()=>window.__TTS_CATALOG__};throw new Error("offline smoke");};'
 html += 'if(window.PILOT_QUESTIONS){window.PILOT_QUESTIONS.forEach((q,i)=>Object.assign(q,{rentability_topic_id:' + json.dumps(FIRST['topicId']) + ',rentability_topic_label:' + json.dumps(FIRST['topicLabel'],ensure_ascii=False) + ',rentability_tier:"MUY_ALTA",exam_rentability_score:10+i,canonical_area:"Medicina Interna",canonical_specialty:"Endocrinología y Metabolismo"}));const g=window.PILOT_QUESTIONS[window.PILOT_QUESTIONS.length-1];Object.assign(g,{comparison_title:"Fluoroquinolonas — lesión tendinosa",comparison_framework:"Evento: tendinitis o rotura del Aquiles. Riesgo mayor: edad y corticoides. Conducta: suspender y evaluar rotura.",canonical_entity:"Tendinopatía por fluoroquinolonas",tested_aspect_primary:"Toxicidad, reacción adversa o interacción",pivot_text:"Tendinopatía y rotura de Aquiles",exam_logic:"Quinolona + dolor del talón = pensar en lesión del Aquiles.",abbreviations:"FQ: fluoroquinolonas.",memory_hook:"Gancho QA: quinolona + Aquiles.",reference_notes:"Contenido legacy preservado.",audit_source_urls:"https://example.org/source | [ACOG. Gestational Hypertension and Preeclampsia. Practice Bulletin No. 222. 2020.](https://example.org/source) | https://legacy.example.net/guideline | [<img src=x onerror=window.__XSS_EXECUTED__=true>NICE. NG133.](https://safe.example.org/ng133) | [No permitido](javascript:alert(1))"});window.__EXPECTED_RENT_QUESTION__=g.question;const seeds=[...window.PILOT_QUESTIONS];for(const test of ["A","B"]){for(let n=1;n<=90;n++){const base=seeds[(n-1)%seeds.length];window.PILOT_QUESTIONS.push({...base,id:`QA-2020-${test}-${String(n).padStart(3,"0")}`,year:2020,test,question_number:n,question:`QA histórico ${test}-${n}: ${base.question}`,exam_rentability_score:0.01});}}}</script>'
+html += r'''<script>(()=>{
+  const qs=window.PILOT_QUESTIONS||[];
+  const byId=id=>qs.find(q=>q.id===id);
+  const now=Date.now();
+  const at=min=>new Date(now-min*60000).toISOString();
+  const wrong=q=>['A','B','C','D','E'].find(x=>q && q[`option_${x.toLowerCase()}`] && x!==q.official_answer) || 'A';
+  const base=(id,q,minutes,extra={})=>({id,client_attempt_id:id,user_id:'local-user',question_id:q.id,selected_answer:q.official_answer,is_correct:true,response_time_ms:6000,study_mode:'practice_high',timed_out:false,was_uncertain:false,uncertain_options:[],uncertainty_note:'',target_seconds:20,answered_at:at(minutes),updated_at:at(minutes),...extra});
+  const q0=qs[0],q1=qs[1],q2=qs[2],q3=qs[3],q4=qs[4],qh=byId('QA-2020-A-090');
+  const seeded=[
+    base('seed-wrong-q0',q0,60,{selected_answer:wrong(q0),is_correct:false,response_time_ms:7000}),
+    base('seed-correct-q0',q0,5),
+    base('seed-doubt-q1',q1,50,{was_uncertain:true,response_time_ms:9000}),
+    base('seed-dontknow-q2',q2,40,{selected_answer:null,is_correct:false,was_uncertain:true,uncertainty_note:'NO_SE_EXPLICITO',response_time_ms:5000}),
+    base('seed-slow-q3',q3,30,{response_time_ms:26000,target_seconds:10}),
+    base('seed-normal-q4',q4,20),
+    base('seed-flagged-historical',qh,10),
+  ];
+  localStorage.setItem('residentado_piloto_attempts_v3',JSON.stringify(seeded));
+  localStorage.setItem('residentado_question_review_flags_v1',JSON.stringify([{id:'seed-review-flag',question_id:qh.id,user_id:'local-user',flag_type:'CONTENT',learning_scope:'CONTENT',status:'OPEN',user_note:'Flag QA',created_at:at(9),updated_at:at(9)}]));
+})();</script>'''
 html += '<script>' + (ROOT/'app.js').read_text(encoding='utf-8').replace('</script>', '<\\/script>') + '</script></body></html>'
 
 with sync_playwright() as p:
@@ -28,7 +48,62 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.5.7' in page.locator('body').inner_text()
+    assert 'v1.5.8' in page.locator('body').inner_text()
+
+
+    # v1.5.8 Dashboard: la acción operativa va antes de cualquier alerta académica.
+    assert page.locator('#next-task-btn').count() == 1
+    if page.locator('.priority-reading-alert').count():
+        assert page.evaluate("""() => { const task=document.querySelector('#next-task-btn'); const alert=document.querySelector('.priority-reading-alert'); return Boolean(task && alert && (task.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING)); }""")
+
+    # Revisión del día: conteos deterministas, deduplicación y cero escritura por navegación.
+    page.get_by_role('button', name='🕘 HISTORIAL Y RITMO').click()
+    page.wait_for_timeout(120)
+    assert page.locator('.history-day-review-panel').count() == 1
+    expected_counts = {'all':'6','incorrect':'2','doubt':'2','dont_know':'1','slow':'1','review_flag':'1'}
+    for key, expected in expected_counts.items():
+        btn = page.locator(f'[data-history-day-review="{key}"]')
+        assert btn.count() == 1
+        assert btn.locator('strong').inner_text() == expected
+    attempts_before = page.evaluate("JSON.parse(localStorage.getItem('residentado_piloto_attempts_v3')||'[]').length")
+    sessions_before = page.evaluate("JSON.parse(localStorage.getItem('residentado_piloto_sessions_v2')||'[]').length")
+    memory_before = page.evaluate("localStorage.getItem('residentado_memory_state_v1')||'[]'")
+    flags_before = page.evaluate("JSON.parse(localStorage.getItem('residentado_question_review_flags_v1')||'[]').length")
+    notes_before = page.evaluate("JSON.parse(localStorage.getItem('residentado_question_learning_notes_v1')||'[]').length")
+    page.locator('[data-history-day-review="incorrect"]').click()
+    page.wait_for_timeout(100)
+    assert 'Revisión del día · Erradas' in page.locator('body').inner_text()
+    assert page.locator('.review-question-row').count() == 2
+    assert page.locator('[data-review-filter]').count() == 0
+    page.locator('.review-question-row').first.click()
+    page.wait_for_timeout(80)
+    assert page.locator('[data-question-doubt-top]').count() == 0
+    assert page.locator('#post-answer-uncertain').count() == 0
+    # Acciones personales explícitas permanecen disponibles, pero no se disparan al navegar.
+    assert page.locator('[data-question-learning-note]').count() == 1
+    assert page.locator('[data-question-review-flag]').count() == 1
+    assert 'del filtro del día' in page.locator('.review-original-position').inner_text()
+    page.locator('[data-review-next]').first.click()
+    page.wait_for_timeout(60)
+    assert page.locator('[data-review-prev]').first.is_enabled()
+    page.locator('[data-review-prev]').first.click()
+    page.wait_for_timeout(60)
+    page.locator('[data-review-summary]').first.click()
+    page.wait_for_timeout(60)
+    page.locator('[data-review-summary-exit]').click()
+    page.wait_for_timeout(80)
+    assert page.locator('.history-day-review-panel').count() == 1
+    assert page.evaluate("JSON.parse(localStorage.getItem('residentado_piloto_attempts_v3')||'[]').length") == attempts_before
+    assert page.evaluate("JSON.parse(localStorage.getItem('residentado_piloto_sessions_v2')||'[]').length") == sessions_before
+    assert page.evaluate("localStorage.getItem('residentado_memory_state_v1')||'[]'") == memory_before
+    assert page.evaluate("JSON.parse(localStorage.getItem('residentado_question_review_flags_v1')||'[]').length") == flags_before
+    assert page.evaluate("JSON.parse(localStorage.getItem('residentado_question_learning_notes_v1')||'[]').length") == notes_before
+    for width, height in [(320,700),(360,800),(390,844),(430,932),(768,1024),(1024,768),(1440,900)]:
+        page.set_viewport_size({'width': width, 'height': height})
+        page.wait_for_timeout(20)
+        assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')
+    page.set_viewport_size({'width': 1440, 'height': 1000})
+    page.get_by_role('button', name='Inicio').click()
 
     page.get_by_role('button', name='📊 MI ESTADO').click()
     page.wait_for_timeout(150)
@@ -283,4 +358,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.5.7 QRV2 + REALISTIC TWO-PART EXAM: OK')
+print('QA navegador v1.5.8 DASHBOARD + HISTORY DAY REVIEW + REGRESSIONS: OK')

@@ -1,3 +1,20 @@
+## v1.5.8 - 2026-08-28
+
+Parche frontend acotado sobre v1.5.7. **No modifica scheduler, memoria, Supabase, taxonomía, dataset ni archivos críticos de sesión.**
+
+- mueve `Siguiente tarea` / `Continuar sesión` inmediatamente debajo de `HOY`, antes de alertas académicas/adaptativas;
+- mantiene avisos técnicos bloqueantes antes del plan;
+- añade `Revisión del día` en Historial y ritmo para la fecha seleccionada;
+- filtros: Todas, Erradas, Duda ?, No sé, Lentas y Revisar;
+- deduplica por pregunta y selecciona el intento más reciente del día que cumple el filtro;
+- conserva una pregunta en `Erradas` aunque luego haya sido respondida correctamente ese mismo día;
+- `Lentas` reutiliza exactamente el criterio de velocidad existente;
+- la revisión del día usa `reviewContext` efímero y no crea sesiones, attempts, memoria, outbox/recovery ni notas/flags automáticos;
+- desactiva la edición retroactiva del marcador `?` dentro de esta vista read-only;
+- conserva `Añadir nota` y `Revisar pregunta` como acciones explícitas;
+- corrige la navegación `Anterior` para listas históricas filtradas sin alterar la revisión legacy de un solo intento;
+- añade QA responsive 320–1440 px y regresiones de cero escritura.
+
 ## v1.5.7 - 2026-08-28
 
 Parche frontend preexamen construido sobre el baseline real v1.5.5; supersede la build v1.5.6 preparada pero no aplicada. No modifica Supabase, dataset, taxonomía, scheduler, memoria ni archivos críticos de sesión.

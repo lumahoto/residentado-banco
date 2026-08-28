@@ -2193,3 +2193,27 @@ details.explain-block summary { cursor: pointer; }
 @media (max-width: 360px) {
   .footer-actions .btn { flex: 1 1 100%; }
 }
+
+/* ===== v1.5.8: revisión del día read-only en Historial y ritmo ===== */
+.history-day-review-panel { margin-top: 18px; }
+.history-day-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+.history-day-review-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.history-day-review-chip strong { font-variant-numeric: tabular-nums; }
+.history-day-review-note { margin: 12px 0 0; line-height: 1.45; }
+
+@media (max-width: 520px) {
+  .history-day-review-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .history-day-review-chip { width: 100%; justify-content: space-between; }
+}
+
+@media (max-width: 340px) {
+  .history-day-review-actions { grid-template-columns: 1fr; }
+}

@@ -32,8 +32,11 @@ manifest = json.loads((ROOT/'RELEASE_MANIFEST.json').read_text(encoding='utf-8')
 w3 = (ROOT/'w3-tools.js').read_text(encoding='utf-8')
 w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
-# Guardrail documental: v1.5.7 no crea archivos versionados auxiliares nuevos.
+# Guardrail documental: v1.5.8 no crea archivos versionados auxiliares nuevos.
 for forbidden in [
+    ROOT/'QA'/'QA_RELEASE_V1_5_8.md',
+    ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_5_8.md',
+    ROOT/'docs'/'DECISION_LOG_V1_5_8.md',
     ROOT/'QA'/'QA_RELEASE_V1_5_7.md',
     ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_5_7.md',
     ROOT/'docs'/'DECISION_LOG_V1_5_7.md',
@@ -53,9 +56,9 @@ for forbidden in [
     require(not forbidden.exists(), f'Proliferación documental no permitida: {forbidden.relative_to(ROOT)}')
 
 # Release/version consistency.
-require("version: '1.5.7'" in version, 'version.js no declara 1.5.6')
-require("cacheName: 'residentado-v1-5-7'" in version, 'version.js no declara cache v1.5.7')
-require(manifest.get('version') == '1.5.7', 'RELEASE_MANIFEST no coincide con v1.5.7')
+require("version: '1.5.8'" in version, 'version.js no declara 1.5.8')
+require("cacheName: 'residentado-v1-5-8'" in version, 'version.js no declara cache v1.5.8')
+require(manifest.get('version') == '1.5.8', 'RELEASE_MANIFEST no coincide con v1.5.8')
 require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
@@ -121,7 +124,6 @@ require("selectionOrder === 'RENTABILITY'" in app and "presentationOrder === 'QU
 require("rentabilityTierRank(b) - rentabilityTierRank(a)" in app and "bScore > aScore ? 1 : -1" in app and "localeSort(a?.id, b?.id)" in app, 'Ranking canónico no tiene tier + score + desempate estable')
 require('questionPriority(' not in app[app.find('function orderSelectionPool'):app.find('function filterPool')], 'Selección por rentabilidad contaminada con prioridad personal')
 require("if (mode === 'exam') {\n        const selected = (config.randomize ? shuffle(pool) : pool).slice(0, config.count);" in app, 'Simulacro no conserva randomize legacy v1.5.2')
-require(manifest.get('scope', {}).get('simulators_changed') is True, 'Manifest no declara el microfix del cronómetro de simulacro')
 require('examQuestionEnteredAt = 0;' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview de simulacro sigue atribuyendo tiempo de revisión a una pregunta')
 require('startExamTimer();' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview de simulacro sigue pausando el cronómetro')
 require('id="timer" class="value"' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview no actualiza visualmente el tiempo restante')
@@ -155,7 +157,6 @@ require('.feedback-next-actions' in styles and 'justify-content: flex-end' in st
 require('const referent = comparisonTitle || entity || topic' in app, 'QRV2 no prioriza comparison_title/Entidad como referente explícito')
 require('💊 Fármacos y antibióticos' not in app, 'QRV2 conserva encabezado farmacológico genérico que oculta el referente')
 require('rel="noopener noreferrer"' in app, 'Fuentes QRV2 no protegen enlaces externos')
-require(manifest.get('scope', {}).get('quick_reference_change') is True, 'Manifest no marca cambio QRV2')
 require(manifest.get('scope', {}).get('review_flag_semantics_change') is False, 'v1.5.7 no debe declarar cambio semántico flag/nota')
 
 # v1.5.7 simulacro realista 2026: dos partes independientes y B bloqueada.
@@ -181,7 +182,43 @@ require("currentExam.state.breakTaken = true" in app[app.find('async function co
 require('Intermedio oficial: 60 minutos' in app, 'La UI no muestra la duración oficial del intermedio')
 require('Finalizar Parte A' in app and 'Iniciar Parte B' in app, 'Faltan acciones explícitas de transición A→B')
 require('flex-wrap: wrap' in styles and '@media (max-width: 360px)' in styles, 'Falta microfix responsive del footer a 320–360 px')
-require(manifest.get('scope', {}).get('simulators_changed') is True, 'Manifest no declara cambios de simulador')
+
+# v1.5.8: Dashboard operativo + Revisión del día read-only.
+render_dashboard = app[app.find('  function renderDashboard()'):app.find('\n  function renderPracticeHub', app.find('  function renderDashboard()'))]
+require(render_dashboard.find('${primaryActiveSession') >= 0, 'No se localizó Siguiente tarea/Continuar sesión en Dashboard')
+require(render_dashboard.find("priorityReadingAlertMarkup(readingAlert, 'dashboard-reading')") >= 0, 'No se localizó alerta prioritaria en Dashboard')
+require(render_dashboard.find('${primaryActiveSession') < render_dashboard.find("priorityReadingAlertMarkup(readingAlert, 'dashboard-reading')"), 'Dashboard no coloca Siguiente tarea inmediatamente antes de la alerta académica')
+for token in [
+    'HISTORY_DAY_REVIEW_FILTERS',
+    "['all','Todas']",
+    "['incorrect','Erradas']",
+    "['doubt','Duda ?']",
+    "['dont_know','No sé']",
+    "['slow','Lentas']",
+    "['review_flag','Revisar']",
+    "type:'history_day_filter'",
+    'data-history-day-review',
+    'historyDayReviewEntries',
+    'historyDayAttemptIsSlow',
+    'readOnlyHistoryDay:true',
+]:
+    require(token in app, f'Falta contrato v1.5.8 de Revisión del día: {token}')
+require("!attempt.is_correct || attempt.was_uncertain || attempt.timed_out" in app and "response_time_ms || 0) > target * 1000" in app, 'Lentas no reutiliza el criterio existente de respuesta correcta/no dudosa por encima del objetivo')
+open_day_start = app.find('  function openHistoryDayReview(')
+open_day_end = app.find('\n  async function renderHistory', open_day_start)
+require(open_day_start >= 0 and open_day_end > open_day_start, 'No se pudo aislar openHistoryDayReview')
+if open_day_start >= 0 and open_day_end > open_day_start:
+    day_body = app[open_day_start:open_day_end]
+    for forbidden in ['ensureHistorySessionAttempts(', 'recordAttempt(', 'recordAttemptsBatch(', 'createPersistentSession(', 'finalizeSessionRow(', "from('practice_sessions')", "from('attempts')", 'applyAttemptsToMemory(', 'scheduleCurrentSessionSave(', 'persistExamState(']:
+        require(forbidden not in day_body, f'Revisión del día puede escribir/crear progreso: {forbidden}')
+require("historyDayReview?'':questionDoubtButton(q.id, questionDoubt)" in app, 'Revisión del día todavía expone ? editable en cabecera')
+require('allowPostMark:!omitted && !historyDayReview' in app, 'Revisión del día todavía permite mutar duda post-respuesta')
+require('if (historyDayReview || btn.dataset.questionDoubt !== q.id) return;' in app, 'Falta guardia defensiva contra escritura de duda en revisión del día')
+require("if (!historyLegacyAttempt) document.querySelectorAll('[data-review-prev]')" in app, 'La navegación Anterior de revisión histórica filtrada sigue bloqueada')
+require(manifest.get('scope', {}).get('dashboard_order_change') is True, 'Manifest no declara cambio de orden del Dashboard')
+require(manifest.get('scope', {}).get('history_day_review_change') is True, 'Manifest no declara Revisión del día')
+require(manifest.get('scope', {}).get('runtime_sync_change') is False, 'Revisión del día no debe declarar cambios de sincronización')
+require(manifest.get('scope', {}).get('simulators_changed') is False, 'v1.5.8 no debe declarar cambios de simulador')
 
 # Taxonomía V3: identidad estable y compatibilidad de aliases.
 require('TOPIC_ID:${encodeURIComponent(stableId)}' in app, 'El selector no serializa rentability_topic_id estable')
@@ -298,11 +335,11 @@ require('function reviewEligible(q, now = new Date())' in app, 'Falta elegibilid
 require('return recall < retention;' in app, 'La cola de repaso no respeta targetRetention vigente')
 require('const due = valid.filter(q => reviewEligible(q, now));' in app, 'El plan diario no usa la misma elegibilidad dinámica')
 require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'Manifest marca cambio de memoria por error')
-require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.5.7 no debe marcar cambio de scheduler')
-require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.7 no debe requerir nueva migración')
+require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.5.8 no debe marcar cambio de scheduler')
+require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.8 no debe requerir nueva migración')
 
 if errors:
-    print('QA v1.5.7 NAMED SOURCES + QR COLLAPSIBLE: FAIL')
+    print('QA v1.5.8 DASHBOARD + HISTORY DAY REVIEW: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.5.7 NAMED SOURCES + QR COLLAPSIBLE: OK')
+print('QA v1.5.8 DASHBOARD + HISTORY DAY REVIEW: OK')
