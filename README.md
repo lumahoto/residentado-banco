@@ -1,14 +1,14 @@
-# Residentado v1.5.7 — Simulacro realista 2026 + QRV2
+# Residentado v1.5.8 — Dashboard + Revisión del día
 
-WebApp estática del banco de Residentado Médico Perú. v1.5.7 parte del **baseline real v1.5.5** e incorpora directamente los cambios de referencias/QRV2 preparados en v1.5.6, que no llegó a aplicarse, junto con la corrección integral del simulacro realista 2026. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
+WebApp estática del banco de Residentado Médico Perú. v1.5.8 es un parche frontend acotado sobre **v1.5.7**: prioriza `Siguiente tarea/Continuar sesión` inmediatamente después de `HOY` y añade una `Revisión del día` filtrable dentro de Historial y ritmo, sin crear sesiones ni intentos por revisar. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
 
 ## Estado
 
-- Frontend: `v1.5.7` / caché `residentado-v1-5-7`.
+- Frontend: `v1.5.8` / caché `residentado-v1-5-8`.
 - Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- **No hay migración nueva en v1.5.7.**
+- **No hay migración nueva en v1.5.8.**
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
 - Scheduler de rescate/retención v1.5.2 y guardrails PT409/recovery: preservados.
 
@@ -34,6 +34,16 @@ Los defaults siguen siendo Aleatorio/Aleatorio para conservar el comportamiento 
 La explicación muestra contexto universal y una referencia en dos capas: **Núcleo rápido** y **Detalle útil**. El bloque completo **Referencia rápida** está plegado por defecto y se expande al tocar su cabecera; dentro, **Fuentes y trazabilidad** conserva su propio plegado secundario. El renderer preserva el referente específico (`comparison_title`/Entidad), Tema, Aborda, Fase, Dato pivote, perfil y siglas/epónimos. `reference_notes` se conserva en Supabase/datos para trazabilidad pero **no se renderiza en la experiencia de estudio**.
 
 `audit_source_urls` acepta retrocompatiblemente URLs desnudas y el formato preferido `[Cita compacta](https://...)`, incluso mezclados en una misma celda. Las referencias nominadas muestran la cita compacta; las legacy mantienen fallback por hostname. Solo se aceptan `http/https`, se escapan etiqueta/URL y se deduplica por URL normalizada prefiriendo la etiqueta nominada. No hay backfill ni cambio de schema.
+
+
+## Dashboard e Historial v1.5.8
+
+- En Inicio, el orden operativo es `HOY → Siguiente tarea/Continuar sesión → alerta académica prioritaria → Checklist`. Los avisos técnicos bloqueantes siguen apareciendo antes del plan.
+- `Historial y ritmo` incorpora `Revisión del día` para la fecha seleccionada, con filtros: Todas, Erradas, Duda ?, No sé, Lentas y Revisar.
+- La vista deduplica por `question_id` y usa el intento más reciente del día que cumple el criterio elegido.
+- `Lentas` reutiliza la regla de velocidad ya existente; no introduce umbrales nuevos.
+- La revisión del día es read-only respecto de progreso: no crea `practice_sessions`, attempts, memoria, outbox/recovery ni notas/flags automáticamente.
+- El control `?` queda informativo dentro de esta vista para evitar mutar retroactivamente el intento. `Añadir nota` y `Revisar pregunta` siguen siendo acciones explícitas disponibles.
 
 ## Simulacros v1.5.7
 
