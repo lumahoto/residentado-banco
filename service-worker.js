@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.5.8: orden de Dashboard + revisión del día read-only; sin cambios de datos, scheduler ni archivos críticos de sesión.
+// v1.5.9: cuadernillo + hoja de respuestas para todo simulacro y scratch reversible; sin cambios de datos, scheduler ni archivos críticos de sesión.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-8';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-9';
 const ASSETS = [
   './',
   './index.html',

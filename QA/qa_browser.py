@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.5.8: Dashboard, revisión del día read-only, QRV2 y regresión de simulacros. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.5.9: cuadernillo universal, scratch reversible, Dashboard, revisión del día read-only y QRV2. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -48,10 +48,10 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.5.8' in page.locator('body').inner_text()
+    assert 'v1.5.9' in page.locator('body').inner_text()
 
 
-    # v1.5.8 Dashboard: la acción operativa va antes de cualquier alerta académica.
+    # Dashboard heredado de v1.5.8: la acción operativa va antes de cualquier alerta académica.
     assert page.locator('#next-task-btn').count() == 1
     if page.locator('.priority-reading-alert').count():
         assert page.evaluate("""() => { const task=document.querySelector('#next-task-btn'); const alert=document.querySelector('.priority-reading-alert'); return Boolean(task && alert && (task.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_FOLLOWING)); }""")
@@ -237,16 +237,45 @@ with sync_playwright() as p:
     page.locator('#builder-form').evaluate('(form) => form.requestSubmit()')
     page.wait_for_timeout(180)
     assert 'Simulacro de 2 preguntas' in page.locator('body').inner_text()
+    assert 'Modo simulacro · cuadernillo' in page.locator('body').inner_text()
+    assert page.locator('.historical-layout').count() == 1
+    assert page.locator('.answer-sheet').count() == 1
+    assert page.locator('.paper-question').count() == 1
     assert 'Respuesta correcta:' not in page.locator('body').inner_text()
-    page.locator('.option[data-letter]').first.click()
-    page.locator('[data-question-doubt-top]').click()
-    page.locator('[data-exam-mark]').first.click()
-    page.locator('[data-exam-next]').first.click()
+
+    # v1.5.9: dos candidatas tentativas simultáneas sin convertir la pregunta en duda.
+    page.locator('[data-candidate-index="0"]').nth(0).click()
+    page.locator('[data-candidate-index="0"]').nth(1).click()
+    assert page.locator('.paper-option-wrap.scratch-candidate').count() == 2
+    assert 'uncertain' not in (page.locator('[data-answer-row="0"]').get_attribute('class') or '')
+
+    # Tachado reversible por × y también recuperable al pulsar la alternativa tachada.
+    discard = page.locator('[data-discard-index="0"]').nth(2)
+    discard.click()
+    assert page.locator('.paper-option-wrap').nth(2).evaluate("el => el.classList.contains('scratch-crossed')")
+    discard.click()
+    assert page.locator('.paper-option-wrap').nth(2).evaluate("el => el.classList.contains('scratch-neutral')")
+    discard.click()
+    page.locator('[data-candidate-index="0"]').nth(2).click()
+    assert page.locator('.paper-option-wrap').nth(2).evaluate("el => el.classList.contains('scratch-neutral')")
+
+    # La hoja es la respuesta definitiva; duda y flag siguen siendo acciones independientes.
+    page.locator('[data-answer-index="0"]').first.click()
+    page.locator('[data-question-doubt-top]').first.click()
+    page.locator('[data-paper-flag-index="0"]').click()
+    page.wait_for_timeout(80)
+    assert 'uncertain' in (page.locator('[data-answer-row="0"]').get_attribute('class') or '')
+    page.locator('#historical-finish').click()
+    page.wait_for_timeout(120)
+    assert 'Revisión de bloque 1' in page.locator('body').inner_text()
+    page.locator('#submit-exam').click()
     page.wait_for_timeout(150)
     assert 'Bloque 1 completado' in page.locator('body').inner_text()
     page.locator('#continue-block').click()
-    page.locator('.option[data-letter]').first.click()
-    page.locator('[data-exam-next]').first.click()
+    page.wait_for_timeout(120)
+    assert page.locator('.paper-question').count() == 2
+    page.locator('[data-answer-index="1"]').first.click()
+    page.locator('#historical-finish').click()
     page.wait_for_timeout(150)
     assert 'Resumen del simulacro' in page.locator('body').inner_text()
     assert '2' in page.locator('.kpi').first.inner_text()
@@ -301,9 +330,16 @@ with sync_playwright() as p:
         page.wait_for_timeout(25)
         assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth + 1')
     page.set_viewport_size({'width': 1440, 'height': 1000})
-    page.locator('[data-scratch-index="0"]').first.click()
+    page.locator('[data-candidate-index="0"]').first.click()
+    hist_discard = page.locator('[data-discard-index="0"]').nth(1)
+    hist_discard.click()
+    assert page.locator('.paper-option-wrap').nth(1).evaluate("el => el.classList.contains('scratch-crossed')")
+    hist_discard.click()
+    assert page.locator('.paper-option-wrap').nth(1).evaluate("el => el.classList.contains('scratch-neutral')")
     page.locator('[data-question-doubt-top]').first.click()
     page.locator('[data-paper-flag-index="0"]').click()
+    page.wait_for_timeout(80)
+    assert 'uncertain' in (page.locator('[data-answer-row="0"]').get_attribute('class') or '')
     page.locator('[data-answer-index="0"]').first.click()
     page.locator('#historical-finish').click()
     page.wait_for_timeout(100)
@@ -358,4 +394,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.5.8 DASHBOARD + HISTORY DAY REVIEW + REGRESSIONS: OK')
+print('QA navegador v1.5.9 UNIVERSAL EXAM PAPER + SCRATCH + REGRESSIONS: OK')

@@ -4917,6 +4917,17 @@
     return Boolean(exam?.config?.twoPartExam && Number(exam?.config?.breakAfter || 0) > 0);
   }
 
+  function flexibleExamBreakPending(exam = currentExam) {
+    const split = Number(exam?.config?.breakAfter || 0);
+    return Boolean(
+      exam?.questions?.length
+      && !twoPartExamEnabled(exam)
+      && !exam?.state?.breakTaken
+      && split > 0
+      && split < exam.questions.length
+    );
+  }
+
   function examBreakPending(exam = currentExam) {
     return twoPartExamEnabled(exam)
       && !exam.state.breakTaken
@@ -4954,42 +4965,135 @@
     return Math.max(60, Number(exam?.config?.partSeconds || exam?.config?.totalSeconds || 0));
   }
 
-  function historicalDisplayNumber(q, index) {
-    const combined = currentExam?.config?.historicalKind === 'combined';
-    return combined ? `${String(q.test).toUpperCase()}-${q.question_number}` : String(q.question_number);
+  function paperExamIsHistorical(exam = currentExam) {
+    return Boolean(exam?.config?.studyMode === 'historical_exam' || exam?.config?.historicalYear);
   }
 
+  function historicalDisplayNumber(q, index) {
+    if (paperExamIsHistorical()) {
+      const combined = currentExam?.config?.historicalKind === 'combined';
+      return combined ? `${String(q.test).toUpperCase()}-${q.question_number}` : String(q.question_number);
+    }
+    const bounds = activeExamBounds();
+    return String(index - bounds.start + 1);
+  }
+
+  function paperOptionList(q) {
+    return displayOptionList(
+      q,
+      currentExam?.state?.optionOrders || {},
+      currentExam?.config?.shuffleOptions !== false
+    );
+  }
+
+  function paperScratchQuestionId(kind, qId) {
+    return `__paper_${kind}__${qId}`;
+  }
 
   function scratchOptionState(qId, letter) {
-    return currentExam?.state?.scratch?.[qId]?.[letter] || 'neutral';
+    const scratch = currentExam?.state?.scratch || {};
+    if (scratch[paperScratchQuestionId('crossed', qId)]?.[letter] === 'tentative') return 'crossed';
+    if (scratch[paperScratchQuestionId('candidate', qId)]?.[letter] === 'tentative') return 'candidate';
+    // Compatibilidad defensiva con estados efímeros de builds previas antes de normalizar.
+    const legacy = scratch[qId]?.[letter];
+    return legacy === 'crossed' || legacy === 'candidate' ? legacy : 'neutral';
   }
 
   function scratchStateLabel(state) {
+    if (state === 'candidate') return 'Preferida tentativa';
     if (state === 'crossed') return 'Tachada';
     return 'Sin marca';
   }
 
-  function cycleScratchState(qId, letter) {
+  function setScratchOptionState(qId, letter, next) {
     currentExam.state.scratch ||= {};
-    currentExam.state.scratch[qId] ||= {};
-    const current = currentExam.state.scratch[qId][letter] || 'neutral';
-    const next = current === 'crossed' ? 'neutral' : 'crossed';
-    if (next === 'neutral') delete currentExam.state.scratch[qId][letter];
-    else currentExam.state.scratch[qId][letter] = next;
-    if (!Object.keys(currentExam.state.scratch[qId]).length) delete currentExam.state.scratch[qId];
+    const candidateKey = paperScratchQuestionId('candidate', qId);
+    const crossedKey = paperScratchQuestionId('crossed', qId);
+
+    for (const key of [candidateKey, crossedKey]) {
+      if (currentExam.state.scratch[key]) {
+        delete currentExam.state.scratch[key][letter];
+        if (!Object.keys(currentExam.state.scratch[key]).length) delete currentExam.state.scratch[key];
+      }
+    }
+    // Elimina cualquier estado no canónico efímero que pudiera quedar en la fila real de la pregunta.
+    if (['candidate','crossed'].includes(currentExam.state.scratch[qId]?.[letter])) {
+      delete currentExam.state.scratch[qId][letter];
+      if (!Object.keys(currentExam.state.scratch[qId]).length) delete currentExam.state.scratch[qId];
+    }
+
+    if (next === 'candidate' || next === 'crossed') {
+      const key = next === 'candidate' ? candidateKey : crossedKey;
+      currentExam.state.scratch[key] ||= {};
+      // SessionCore protege y persiste `tentative`; el questionId sintético evita acoplarlo a ? Duda.
+      currentExam.state.scratch[key][letter] = 'tentative';
+    }
     return next;
   }
 
+  function toggleScratchCandidate(qId, letter) {
+    const current = scratchOptionState(qId, letter);
+    // Si estaba tachada, pulsar de nuevo la alternativa la recupera directamente.
+    const next = current === 'crossed' ? 'neutral' : (current === 'candidate' ? 'neutral' : 'candidate');
+    return setScratchOptionState(qId, letter, next);
+  }
+
+  function toggleScratchCrossed(qId, letter) {
+    const current = scratchOptionState(qId, letter);
+    const next = current === 'crossed' ? 'neutral' : 'crossed';
+    return setScratchOptionState(qId, letter, next);
+  }
+
   function paperOptionHtml(q, index, o) {
-    const state = scratchOptionState(q.id, o.letter);
-    const icon = state === 'crossed' ? '×' : '';
-    return `<button class="paper-option scratch-${state}"
-      data-scratch-index="${index}" data-scratch-letter="${o.letter}"
-      aria-label="${esc(historicalDisplayNumber(q,index))} ${o.letter}: ${scratchStateLabel(state)}">
-      <span class="paper-option-letter">${o.letter}.</span>
-      <span class="paper-option-text">${esc(o.text)}</span>
-      <span class="paper-option-mark" aria-hidden="true">${icon}</span>
-    </button>`;
+    const sourceLetter = o.sourceLetter || o.letter;
+    const state = scratchOptionState(q.id, sourceLetter);
+    const icon = state === 'candidate' ? '◉' : '';
+    const candidateTitle = state === 'candidate'
+      ? 'Quitar preferencia tentativa'
+      : (state === 'crossed' ? 'Recuperar alternativa tachada' : 'Marcar como preferida tentativa');
+    const discardTitle = state === 'crossed' ? 'Quitar tachado' : 'Tachar alternativa';
+    return `<div class="paper-option-wrap scratch-${state}" data-paper-option-index="${index}" data-paper-option-source="${sourceLetter}">
+      <button class="paper-option" type="button"
+        data-candidate-index="${index}" data-scratch-source="${sourceLetter}" data-display-letter="${o.letter}"
+        aria-pressed="${state === 'candidate' ? 'true' : 'false'}"
+        aria-label="${esc(historicalDisplayNumber(q,index))} ${o.letter}: ${scratchStateLabel(state)}"
+        title="${candidateTitle}">
+        <span class="paper-option-letter">${o.letter}.</span>
+        <span class="paper-option-text">${esc(o.text)}</span>
+        <span class="paper-option-mark" aria-hidden="true">${icon}</span>
+      </button>
+      <button class="paper-option-discard ${state === 'crossed' ? 'active' : ''}" type="button"
+        data-discard-index="${index}" data-scratch-source="${sourceLetter}" data-display-letter="${o.letter}"
+        aria-pressed="${state === 'crossed' ? 'true' : 'false'}" title="${discardTitle}" aria-label="${discardTitle}: ${o.letter}">×</button>
+    </div>`;
+  }
+
+  function refreshPaperOptionScratch(index, sourceLetter) {
+    const q = currentExam?.questions?.[index];
+    if (!q) return;
+    const state = scratchOptionState(q.id, sourceLetter);
+    const wrap = document.querySelector(`[data-paper-option-index="${index}"][data-paper-option-source="${sourceLetter}"]`);
+    if (!wrap) return;
+    wrap.classList.remove('scratch-neutral', 'scratch-candidate', 'scratch-crossed');
+    wrap.classList.add(`scratch-${state}`);
+    const choice = wrap.querySelector('[data-candidate-index]');
+    const discard = wrap.querySelector('[data-discard-index]');
+    const mark = wrap.querySelector('.paper-option-mark');
+    const displayLetter = choice?.dataset.displayLetter || sourceLetter;
+    if (mark) mark.textContent = state === 'candidate' ? '◉' : '';
+    if (choice) {
+      choice.setAttribute('aria-pressed', state === 'candidate' ? 'true' : 'false');
+      choice.setAttribute('aria-label', `${historicalDisplayNumber(q,index)} ${displayLetter}: ${scratchStateLabel(state)}`);
+      choice.title = state === 'candidate'
+        ? 'Quitar preferencia tentativa'
+        : (state === 'crossed' ? 'Recuperar alternativa tachada' : 'Marcar como preferida tentativa');
+    }
+    if (discard) {
+      discard.classList.toggle('active', state === 'crossed');
+      discard.setAttribute('aria-pressed', state === 'crossed' ? 'true' : 'false');
+      discard.title = state === 'crossed' ? 'Quitar tachado' : 'Tachar alternativa';
+      discard.setAttribute('aria-label', `${discard.title}: ${displayLetter}`);
+    }
   }
 
   function historicalPaperQuestionsHtml() {
@@ -4999,14 +5103,14 @@
       return `<article class="paper-question" id="paper-question-${index}">
         <div class="paper-question-head">
           <span class="paper-qnum">${esc(historicalDisplayNumber(q,index))}</span>
-          <span class="muted">${esc(q.year)} · Prueba ${esc(test)}</span>
+          ${paperExamIsHistorical() ? `<span class="muted">${esc(q.year)} · Prueba ${esc(test)}</span>` : ''}
           ${questionDoubtButton(q.id, questionHasDoubt(currentExam.state.scratch, q.id), 'paper-doubt')}
           <button class="paper-flag ${flagged?'active':''}" data-paper-flag-index="${index}">${flagged?'⚑ Revisar':'⚐ Marcar para revisar'}</button>
         </div>
         <p class="paper-question-text">${esc(q.question)}</p>
         ${questionMediaHtml(q, 'question-media paper-question-media')}
         <div class="paper-options">
-          ${optionList(q).map(o => paperOptionHtml(q, index, o)).join('')}
+          ${paperOptionList(q).map(o => paperOptionHtml(q, index, o)).join('')}
         </div>
       </article>`;
     }).join('');
@@ -5014,9 +5118,10 @@
 
   function historicalAnswerSheetHtml() {
     let lastTest = null;
+    const historical = paperExamIsHistorical();
     return activeExamEntries().map(({ q, index }) => {
       const test = String(q.test || '').toUpperCase();
-      const heading = test !== lastTest
+      const heading = historical && test !== lastTest
         ? `<div class="answer-sheet-section">Prueba ${esc(test)}</div>`
         : '';
       lastTest = test;
@@ -5026,8 +5131,11 @@
       return `${heading}<div class="answer-row ${selected?'answered':''} ${uncertain?'uncertain':''} ${flagged?'flagged':''}" data-answer-row="${index}">
         <button class="answer-number" data-scroll-question="${index}" title="Ir a la pregunta">${flagged?'⚑ ':''}${esc(historicalDisplayNumber(q,index))}${uncertain?' ?':''}</button>
         <div class="answer-bubbles">
-          ${optionList(q).map(o => `<button class="answer-bubble ${selected===o.letter?'selected':''}"
-            data-answer-index="${index}" data-answer-letter="${o.letter}" aria-label="${esc(historicalDisplayNumber(q,index))} ${o.letter}">${o.letter}</button>`).join('')}
+          ${paperOptionList(q).map(o => {
+            const sourceLetter = o.sourceLetter || o.letter;
+            return `<button class="answer-bubble ${selected===sourceLetter?'selected':''}"
+              data-answer-index="${index}" data-answer-letter="${sourceLetter}" aria-label="${esc(historicalDisplayNumber(q,index))} ${o.letter}">${o.letter}</button>`;
+          }).join('')}
         </div>
       </div>`;
     }).join('');
@@ -5071,13 +5179,18 @@
     const answered = historicalAnsweredCount();
     const activeEntries = activeExamEntries();
     const partLabel = examPartLabel();
+    const historical = paperExamIsHistorical();
+    const modeLabel = historical ? 'Modo histórico realista' : 'Modo simulacro · cuadernillo';
+    const descriptor = historical
+      ? `${currentExam.config.historicalYear} · ${currentExam.config.historicalTest}`
+      : (currentExam.config.official2026 ? 'Formato realista 2026' : `${activeEntries.length} preguntas en el bloque activo`);
 
     app.innerHTML = `<main class="historical-shell">
-      ${topbar(currentExam.config.title || 'Simulacro histórico', false)}
+      ${topbar(currentExam.config.title || 'Simulacro', false)}
       <section class="historical-toolbar panel">
         <div>
-          <span class="tag">Modo histórico realista</span>
-          <strong>${esc(currentExam.config.historicalYear)} · ${esc(currentExam.config.historicalTest)}</strong>
+          <span class="tag">${esc(modeLabel)}</span>
+          <strong>${esc(descriptor)}</strong>
           ${partLabel ? `<span class="tag ok">${esc(partLabel)}</span>` : ''}
           <span><strong id="historical-answered-count">${answered}</strong>/${activeEntries.length} marcadas en este bloque</span>
         </div>
@@ -5085,7 +5198,7 @@
           <button id="jump-answer-sheet" class="btn small">📋 Hoja de respuestas</button>
           <button id="historical-session-exit" class="btn small ghost">Cerrar o continuar después</button>
           <div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div>
-          <button id="historical-finish" class="btn danger small">${twoPartExamEnabled() && !currentExam.state.breakTaken ? 'Finalizar Parte A' : 'Entregar'}</button>
+          <button id="historical-finish" class="btn danger small">${twoPartExamEnabled() && !currentExam.state.breakTaken ? 'Finalizar Parte A' : (flexibleExamBreakPending() ? 'Finalizar bloque 1' : 'Entregar')}</button>
         </div>
       </section>
 
@@ -5094,8 +5207,8 @@
           <div class="paper-cover">
             <span class="roadmap-kicker">CUADERNILLO</span>
             <h1>${esc(currentExam.config.title)}</h1>
-            <p>Lee el cuadernillo y marca tu respuesta definitiva únicamente en la hoja lateral. En el cuadernillo puedes tachar distractores; usa el botón <strong>?</strong> de la cabecera para marcar la pregunta completa como dudosa.</p>
-            <div class="scratch-legend"><span><b>?</b> duda de la pregunta</span><span><b>×</b> alternativa descartada</span><span>La hoja de respuestas es la que cuenta.</span></div>
+            <p>Lee el cuadernillo y marca tu respuesta definitiva únicamente en la hoja lateral. En cada alternativa puedes marcar una preferencia tentativa o tacharla como distractor; usa <strong>?</strong> solo si la pregunta completa te genera duda.</p>
+            <div class="scratch-legend"><span><b>◉</b> preferida tentativa · puedes marcar 1 o 2</span><span><b>×</b> tachar / volver a pulsar para recuperar</span><span><b>?</b> duda de la pregunta</span><span>La hoja de respuestas es la que cuenta.</span></div>
           </div>
           ${historicalPaperQuestionsHtml()}
         </div>
@@ -5112,18 +5225,25 @@
 
     attachTopbar();
 
-    document.querySelectorAll('[data-scratch-index]').forEach(btn => {
+    document.querySelectorAll('[data-candidate-index]').forEach(btn => {
       btn.onclick = async () => {
-        const index = Number(btn.dataset.scratchIndex);
+        const index = Number(btn.dataset.candidateIndex);
         const q = currentExam.questions[index];
-        const letter = btn.dataset.scratchLetter;
-        const next = cycleScratchState(q.id, letter);
-        btn.classList.remove('scratch-neutral', 'scratch-tentative', 'scratch-crossed');
-        btn.classList.add(`scratch-${next}`);
-        const mark = btn.querySelector('.paper-option-mark');
-        if (mark) mark.textContent = next === 'crossed' ? '×' : '';
-        btn.setAttribute('aria-label', `${historicalDisplayNumber(q,index)} ${letter}: ${scratchStateLabel(next)}`);
-        refreshHistoricalAnswerSheet();
+        const sourceLetter = btn.dataset.scratchSource;
+        toggleScratchCandidate(q.id, sourceLetter);
+        refreshPaperOptionScratch(index, sourceLetter);
+        await persistExamState();
+      };
+    });
+
+    document.querySelectorAll('[data-discard-index]').forEach(btn => {
+      btn.onclick = async (ev) => {
+        ev.stopPropagation();
+        const index = Number(btn.dataset.discardIndex);
+        const q = currentExam.questions[index];
+        const sourceLetter = btn.dataset.scratchSource;
+        toggleScratchCrossed(q.id, sourceLetter);
+        refreshPaperOptionScratch(index, sourceLetter);
         await persistExamState();
       };
     });
@@ -6352,7 +6472,7 @@
   async function launchExam(selected, config) {
     clearTimer();
     if (!selected?.length) return renderMessage('Sin preguntas', 'No se encontraron preguntas para iniciar este simulacro.');
-    config = { shuffleOptions:true, ...config, datasetRevision:config?.datasetRevision || datasetManifest?.dataset_revision || null };
+    config = { shuffleOptions:true, ...config, examLayout:'paper', datasetRevision:config?.datasetRevision || datasetManifest?.dataset_revision || null };
     currentStudy = null;
     const state = normalizeSessionState({
       schemaVersion:1,
@@ -6361,10 +6481,7 @@
       marked:{},
       scratch:{},
       timeSpent:{},
-      optionOrders:createOptionOrders(
-        selected,
-        config.shuffleOptions !== false && config.examLayout !== 'paper'
-      ),
+      optionOrders:createOptionOrders(selected, config.shuffleOptions !== false),
       remainingSeconds:config.partSeconds || config.totalSeconds,
       totalRemaining:null,
       breakTaken:false,
@@ -6420,10 +6537,10 @@
 
     currentStudy = null;
     const state = normalizeSessionState(row.state || {});
-    const config = row.config || {};
+    const config = { ...(row.config || {}), examLayout:'paper' };
     state.optionOrders = Object.keys(state.optionOrders || {}).length
       ? state.optionOrders
-      : createOptionOrders(selected, config.shuffleOptions !== false && config.examLayout !== 'paper');
+      : createOptionOrders(selected, config.shuffleOptions !== false);
     state.currentIndex = Math.min(Math.max(0, state.currentIndex || 0), Math.max(0, selected.length - 1));
     state.remainingSeconds ??= config.partSeconds || config.totalSeconds || 0;
     currentExam = { row, config, questions:selected, state };
@@ -6705,9 +6822,11 @@
     const marked = questionsInScope.filter(q => currentExam.state.marked[q.id]).length;
     const uncertain = questionsInScope.filter(q => questionHasDoubt(currentExam.state.scratch, q.id)).length;
     const isPartA = twoPartExamEnabled() && !currentExam.state.breakTaken;
-    const title = isPartA ? 'Revisión de Parte A' : 'Revisión antes de entregar';
-    const submitLabel = isPartA ? 'Finalizar Parte A' : 'Entregar y corregir';
-    app.innerHTML = `<main class="shell">${topbar(title, false)}<section class="panel"><h2>${isPartA?'Resumen de la Parte A':'Resumen del simulacro'}</h2><div class="kpis"><div class="kpi"><div class="value">${answered}</div><div class="label">Respondidas</div></div><div class="kpi"><div class="value">${questionsInScope.length-answered}</div><div class="label">Sin responder</div></div><div class="kpi"><div class="value">${marked}</div><div class="label">Marcadas para revisar</div></div><div class="kpi"><div class="value">${uncertain}</div><div class="label">Dudosas (?)</div></div><div class="kpi"><div id="timer" class="value">${formatTime(currentExam.state.remainingSeconds)}</div><div class="label">Tiempo restante</div></div></div><div class="question-grid overview-grid">${entries.map(({q:x,index:i}) => examGridButton(x,i)).join('')}</div><div class="footer-actions"><button id="back-exam" class="btn ghost">Volver al examen</button><button id="cancel-overview" class="btn ghost">Cerrar o continuar después</button><button id="submit-exam" class="btn danger">${submitLabel}</button></div></section></main>`;
+    const isFlexibleBlock1 = flexibleExamBreakPending();
+    const title = isPartA ? 'Revisión de Parte A' : (isFlexibleBlock1 ? 'Revisión de bloque 1' : 'Revisión antes de entregar');
+    const submitLabel = isPartA ? 'Finalizar Parte A' : (isFlexibleBlock1 ? 'Finalizar bloque 1' : 'Entregar y corregir');
+    const summaryHeading = isPartA ? 'Resumen de la Parte A' : (isFlexibleBlock1 ? 'Resumen del bloque 1' : 'Resumen del simulacro');
+    app.innerHTML = `<main class="shell">${topbar(title, false)}<section class="panel"><h2>${summaryHeading}</h2><div class="kpis"><div class="kpi"><div class="value">${answered}</div><div class="label">Respondidas</div></div><div class="kpi"><div class="value">${questionsInScope.length-answered}</div><div class="label">Sin responder</div></div><div class="kpi"><div class="value">${marked}</div><div class="label">Marcadas para revisar</div></div><div class="kpi"><div class="value">${uncertain}</div><div class="label">Dudosas (?)</div></div><div class="kpi"><div id="timer" class="value">${formatTime(currentExam.state.remainingSeconds)}</div><div class="label">Tiempo restante</div></div></div><div class="question-grid overview-grid">${entries.map(({q:x,index:i}) => examGridButton(x,i)).join('')}</div><div class="footer-actions"><button id="back-exam" class="btn ghost">Volver al examen</button><button id="cancel-overview" class="btn ghost">Cerrar o continuar después</button><button id="submit-exam" class="btn danger">${submitLabel}</button></div></section></main>`;
     attachTopbar();
     startExamTimer();
     const { start, end } = activeExamBounds();
@@ -6727,10 +6846,18 @@
       const missing = questionsInScope.length - answered;
       const warning = isPartA
         ? `¿Finalizar la Parte A?\n\nRespondidas: ${answered}\nSin responder: ${missing}\nDudosas (?): ${uncertain}\nMarcadas para revisar: ${marked}\n\nDespués de cerrar A no podrás volver a modificarla. Pasarás al intermedio antes de la Parte B.`
-        : `¿Entregar el simulacro?\n\nRespondidas en este bloque: ${answered}\nSin responder: ${missing}\nDudosas (?): ${uncertain}\nMarcadas para revisar: ${marked}\n\nDespués se mostrarán las respuestas y explicaciones.`;
+        : (isFlexibleBlock1
+          ? `¿Finalizar el bloque 1?\n\nRespondidas: ${answered}\nSin responder: ${missing}\nDudosas (?): ${uncertain}\nMarcadas para revisar: ${marked}\n\nPasarás al descanso configurado antes de continuar.`
+          : `¿Entregar el simulacro?\n\nRespondidas en este bloque: ${answered}\nSin responder: ${missing}\nDudosas (?): ${uncertain}\nMarcadas para revisar: ${marked}\n\nDespués se mostrarán las respuestas y explicaciones.`);
       if (!confirm(warning)) return;
       if (isPartA) await beginExamBreak(false);
-      else await finishExam(false);
+      else if (isFlexibleBlock1) {
+        clearTimer();
+        currentExam.state.breakTaken = true;
+        currentExam.state.currentIndex = Number(currentExam.config.breakAfter || 0);
+        await persistExamState();
+        renderBreakScreen(false);
+      } else await finishExam(false);
     };
   }
 
@@ -7166,21 +7293,32 @@
       .map(([letter]) => letter);
   }
 
+  function questionDoubtScratchKey(qId) {
+    return `__question_doubt__${qId}`;
+  }
+
   function questionHasDoubt(scratch, qId) {
     const row = scratch?.[qId] || {};
-    return row.__questionDoubt === true || Object.entries(row).some(([key,state]) => key !== '__questionDoubt' && state === 'tentative');
+    const persisted = scratch?.[questionDoubtScratchKey(qId)]?.A === 'tentative';
+    return persisted || row.__questionDoubt === true || Object.entries(row).some(([key,state]) => key !== '__questionDoubt' && state === 'tentative');
   }
 
   function setQuestionDoubt(scratch, qId, active) {
     scratch ||= {};
-    scratch[qId] ||= {};
-    if (active) scratch[qId].__questionDoubt = true;
-    else {
-      delete scratch[qId].__questionDoubt;
-      // Al desmarcar una duda nueva también se limpian marcas `tentative` legacy.
-      for (const [key,state] of Object.entries(scratch[qId])) if (state === 'tentative') delete scratch[qId][key];
+    const persistedKey = questionDoubtScratchKey(qId);
+    if (active) {
+      // SessionCore normaliza scratch y conserva únicamente el token `tentative`.
+      // Se usa un questionId sintético para persistir la duda sin confundirla con una alternativa.
+      scratch[persistedKey] = { A: 'tentative' };
+    } else {
+      delete scratch[persistedKey];
+      const row = scratch[qId] || {};
+      delete row.__questionDoubt;
+      // Al desmarcar una duda nueva también se limpian marcas `tentative` legacy del questionId real.
+      for (const [key,state] of Object.entries(row)) if (state === 'tentative') delete row[key];
+      if (!Object.keys(row).length) delete scratch[qId];
+      else scratch[qId] = row;
     }
-    if (!Object.keys(scratch[qId]).length) delete scratch[qId];
     return scratch;
   }
 
