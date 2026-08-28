@@ -1,25 +1,25 @@
-# Residentado v1.5.5 — Flujo de revisión alineado
+# Residentado v1.5.7 — Simulacro realista 2026 + QRV2
 
-WebApp estática del banco de Residentado Médico Perú. v1.5.5 parte del **baseline real v1.5.4** y conserva todo su comportamiento; este release modifica únicamente el orden visual del feedback y la alineación de acciones. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
+WebApp estática del banco de Residentado Médico Perú. v1.5.7 parte del **baseline real v1.5.5** e incorpora directamente los cambios de referencias/QRV2 preparados en v1.5.6, que no llegó a aplicarse, junto con la corrección integral del simulacro realista 2026. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
 
 ## Estado
 
-- Frontend: `v1.5.5` / caché `residentado-v1-5-5`.
+- Frontend: `v1.5.7` / caché `residentado-v1-5-7`.
 - Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- **No hay migración nueva en v1.5.5.**
+- **No hay migración nueva en v1.5.7.**
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
 - Scheduler de rescate/retención v1.5.2 y guardrails PT409/recovery: preservados.
 
 
-## Flujo de revisión v1.5.5
+## Flujo de revisión heredado de v1.5.5
 
 Después de responder, la secuencia pedagógica es: **Por qué la clave es correcta → Por qué no las otras → Trampa frecuente → Perla de examen → Gancho de memoria → Referencia rápida → Añadir nota → Revisar pregunta → Marcar duda → Siguiente pregunta**. La Referencia rápida queda inmediatamente después del Gancho de memoria y antes de la Nota.
 
 En escritorio, **Marcar duda** y **Siguiente pregunta** se alinean a la derecha, igual que las demás acciones del bloque. En móvil se conserva el botón de duda a ancho completo para accesibilidad táctil. No cambia ninguna semántica de duda, Nota, flag, navegación, memoria o sesión.
 
-## Práctica personalizada v1.5.4
+## Práctica personalizada heredada de v1.5.4
 
 La selección y la presentación son controles independientes:
 
@@ -31,7 +31,19 @@ Los defaults siguen siendo Aleatorio/Aleatorio para conservar el comportamiento 
 
 ## Referencia rápida QRV2
 
-La explicación muestra contexto universal y una referencia en dos capas: **Núcleo rápido** y **Detalle útil**. El renderer preserva el referente específico (`comparison_title`/Entidad), Tema, Aborda, Fase, Dato pivote, perfil y siglas/epónimos. `reference_notes` se conserva en Supabase/datos para trazabilidad pero **no se renderiza en la experiencia de estudio**; `audit_source_urls` permanece como **Fuentes y trazabilidad**, colapsado. La Referencia rápida queda antes de **Añadir nota**. Si falta contenido estructurado, indica pendiente de migración en vez de inventar contenido clínico.
+La explicación muestra contexto universal y una referencia en dos capas: **Núcleo rápido** y **Detalle útil**. El bloque completo **Referencia rápida** está plegado por defecto y se expande al tocar su cabecera; dentro, **Fuentes y trazabilidad** conserva su propio plegado secundario. El renderer preserva el referente específico (`comparison_title`/Entidad), Tema, Aborda, Fase, Dato pivote, perfil y siglas/epónimos. `reference_notes` se conserva en Supabase/datos para trazabilidad pero **no se renderiza en la experiencia de estudio**.
+
+`audit_source_urls` acepta retrocompatiblemente URLs desnudas y el formato preferido `[Cita compacta](https://...)`, incluso mezclados en una misma celda. Las referencias nominadas muestran la cita compacta; las legacy mantienen fallback por hostname. Solo se aceptan `http/https`, se escapan etiqueta/URL y se deduplica por URL normalizada prefiriendo la etiqueta nominada. No hay backfill ni cambio de schema.
+
+## Simulacros v1.5.7
+
+El hub separa tres usos:
+
+- **Simulacro realista 2026:** 200 preguntas, Parte A 100 preguntas / 120 min, intermedio oficial de 60 min, Parte B 100 preguntas / 120 min. Los relojes son independientes y B no puede abrirse durante A. Al iniciar B, A deja de ser editable.
+- **Simulacros históricos:** A o B por separado y combinaciones A+B. El catálogo solo acepta series completas y exactamente numeradas; 2020 conserva su excepción de 90 preguntas por prueba. Las combinaciones A+B aíslan los dos bloques.
+- **Entrenamiento personalizado:** conserva cantidad, filtros, tiempo y descanso configurables; 80 preguntas sigue siendo un preset de entrenamiento, no una réplica oficial.
+
+La pantalla **Revisión antes de entregar** consume tiempo del bloque activo. Si termina el tiempo de A se pasa al intermedio; si termina el tiempo de B se entrega el examen. El intermedio muestra 60 minutos y permite continuar antes únicamente como atajo voluntario de entrenamiento.
 
 ## Centro de revisión
 

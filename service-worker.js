@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.5.5: reordena el flujo de revisión y alinea acciones sin tocar datos, scheduler ni sesiones.
+// v1.5.7: referencias QRV2 + simulacro realista en dos partes; sin cambios de datos, scheduler ni archivos críticos de sesión.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-5';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-7';
 const ASSETS = [
   './',
   './index.html',

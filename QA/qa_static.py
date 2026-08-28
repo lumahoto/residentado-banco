@@ -32,8 +32,14 @@ manifest = json.loads((ROOT/'RELEASE_MANIFEST.json').read_text(encoding='utf-8')
 w3 = (ROOT/'w3-tools.js').read_text(encoding='utf-8')
 w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
-# Guardrail documental: v1.5.5 no crea archivos versionados auxiliares nuevos.
+# Guardrail documental: v1.5.7 no crea archivos versionados auxiliares nuevos.
 for forbidden in [
+    ROOT/'QA'/'QA_RELEASE_V1_5_7.md',
+    ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_5_7.md',
+    ROOT/'docs'/'DECISION_LOG_V1_5_7.md',
+    ROOT/'QA'/'QA_RELEASE_V1_5_6.md',
+    ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_5_6.md',
+    ROOT/'docs'/'DECISION_LOG_V1_5_6.md',
     ROOT/'QA'/'QA_RELEASE_V1_5_5.md',
     ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_5_5.md',
     ROOT/'docs'/'DECISION_LOG_V1_5_5.md',
@@ -47,9 +53,9 @@ for forbidden in [
     require(not forbidden.exists(), f'Proliferación documental no permitida: {forbidden.relative_to(ROOT)}')
 
 # Release/version consistency.
-require("version: '1.5.5'" in version, 'version.js no declara 1.5.5')
-require("cacheName: 'residentado-v1-5-5'" in version, 'version.js no declara cache v1.5.5')
-require(manifest.get('version') == '1.5.5', 'RELEASE_MANIFEST no coincide con v1.5.5')
+require("version: '1.5.7'" in version, 'version.js no declara 1.5.6')
+require("cacheName: 'residentado-v1-5-7'" in version, 'version.js no declara cache v1.5.7')
+require(manifest.get('version') == '1.5.7', 'RELEASE_MANIFEST no coincide con v1.5.7')
 require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
@@ -86,7 +92,7 @@ require("Recovery attempt identity not loaded; refusing to fabricate a duplicate
 require('detachInheritedAttemptIdentity(currentStudy, q.id)' in app, 'Respuesta nueva en recovery de práctica no separa identidad heredada')
 require('detachInheritedAttemptIdentity(currentExam, q.id)' in app, 'Respuesta nueva en recovery de simulacro no separa identidad heredada')
 
-# v1.5.5: conserva todos los guardrails y cambia solo orden/alineación del feedback.
+# v1.5.7: conserva guardrails v1.5.5 y añade únicamente QRV2/referencias frontend.
 require('function renderReviewSummary()' in app and 'REVIEW_FILTERS' in app, 'Falta Centro de revisión único')
 for token in ["['incorrect','Incorrectas']", "['dont_know','No sé']", "['doubt','? Duda']", "['notes','Notas']", "['marked','Marcadas']", "['review_flag','Revisar']", "['audit','Auditoría']"]:
     require(token in app, f'Falta filtro del Centro de revisión: {token}')
@@ -94,7 +100,7 @@ require('canonical_entity || q.subtopic' in app and 'review-question-row' in app
 require('data-question-doubt-top' in app and 'data-question-doubt-label' in app, 'La duda no tiene controles superior/inferior sincronizados')
 require('data-uncertain-toggle' not in app, 'Se reintrodujo el ? por alternativa')
 require("REEXPOSE_EXISTING_CARD" in app and "ACTIVE_LEARNING_NOTE_OUTCOMES" in app, 'Falta reexposición Anki obligatoria')
-require('ensureLearningNoteForContentReview' not in app, 'v1.5.5 reintrodujo acoplamiento automático flag CONTENT → Nota')
+require('ensureLearningNoteForContentReview' not in app, 'v1.5.7 reintrodujo acoplamiento automático flag CONTENT → Nota')
 require("CONTENT: { label:'Contenido clínico', icon:'🧠', ankiRequired:false }" in app, 'CONTENT no está definido como auditoría independiente')
 require("learningScope === 'CONTENT' && cloudConfigured && !learningNotesAvailable" not in app, 'Flag CONTENT todavía depende de disponibilidad de Notes')
 require('EDITORIAL_TECHNICAL' in app and 'data-set-review-scope' in app, 'Falta separación Contenido vs Editorial/técnico')
@@ -110,21 +116,30 @@ require('update public.attempts' not in mig150.lower() and 'update public.questi
 
 # Práctica personalizada heredada: selección y presentación siguen siendo contratos separados.
 for token in ['id="selection-order"', 'id="presentation-order"', "function orderSelectionPool", "function orderSessionQuestions", "function compareCanonicalRentability"]:
-    require(token in app, f'Falta contrato de práctica personalizada heredada en v1.5.5: {token}')
+    require(token in app, f'Falta contrato de práctica personalizada heredada en v1.5.7: {token}')
 require("selectionOrder === 'RENTABILITY'" in app and "presentationOrder === 'QUEUE'" in app, 'Faltan ramas RENTABILITY/QUEUE')
 require("rentabilityTierRank(b) - rentabilityTierRank(a)" in app and "bScore > aScore ? 1 : -1" in app and "localeSort(a?.id, b?.id)" in app, 'Ranking canónico no tiene tier + score + desempate estable')
 require('questionPriority(' not in app[app.find('function orderSelectionPool'):app.find('function filterPool')], 'Selección por rentabilidad contaminada con prioridad personal')
 require("if (mode === 'exam') {\n        const selected = (config.randomize ? shuffle(pool) : pool).slice(0, config.count);" in app, 'Simulacro no conserva randomize legacy v1.5.2')
-require(manifest.get('scope', {}).get('simulators_changed') is False, 'Manifest marca simuladores cambiados por error')
-require(manifest.get('scope', {}).get('practice_ui_change') is True, 'Manifest no marca cambio de práctica personalizada')
+require(manifest.get('scope', {}).get('simulators_changed') is True, 'Manifest no declara el microfix del cronómetro de simulacro')
+require('examQuestionEnteredAt = 0;' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview de simulacro sigue atribuyendo tiempo de revisión a una pregunta')
+require('startExamTimer();' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview de simulacro sigue pausando el cronómetro')
+require('id="timer" class="value"' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview no actualiza visualmente el tiempo restante')
+require(manifest.get('scope', {}).get('practice_ui_change') is True, 'Manifest no marca cambio frontend QRV2')
 
-# v1.5.5 QRV2: contenido heredado, nueva posición dentro del flujo de feedback.
+# v1.5.7 QRV2: referencias nominadas + bloque completo plegable.
 for token in ['function qrv2Profile', 'function qrv2MigrationStatus', 'Núcleo rápido', 'Detalle útil', 'Fuentes y trazabilidad', 'q.audit_source_urls']:
-    require(token in app, f'Falta componente QRV2 v1.5.5: {token}')
+    require(token in app, f'Falta componente QRV2 v1.5.7: {token}')
 reference_renderer = app[app.find('function referenceQuickHtml'):app.find('function auditEditorialHtml')]
-require('q.reference_notes' not in reference_renderer, 'v1.5.5 volvió a renderizar reference_notes en la experiencia de estudio')
-require('Notas generales' not in reference_renderer, 'v1.5.5 volvió a mostrar Notas generales editoriales')
+require('q.reference_notes' not in reference_renderer, 'v1.5.7 volvió a renderizar reference_notes en la experiencia de estudio')
+require('Notas generales' not in reference_renderer, 'v1.5.7 volvió a mostrar Notas generales editoriales')
 require('Fuentes y trazabilidad' in reference_renderer and '<details class="qrv2-collapsible">' in reference_renderer, 'Fuentes QRV2 no permanecen colapsadas')
+require('<details class="explain-block quick-reference qrv2-reference qrv2-reference-collapsible">' in reference_renderer, 'Referencia rápida completa no es plegable')
+require('qrv2-reference-summary' in reference_renderer and '<details class="explain-block quick-reference qrv2-reference qrv2-reference-collapsible" open' not in reference_renderer, 'Referencia rápida no queda cerrada por defecto')
+source_parser = app[app.find('function auditSourceLinks'):app.find('function referenceQuickHtml')]
+for token in ['markdownPattern', "['http:','https:']", 'sources = new Map()', 'normalizedLabel', 'legacyMatches', 'item.label || fallback']:
+    require(token in source_parser, f'Parser de referencias nominadas incompleto: {token}')
+require("raw.replace(markdownPattern" in source_parser, 'Parser no excluye enlaces Markdown antes del fallback legacy')
 for feedback_name, feedback_end in [('renderReviewFeedbackFallback', 'renderFeedback'), ('renderFeedback', 'function renderQuestion')]:
     start = app.find(f'function {feedback_name}')
     end = app.find(feedback_end, start + 1)
@@ -141,7 +156,32 @@ require('const referent = comparisonTitle || entity || topic' in app, 'QRV2 no p
 require('💊 Fármacos y antibióticos' not in app, 'QRV2 conserva encabezado farmacológico genérico que oculta el referente')
 require('rel="noopener noreferrer"' in app, 'Fuentes QRV2 no protegen enlaces externos')
 require(manifest.get('scope', {}).get('quick_reference_change') is True, 'Manifest no marca cambio QRV2')
-require(manifest.get('scope', {}).get('review_flag_semantics_change') is False, 'v1.5.5 no debe declarar cambio semántico flag/nota')
+require(manifest.get('scope', {}).get('review_flag_semantics_change') is False, 'v1.5.7 no debe declarar cambio semántico flag/nota')
+
+# v1.5.7 simulacro realista 2026: dos partes independientes y B bloqueada.
+for token in [
+    'Simulacro realista 2026',
+    'function historicalSeriesComplete',
+    'function twoPartExamEnabled',
+    'function activeExamBounds',
+    'function examBreakPending',
+    'function beginExamBreak',
+    'function continueAfterExamBreak',
+    'breakDurationSeconds:3600',
+    "base.partSeconds = base.official2026 ? 120 * 60",
+    "base.breakDurationSeconds = base.official2026 ? 60 * 60",
+    "if (twoPartExamEnabled() && !currentExam.state.breakTaken) await beginExamBreak(true)",
+]:
+    require(token in app, f'Falta contrato de simulacro realista v1.5.7: {token}')
+require('list.length !== expected' in app and 'value === index + 1' in app, 'Catálogo histórico no exige numeración exacta y completa')
+require('activeExamEntries().map(({q:x,index:i}) => examGridButton(x,i))' in app, 'Navegación no se restringe al bloque activo')
+require("twoPartExamEnabled() ? i - bounds.start + 1 : i + 1" in app, 'Parte B personalizada no renumera 1–100 dentro del bloque')
+require("currentExam.state.breakTaken = false" in app[app.find('async function beginExamBreak'):app.find('function startBreakTimer')], 'El intermedio no persiste como estado pendiente')
+require("currentExam.state.breakTaken = true" in app[app.find('async function continueAfterExamBreak'):app.find('function renderBreakScreen')], 'La Parte B no se desbloquea explícitamente al terminar el intermedio')
+require('Intermedio oficial: 60 minutos' in app, 'La UI no muestra la duración oficial del intermedio')
+require('Finalizar Parte A' in app and 'Iniciar Parte B' in app, 'Faltan acciones explícitas de transición A→B')
+require('flex-wrap: wrap' in styles and '@media (max-width: 360px)' in styles, 'Falta microfix responsive del footer a 320–360 px')
+require(manifest.get('scope', {}).get('simulators_changed') is True, 'Manifest no declara cambios de simulador')
 
 # Taxonomía V3: identidad estable y compatibilidad de aliases.
 require('TOPIC_ID:${encodeURIComponent(stableId)}' in app, 'El selector no serializa rentability_topic_id estable')
@@ -258,11 +298,11 @@ require('function reviewEligible(q, now = new Date())' in app, 'Falta elegibilid
 require('return recall < retention;' in app, 'La cola de repaso no respeta targetRetention vigente')
 require('const due = valid.filter(q => reviewEligible(q, now));' in app, 'El plan diario no usa la misma elegibilidad dinámica')
 require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'Manifest marca cambio de memoria por error')
-require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.5.5 no debe marcar cambio de scheduler')
-require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.5 no debe requerir nueva migración')
+require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.5.7 no debe marcar cambio de scheduler')
+require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.7 no debe requerir nueva migración')
 
 if errors:
-    print('QA v1.5.5 REVIEW FLOW ALIGNMENT: FAIL')
+    print('QA v1.5.7 NAMED SOURCES + QR COLLAPSIBLE: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.5.5 REVIEW FLOW ALIGNMENT: OK')
+print('QA v1.5.7 NAMED SOURCES + QR COLLAPSIBLE: OK')

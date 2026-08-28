@@ -286,6 +286,7 @@ a { color: var(--brand-2); }
   display: flex;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .progress {
@@ -1552,6 +1553,21 @@ details.explain-block summary { cursor: pointer; }
   background: color-mix(in srgb, var(--brand) 5%, var(--panel));
 }
 .qrv2-reference { padding: 14px; }
+.qrv2-reference-summary {
+  cursor: pointer;
+  list-style: none;
+}
+.qrv2-reference-summary::-webkit-details-marker { display: none; }
+.qrv2-reference-summary::after {
+  content: '▾';
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: .78rem;
+  transition: transform .16s ease;
+}
+.qrv2-reference-collapsible[open] > .qrv2-reference-summary::after { transform: rotate(180deg); }
+.qrv2-reference-body { padding-top: 10px; }
 .qrv2-title-row {
   display: flex;
   align-items: flex-start;
@@ -2169,4 +2185,11 @@ details.explain-block summary { cursor: pointer; }
   .review-question-states { justify-content: flex-start; }
   .review-state { font-size: .72rem; }
   .review-learning-scope { grid-template-columns: 1fr; }
+}
+
+/* v1.5.7: formato de simulacro en dos partes + ajuste responsive mínimo. */
+.official-exam-card { border-color: color-mix(in srgb, var(--brand) 35%, var(--border)); }
+.break-timer { margin: 12px auto; width: fit-content; min-width: 120px; }
+@media (max-width: 360px) {
+  .footer-actions .btn { flex: 1 1 100%; }
 }
