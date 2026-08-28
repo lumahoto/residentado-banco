@@ -1,3 +1,31 @@
+## v1.5.7 - 2026-08-28
+
+Parche frontend preexamen construido sobre el baseline real v1.5.5; supersede la build v1.5.6 preparada pero no aplicada. No modifica Supabase, dataset, taxonomía, scheduler, memoria ni archivos críticos de sesión.
+
+- incorpora las referencias nominadas seguras y la Referencia rápida plegable ya aprobadas para v1.5.6;
+- añade un acceso explícito **Simulacro realista 2026**: 200 preguntas, Parte A 100/120 min, intermedio 60 min, Parte B 100/120 min;
+- usa relojes independientes: el tiempo sobrante de A no se transfiere a B;
+- bloquea y oculta B durante A y bloquea A después de iniciar B;
+- al agotarse A pasa al intermedio; al agotarse B entrega el examen;
+- la revisión previa sigue consumiendo el tiempo del bloque activo;
+- las combinaciones históricas A+B respetan el corte entre partes y el catálogo exige numeración exacta 1..100 (1..90 en 2020);
+- el intermedio oficial muestra cuenta regresiva de 60 min y permite continuar antes solo como atajo voluntario de entrenamiento;
+- corrige el acceso por cuadrícula que podía saltar un descanso configurado;
+- añade wrapping seguro de acciones en pantallas estrechas, incluido 320–360 px;
+- preserva byte por byte `session-core.js` y `session-storage.js`.
+
+## v1.5.6 - 2026-08-27
+
+Parche frontend acotado sobre v1.5.5. No modifica Supabase, dataset, taxonomía, scheduler, memoria ni sesiones/PT409; en simulacros solo corrige el cronómetro de la revisión final.
+
+- `audit_source_urls` acepta referencias nominadas `[Cita compacta](URL)`, URLs legacy y celdas mixtas;
+- deduplica por URL normalizada, prioriza la etiqueta nominada y conserva fallback por hostname;
+- limita enlaces a `http/https` y escapa etiquetas/URLs para evitar HTML arbitrario;
+- convierte el bloque completo **Referencia rápida** en plegable por defecto; **Fuentes y trazabilidad** sigue plegable dentro de él;
+- corrige **Revisión antes de entregar** para que no pause el cronómetro y muestre el tiempo restante en vivo;
+- amplía QA browser con regresión de simulacro personalizado y simulacro histórico realista, incluyendo descanso, marcado/duda, continuar después, reanudación, entrega y revisión;
+- preserva byte por byte `session-core.js` y `session-storage.js` y no crea documentos auxiliares versionados nuevos.
+
 ## v1.5.5 - 2026-08-26
 
 Parche visual mínimo sobre v1.5.4. No modifica Supabase, dataset, taxonomía, scheduler, memoria, PT409/recovery ni semántica de Notas/flags/dudas.

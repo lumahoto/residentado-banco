@@ -1417,14 +1417,36 @@
 
   function auditSourceLinks(value = '') {
     const raw = String(value ?? '');
-    const matches = raw.match(/https?:\/\/[^\s<>"']+/gi) || [];
-    const urls = [...new Set(matches.map(item => item.replace(/[),.;]+$/, '')))];
-    return urls.map((url, index) => {
+    const sources = new Map();
+    const markdownPattern = /\[([^\]\r\n]+)\]\((https?:\/\/[^)\s<>"']+)\)/gi;
+    let match;
+
+    const addSource = (candidateUrl, label = '') => {
       try {
-        const parsed = new URL(url);
-        if (!['http:','https:'].includes(parsed.protocol)) return '';
-        const label = `${parsed.hostname.replace(/^www\./, '')}${urls.length > 1 ? ` · ${index + 1}` : ''}`;
-        return `<li><a href="${esc(parsed.href)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a></li>`;
+        const parsed = new URL(candidateUrl);
+        if (!['http:','https:'].includes(parsed.protocol)) return;
+        const href = parsed.href;
+        const normalizedLabel = String(label || '').trim();
+        const existing = sources.get(href);
+        if (!existing || (!existing.label && normalizedLabel)) sources.set(href, { href, label:normalizedLabel });
+      } catch { /* Ignorar referencias malformadas. */ }
+    };
+
+    while ((match = markdownPattern.exec(raw)) !== null) {
+      addSource(match[2], match[1]);
+    }
+
+    markdownPattern.lastIndex = 0;
+    const legacyText = raw.replace(markdownPattern, full => ' '.repeat(full.length));
+    const legacyMatches = legacyText.match(/https?:\/\/[^\s<>"']+/gi) || [];
+    legacyMatches.forEach(candidate => addSource(candidate.replace(/[),.;]+$/, '')));
+
+    const items = [...sources.values()];
+    return items.map((item, index) => {
+      try {
+        const parsed = new URL(item.href);
+        const fallback = `${parsed.hostname.replace(/^www\./, '')}${items.length > 1 ? ` · ${index + 1}` : ''}`;
+        return `<li><a href="${esc(parsed.href)}" target="_blank" rel="noopener noreferrer">${esc(item.label || fallback)}</a></li>`;
       } catch { return ''; }
     }).filter(Boolean).join('');
   }
@@ -1464,18 +1486,23 @@
       : '';
 
     const hasUseful = Boolean(comparison || pivot || rule || abbreviations || sourceLinks || entity || topic);
+    const statusClass = migration.code === 'QRV2_VERIFIED' ? 'verified' : migration.code === 'QRV2_DRAFT' ? 'draft' : 'legacy';
+    const summary = `<summary class="qrv2-reference-summary"><div class="qrv2-title-row"><div><small class="qrv2-kicker">Referencia rápida · ${esc(profile)}</small><h4>📚 ${esc(hasUseful ? referent : 'Referencia rápida')}</h4></div><span class="qrv2-status ${esc(statusClass)}">${esc(migration.label)}</span></div></summary>`;
+
     if (!hasUseful) {
-      return `<section class="explain-block quick-reference qrv2-reference"><div class="qrv2-title-row"><h4>📚 Referencia rápida</h4><span class="qrv2-status legacy">Pendiente de migración QRV2</span></div><p class="muted">No hay contenido estructurado auditado para mostrar aquí. La WebApp no sintetiza contenido clínico ausente.</p></section>`;
+      return `<details class="explain-block quick-reference qrv2-reference qrv2-reference-collapsible">${summary}<div class="qrv2-reference-body"><p class="muted">No hay contenido estructurado auditado para mostrar aquí. La WebApp no sintetiza contenido clínico ausente.</p></div></details>`;
     }
 
-    return `<section class="explain-block quick-reference qrv2-reference">
-      <div class="qrv2-title-row"><div><small class="qrv2-kicker">Referencia rápida · ${esc(profile)}</small><h4>📚 ${esc(referent)}</h4></div><span class="qrv2-status ${migration.code === 'QRV2_VERIFIED' ? 'verified' : migration.code === 'QRV2_DRAFT' ? 'draft' : 'legacy'}">${esc(migration.label)}</span></div>
-      <div class="qrv2-context">${contextItems.map(([label,value]) => `<span><strong>${esc(label)}:</strong> ${esc(value)}</span>`).join('')}</div>
-      <section class="qrv2-layer qrv2-nucleus"><h5>Núcleo rápido</h5>${nucleusItems.length ? `<ul class="qrv2-list">${nucleusItems.join('')}</ul>` : '<p class="muted">Núcleo estructurado pendiente de migración; se conserva el contenido existente sin inventar datos.</p>'}</section>
-      <section class="qrv2-layer qrv2-detail"><h5>Detalle útil</h5>${detail || '<p class="muted">Detalle estructurado pendiente de migración QRV2.</p>'}</section>
-      ${abbreviations ? `<section class="qrv2-layer qrv2-glossary"><h5>🔤 Siglas, epónimos y términos</h5>${referenceListHtml(abbreviations)}</section>` : ''}
-      ${sourceLinks ? `<details class="qrv2-collapsible"><summary><strong>Fuentes y trazabilidad</strong><span>auditoría</span></summary><div class="qrv2-collapsible-body"><ul class="qrv2-source-list">${sourceLinks}</ul></div></details>` : ''}
-    </section>`;
+    return `<details class="explain-block quick-reference qrv2-reference qrv2-reference-collapsible">
+      ${summary}
+      <div class="qrv2-reference-body">
+        <div class="qrv2-context">${contextItems.map(([label,value]) => `<span><strong>${esc(label)}:</strong> ${esc(value)}</span>`).join('')}</div>
+        <section class="qrv2-layer qrv2-nucleus"><h5>Núcleo rápido</h5>${nucleusItems.length ? `<ul class="qrv2-list">${nucleusItems.join('')}</ul>` : '<p class="muted">Núcleo estructurado pendiente de migración; se conserva el contenido existente sin inventar datos.</p>'}</section>
+        <section class="qrv2-layer qrv2-detail"><h5>Detalle útil</h5>${detail || '<p class="muted">Detalle estructurado pendiente de migración QRV2.</p>'}</section>
+        ${abbreviations ? `<section class="qrv2-layer qrv2-glossary"><h5>🔤 Siglas, epónimos y términos</h5>${referenceListHtml(abbreviations)}</section>` : ''}
+        ${sourceLinks ? `<details class="qrv2-collapsible"><summary><strong>Fuentes y trazabilidad</strong><span>auditoría</span></summary><div class="qrv2-collapsible-body"><ul class="qrv2-source-list">${sourceLinks}</ul></div></details>` : ''}
+      </div>
+    </details>`;
   }
 
   function auditEditorialHtml(q = {}) {
@@ -4747,6 +4774,12 @@
     return Number(year) === 2020 ? 90 : 100;
   }
 
+  function historicalSeriesComplete(list = [], expected = 100) {
+    if (!Array.isArray(list) || list.length !== expected) return false;
+    const numbers = list.map(q => Number(q.question_number)).sort((a,b) => a-b);
+    return numbers.every((value, index) => value === index + 1);
+  }
+
   function historicalExamCatalog() {
     const grouped = new Map();
     for (const q of questions) {
@@ -4770,17 +4803,19 @@
       const expected = expectedHistoricalCount(year);
       const a = grouped.get(`${year}-A`) || [];
       const b = grouped.get(`${year}-B`) || [];
-      if (a.length >= expected) {
-        catalog.push({ year, kind:'single', test:'A', count:expected, questions:a.slice(0,expected), title:`${year} · Prueba A` });
+      const completeA = historicalSeriesComplete(a, expected);
+      const completeB = historicalSeriesComplete(b, expected);
+      if (completeA) {
+        catalog.push({ year, kind:'single', test:'A', count:expected, questions:[...a], title:`${year} · Prueba A` });
       }
-      if (b.length >= expected) {
-        catalog.push({ year, kind:'single', test:'B', count:expected, questions:b.slice(0,expected), title:`${year} · Prueba B` });
+      if (completeB) {
+        catalog.push({ year, kind:'single', test:'B', count:expected, questions:[...b], title:`${year} · Prueba B` });
       }
-      if (a.length >= expected && b.length >= expected) {
+      if (completeA && completeB) {
         catalog.push({
           year, kind:'combined', test:'A+B', count:expected*2,
-          questions:[...a.slice(0,expected), ...b.slice(0,expected)],
-          title:`${year} · Maratón A+B`,
+          questions:[...a, ...b],
+          title:`${year} · Pruebas A+B`,
         });
       }
     }
@@ -4807,23 +4842,29 @@
                   data-historical-test="${item.test}">
                   <strong>${esc(item.title)}</strong>
                   <span>${item.count} preguntas · orden original · hoja de respuestas separada</span>
-                  <small>${item.kind==='combined' ? 'A seguida de B · entrenamiento de resistencia' : 'Reproducción de esa prueba histórica'}</small>
+                  <small>${item.kind==='combined' ? 'A → intermedio → B · cada parte queda aislada' : 'Reproducción de esa prueba histórica'}</small>
                 </button>`).join('')}
             </div>
           </div>`).join('')
       : `<div class="empty"><p>Aún no hay un examen histórico completo cargado.</p><p class="muted">Cuando una prueba tenga todas sus preguntas en la base, aparecerá aquí automáticamente.</p></div>`;
 
     app.innerHTML = `<main class="shell">${topbar('Simulacros', true)}
-      <section class="panel">
+      <section class="panel official-exam-card">
         <div class="builder-head">
-          <div><h2>🗂 Simulacro histórico realista</h2><p class="muted">Cuadernillo completo en orden original y hoja de respuestas independiente. No verás claves ni explicaciones hasta entregar.</p></div>
+          <div><span class="roadmap-kicker">FORMATO ACTUAL</span><h2>🎯 Simulacro realista 2026</h2><p class="muted">200 preguntas en dos partes independientes: 100 preguntas / 120 min → intermedio oficial de 60 min → 100 preguntas / 120 min. La Parte B permanece bloqueada hasta cerrar la Parte A.</p></div>
+        </div>
+        <button id="official-2026-exam" class="btn primary">Configurar simulacro realista 2026</button>
+      </section>
+      <section class="panel" style="margin-top:14px">
+        <div class="builder-head">
+          <div><h2>🗂 Simulacros históricos</h2><p class="muted">Cuadernillo en orden original y hoja de respuestas independiente. Las combinaciones A+B respetan el corte entre partes y bloquean B hasta cerrar A.</p></div>
         </div>
         ${historicalHtml}
       </section>
       <section class="panel" style="margin-top:14px">
-        <h2>🧪 Simulacro personalizado</h2>
-        <p class="muted">La app construye una prueba aleatoria según número de preguntas, filtros, tiempo y descanso.</p>
-        <button id="custom-exam-builder" class="btn primary">Crear simulacro personalizado</button>
+        <h2>🧪 Entrenamiento personalizado</h2>
+        <p class="muted">Construye una prueba flexible según número de preguntas, filtros, tiempo y descanso. No se presenta como réplica oficial salvo que uses el preset realista 2026.</p>
+        <button id="custom-exam-builder" class="btn">Crear entrenamiento personalizado</button>
       </section>
     </main>`;
 
@@ -4836,27 +4877,33 @@
         if (item) launchHistoricalExam(item);
       };
     });
+    document.getElementById('official-2026-exam').onclick = () => renderSessionBuilder('exam', 'official2026');
     document.getElementById('custom-exam-builder').onclick = () => renderSessionBuilder('exam');
   }
 
   function launchHistoricalExam(item) {
-    const secondsPerQuestion = 54; // Preset de entrenamiento: 3 h para 200 preguntas.
-    const totalSeconds = item.count * secondsPerQuestion;
     const firstBlockCount = item.kind === 'combined'
       ? item.questions.filter(q => String(q.test).toUpperCase() === 'A').length
       : 0;
+    const singleSeconds = Math.round(item.count * 72); // 1,2 min/pregunta como ritmo de referencia actual.
+    const partSeconds = item.kind === 'combined' ? Math.round(firstBlockCount * 72) : singleSeconds;
 
     launchExam(item.questions, {
       mode:'exam',
-      title:`Histórico realista · ${item.title}`,
+      title:`Histórico · ${item.title}`,
       count:item.count,
       randomize:false,
       feedback:'end',
       timeMode:'total',
-      totalSeconds,
+      totalSeconds:partSeconds,
+      partSeconds,
       secondsPerQuestion:0,
       breakAfter:firstBlockCount,
       pauseDuringBreak:true,
+      twoPartExam:item.kind === 'combined',
+      official2026:false,
+      breakDurationSeconds:3600,
+      allowEarlyBreak:true,
       studyMode:'historical_exam',
       examLayout:'paper',
       historicalYear:item.year,
@@ -4864,6 +4911,47 @@
       historicalKind:item.kind,
       shuffleOptions:false,
     });
+  }
+
+  function twoPartExamEnabled(exam = currentExam) {
+    return Boolean(exam?.config?.twoPartExam && Number(exam?.config?.breakAfter || 0) > 0);
+  }
+
+  function examBreakPending(exam = currentExam) {
+    return twoPartExamEnabled(exam)
+      && !exam.state.breakTaken
+      && Number(exam.state.currentIndex || 0) >= Number(exam.config.breakAfter || 0);
+  }
+
+  function activeExamBounds(exam = currentExam) {
+    if (!exam?.questions?.length) return { start:0, end:0 };
+    const splitRaw = Number(exam?.config?.breakAfter || 0);
+    if (twoPartExamEnabled(exam)) {
+      const split = Math.min(exam.questions.length, Math.max(1, splitRaw));
+      return exam.state.breakTaken ? { start:split, end:exam.questions.length } : { start:0, end:split };
+    }
+    if (splitRaw > 0 && !exam.state.breakTaken) {
+      const split = Math.min(exam.questions.length, Math.max(1, splitRaw));
+      return { start:0, end:split };
+    }
+    return { start:0, end:exam.questions.length };
+  }
+
+  function activeExamEntries(exam = currentExam) {
+    const { start, end } = activeExamBounds(exam);
+    return exam.questions.slice(start, end).map((q, offset) => ({ q, index:start + offset }));
+  }
+
+  function examPartLabel(exam = currentExam) {
+    if (!twoPartExamEnabled(exam)) return '';
+    if (exam.config.examLayout === 'paper' && exam.config.historicalKind === 'combined') {
+      return exam.state.breakTaken ? 'Prueba B' : 'Prueba A';
+    }
+    return exam.state.breakTaken ? 'Parte B' : 'Parte A';
+  }
+
+  function examPartSeconds(exam = currentExam) {
+    return Math.max(60, Number(exam?.config?.partSeconds || exam?.config?.totalSeconds || 0));
   }
 
   function historicalDisplayNumber(q, index) {
@@ -4905,19 +4993,10 @@
   }
 
   function historicalPaperQuestionsHtml() {
-    let lastTest = null;
-    return currentExam.questions.map((q, index) => {
+    return activeExamEntries().map(({ q, index }) => {
       const test = String(q.test || '').toUpperCase();
-      let divider = '';
-      if (currentExam.config.historicalKind === 'combined' && lastTest && test !== lastTest) {
-        divider = `<div class="paper-section-divider">
-          <div><strong>Fin de la Prueba ${esc(lastTest)}</strong><span>La siguiente sección continúa con la Prueba ${esc(test)}.</span></div>
-          ${!currentExam.state.breakTaken ? `<button class="btn" id="paper-break-btn">Iniciar descanso</button>` : `<span class="tag ok">Descanso registrado</span>`}
-        </div>`;
-      }
-      lastTest = test;
       const flagged = Boolean(currentExam.state.marked[q.id]);
-      return `${divider}<article class="paper-question" id="paper-question-${index}">
+      return `<article class="paper-question" id="paper-question-${index}">
         <div class="paper-question-head">
           <span class="paper-qnum">${esc(historicalDisplayNumber(q,index))}</span>
           <span class="muted">${esc(q.year)} · Prueba ${esc(test)}</span>
@@ -4935,7 +5014,7 @@
 
   function historicalAnswerSheetHtml() {
     let lastTest = null;
-    return currentExam.questions.map((q, index) => {
+    return activeExamEntries().map(({ q, index }) => {
       const test = String(q.test || '').toUpperCase();
       const heading = test !== lastTest
         ? `<div class="answer-sheet-section">Prueba ${esc(test)}</div>`
@@ -4955,7 +5034,7 @@
   }
 
   function historicalAnsweredCount() {
-    return currentExam.questions.filter(q => sessionSelected(currentExam.state, q.id) != null).length;
+    return activeExamEntries().filter(({ q }) => sessionSelected(currentExam.state, q.id) != null).length;
   }
 
   function refreshHistoricalAnswerSheet() {
@@ -4988,7 +5067,10 @@
     }
     clearTimer();
     examQuestionEnteredAt = 0;
+    if (examBreakPending()) return renderBreakScreen();
     const answered = historicalAnsweredCount();
+    const activeEntries = activeExamEntries();
+    const partLabel = examPartLabel();
 
     app.innerHTML = `<main class="historical-shell">
       ${topbar(currentExam.config.title || 'Simulacro histórico', false)}
@@ -4996,13 +5078,14 @@
         <div>
           <span class="tag">Modo histórico realista</span>
           <strong>${esc(currentExam.config.historicalYear)} · ${esc(currentExam.config.historicalTest)}</strong>
-          <span><strong id="historical-answered-count">${answered}</strong>/${currentExam.questions.length} marcadas</span>
+          ${partLabel ? `<span class="tag ok">${esc(partLabel)}</span>` : ''}
+          <span><strong id="historical-answered-count">${answered}</strong>/${activeEntries.length} marcadas en este bloque</span>
         </div>
         <div class="historical-toolbar-actions">
           <button id="jump-answer-sheet" class="btn small">📋 Hoja de respuestas</button>
           <button id="historical-session-exit" class="btn small ghost">Cerrar o continuar después</button>
           <div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div>
-          <button id="historical-finish" class="btn danger small">Entregar</button>
+          <button id="historical-finish" class="btn danger small">${twoPartExamEnabled() && !currentExam.state.breakTaken ? 'Finalizar Parte A' : 'Entregar'}</button>
         </div>
       </section>
 
@@ -5019,8 +5102,8 @@
 
         <aside class="answer-sheet panel" id="historical-answer-sheet">
           <div class="answer-sheet-header">
-            <div><span class="roadmap-kicker">HOJA DE RESPUESTAS</span><h2>Marca cuando estés seguro</h2></div>
-            <span class="tag">${answered}/${currentExam.questions.length}</span>
+            <div><span class="roadmap-kicker">HOJA DE RESPUESTAS</span><h2>${partLabel ? esc(partLabel) : 'Marca cuando estés seguro'}</h2></div>
+            <span class="tag">${answered}/${activeEntries.length}</span>
           </div>
           <div class="answer-sheet-scroll">${historicalAnswerSheetHtml()}</div>
         </aside>
@@ -5093,17 +5176,6 @@
     document.getElementById('jump-answer-sheet').onclick = () => {
       document.getElementById('historical-answer-sheet')?.scrollIntoView({ behavior:'smooth', block:'start' });
     };
-
-    const breakBtn = document.getElementById('paper-break-btn');
-    if (breakBtn) {
-      breakBtn.onclick = async () => {
-        clearTimer();
-        currentExam.state.breakTaken = true;
-        currentExam.state.currentIndex = currentExam.config.breakAfter || 0;
-        await persistExamState();
-        renderBreakScreen();
-      };
-    }
 
     document.getElementById('historical-session-exit').onclick = cancelCurrentExam;
 
@@ -5369,7 +5441,7 @@
     };
   }
 
-  function renderSessionBuilder(mode) {
+  function renderSessionBuilder(mode, initialPreset = '') {
     clearTimer();
     const areas = [...new Set(questions.map(q => q.area).filter(Boolean))].sort(localeSort);
     const topicHierarchy = buildTopicHierarchy();
@@ -5390,7 +5462,7 @@
 
         <div class="preset-row">
           ${isExam
-            ? `<button class="btn small preset" data-preset="80">80 preguntas</button><button class="btn small preset" data-preset="200">200 · 3 h · descanso 100</button>`
+            ? `<button class="btn small preset" data-preset="80">80 · entrenamiento</button><button class="btn small preset primary" data-preset="200">200 · realista 2026</button>`
             : `<button class="btn small preset" data-preset="10">10 rápidas</button><button class="btn small preset" data-preset="15">15 caminando</button><button class="btn small preset" data-preset="40">40 entrenamiento</button>`}
         </div>
 
@@ -5403,7 +5475,7 @@
             </fieldset>
 
             <fieldset><legend>Cantidad</legend>
-              <label>Número de preguntas<input id="question-count" class="input" type="number" min="1" max="2000" value="${isExam ? 80 : 15}" required></label>
+              <label>Número de preguntas<input id="question-count" class="input" type="number" min="1" max="2000" value="${isExam && initialPreset === 'official2026' ? 200 : (isExam ? 80 : 15)}" required></label>
               ${isExam ? `<label class="inline-check"><input id="randomize" type="checkbox" checked> <span>Orden aleatorio de preguntas</span></label>` : `
                 <label>Seleccionar preguntas por<select id="selection-order" class="input"><option value="RANDOM" selected>Aleatorio</option><option value="RENTABILITY">Más rentables primero</option></select></label>
                 <label>Orden dentro de la sesión<select id="presentation-order" class="input"><option value="RANDOM" selected>Aleatorio</option><option value="QUEUE">Respetar selección</option></select></label>
@@ -5426,8 +5498,9 @@
             </fieldset>
 
             ${isExam ? `
-              <fieldset><legend>Tiempo total</legend><label>Minutos<input id="total-minutes" class="input" type="number" min="1" value="180"></label></fieldset>
-              <fieldset><legend>Descanso por bloques</legend><label>Descanso después de la pregunta<input id="break-after" class="input" type="number" min="0" value="100"></label><label><input id="pause-break" type="checkbox" checked> Pausar cronómetro durante el descanso</label></fieldset>
+              <fieldset><legend>Tiempo</legend><label>Minutos del bloque activo<input id="total-minutes" class="input" type="number" min="1" value="${initialPreset === 'official2026' ? 120 : 180}"></label><small class="muted">En formato realista 2026 son 120 min para A y otros 120 min independientes para B.</small></fieldset>
+              <fieldset><legend>Descanso por bloques</legend><label>Descanso después de la pregunta<input id="break-after" class="input" type="number" min="0" value="${initialPreset === 'official2026' ? 100 : 0}"></label><label><input id="pause-break" type="checkbox" checked> Pausar cronómetro durante el descanso</label><small class="muted" id="official-format-hint">${initialPreset === 'official2026' ? 'Formato realista 2026 activo: A 100/120 min → 60 min de intermedio → B 100/120 min.' : 'Entrenamiento flexible.'}</small></fieldset>
+              <input type="hidden" id="official-two-part" value="${initialPreset === 'official2026' ? '1' : '0'}">
               <input type="hidden" id="feedback-mode" value="end">
             ` : `
               <fieldset><legend>Tiempo</legend>
@@ -5499,12 +5572,16 @@
       const p = Number(btn.dataset.preset);
       document.getElementById('question-count').value = p;
       if (isExam && p === 200) {
-        document.getElementById('total-minutes').value = 180;
+        document.getElementById('total-minutes').value = 120;
         document.getElementById('break-after').value = 100;
+        document.getElementById('official-two-part').value = '1';
+        document.getElementById('official-format-hint').textContent = 'Formato realista 2026 activo: A 100/120 min → 60 min de intermedio → B 100/120 min.';
       }
       if (isExam && p === 80) {
         document.getElementById('total-minutes').value = 180;
         document.getElementById('break-after').value = 0;
+        document.getElementById('official-two-part').value = '0';
+        document.getElementById('official-format-hint').textContent = 'Entrenamiento flexible.';
       }
       if (!isExam && p === 10) {
         document.getElementById('time-mode').value = 'per_question';
@@ -5519,6 +5596,19 @@
         document.getElementById('seconds-per-question').value = 25;
       }
     });
+
+    if (isExam) {
+      const refreshOfficialPresetState = () => {
+        const official = Number(document.getElementById('question-count').value) === 200
+          && Number(document.getElementById('total-minutes').value) === 120
+          && Number(document.getElementById('break-after').value) === 100;
+        document.getElementById('official-two-part').value = official ? '1' : '0';
+        document.getElementById('official-format-hint').textContent = official
+          ? 'Formato realista 2026 activo: A 100/120 min → 60 min de intermedio → B 100/120 min.'
+          : 'Entrenamiento flexible.';
+      };
+      ['question-count','total-minutes','break-after'].forEach(id => document.getElementById(id).addEventListener('input', refreshOfficialPresetState));
+    }
 
     document.getElementById('builder-form').addEventListener('submit', async e => {
       e.preventDefault();
@@ -5574,7 +5664,12 @@
       base.totalSeconds = Math.max(60, Number(document.getElementById('total-minutes').value) * 60);
       base.breakAfter = Math.max(0, Number(document.getElementById('break-after').value || 0));
       base.pauseDuringBreak = document.getElementById('pause-break').checked;
-      base.title = `Simulacro de ${base.count} preguntas`;
+      base.official2026 = document.getElementById('official-two-part')?.value === '1';
+      base.twoPartExam = base.official2026;
+      base.partSeconds = base.official2026 ? 120 * 60 : base.totalSeconds;
+      base.breakDurationSeconds = base.official2026 ? 60 * 60 : 0;
+      base.allowEarlyBreak = true;
+      base.title = base.official2026 ? 'Simulacro realista 2026 · 200 preguntas' : `Simulacro de ${base.count} preguntas`;
     } else {
       base.timeMode = document.getElementById('time-mode').value;
       base.secondsPerQuestion = Number(document.getElementById('seconds-per-question').value || 25);
@@ -6270,7 +6365,7 @@
         selected,
         config.shuffleOptions !== false && config.examLayout !== 'paper'
       ),
-      remainingSeconds:config.totalSeconds,
+      remainingSeconds:config.partSeconds || config.totalSeconds,
       totalRemaining:null,
       breakTaken:false,
       activeTimeMs:0,
@@ -6330,11 +6425,12 @@
       ? state.optionOrders
       : createOptionOrders(selected, config.shuffleOptions !== false && config.examLayout !== 'paper');
     state.currentIndex = Math.min(Math.max(0, state.currentIndex || 0), Math.max(0, selected.length - 1));
-    state.remainingSeconds ??= config.totalSeconds || 0;
+    state.remainingSeconds ??= config.partSeconds || config.totalSeconds || 0;
     currentExam = { row, config, questions:selected, state };
     beginSessionActivity();
     activateSessionNavigationGuard();
-    if (config.examLayout === 'paper') renderHistoricalExamPaper();
+    if (examBreakPending()) { endSessionActivity(); renderBreakScreen(); }
+    else if (config.examLayout === 'paper') renderHistoricalExamPaper();
     else renderExamQuestion();
   }
 
@@ -6382,28 +6478,36 @@
       handleCurrentSessionDayBoundary().catch(error => console.warn('Day-boundary close failed.', error));
       return;
     }
+    if (examBreakPending()) return renderBreakScreen();
     clearTimer();
     scrollPageTop();
+    const { start:activeStart, end:activeEnd } = activeExamBounds();
+    if (currentExam.state.currentIndex < activeStart || currentExam.state.currentIndex >= activeEnd) currentExam.state.currentIndex = activeStart;
     const q = currentExam.questions[currentExam.state.currentIndex];
     const selected = sessionSelected(currentExam.state, q.id);
     const marked = Boolean(currentExam.state.marked[q.id]);
     currentExam.state.scratch ||= {};
-    const uncertainOptions = uncertaintyOptionsFor(currentExam.state.scratch, q.id);
     const questionDoubt = questionHasDoubt(currentExam.state.scratch, q.id);
     examQuestionEnteredAt = performance.now();
+    const partLabel = examPartLabel();
+    const position = currentExam.state.currentIndex - activeStart + 1;
+    const blockCount = activeEnd - activeStart;
+    const nextLabel = currentExam.state.currentIndex + 1 === activeEnd
+      ? (twoPartExamEnabled() && !currentExam.state.breakTaken ? 'Revisar Parte A' : 'Ir al final')
+      : 'Siguiente →';
 
     app.innerHTML = `<main class="shell exam-shell">
       ${topbar(currentExam.config.title || 'Simulacro', false)}
       <div class="question-step-nav exam-question-step-nav" aria-label="Navegación superior del simulacro">
-        <button class="btn small ghost" data-exam-prev ${currentExam.state.currentIndex===0?'disabled':''}>← Anterior</button>
-        <strong>${currentExam.state.currentIndex+1}/${currentExam.questions.length}</strong>
+        <button class="btn small ghost" data-exam-prev ${currentExam.state.currentIndex===activeStart?'disabled':''}>← Anterior</button>
+        <strong>${position}/${blockCount}${partLabel?` · ${esc(partLabel)}`:''}</strong>
         <button class="btn small ${marked?'warn-btn':'ghost'}" data-exam-mark>${marked?'⚑ Marcada':'⚐ Marcar'}</button>
-        <button class="btn small primary" data-exam-next>${currentExam.state.currentIndex+1===currentExam.questions.length?'Ir al final':'Siguiente →'}</button>
+        <button class="btn small primary" data-exam-next>${nextLabel}</button>
       </div>
       <section class="exam-layout">
         <div class="panel question-card">
-          <div class="progress"><div style="width:${(currentExam.state.currentIndex/currentExam.questions.length)*100}%"></div></div>
-          <div class="q-head"><span class="tag">${currentExam.state.currentIndex+1}/${currentExam.questions.length}</span>${questionDoubtButton(q.id, questionDoubt)}<div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
+          <div class="progress"><div style="width:${((position-1)/Math.max(1,blockCount))*100}%"></div></div>
+          <div class="q-head"><span class="tag">${position}/${blockCount}${partLabel?` · ${esc(partLabel)}`:''}</span>${questionDoubtButton(q.id, questionDoubt)}<div id="timer" class="timer">${formatTime(currentExam.state.remainingSeconds)}</div></div>
           <div class="q-body"><p class="q-text">${esc(q.question)}</p>
             ${questionMediaHtml(q)}
             <div class="options">${displayOptionList(
@@ -6413,13 +6517,13 @@
             ).map(o => optionButton(o, selected)).join('')}</div>
           </div>
         </div>
-        <aside class="panel exam-nav"><div class="exam-nav-head"><strong>Navegación</strong><button class="btn small ${marked?'warn-btn':''}" data-exam-mark>${marked?'⚑ Marcada':'⚐ Marcar'}</button></div><div class="question-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="legend"><span>● respondida</span><span>⚑ revisar</span></div></aside>
+        <aside class="panel exam-nav"><div class="exam-nav-head"><strong>Navegación${partLabel?` · ${esc(partLabel)}`:''}</strong><button class="btn small ${marked?'warn-btn':''}" data-exam-mark>${marked?'⚑ Marcada':'⚐ Marcar'}</button></div><div class="question-grid">${activeExamEntries().map(({q:x,index:i}) => examGridButton(x,i)).join('')}</div><div class="legend"><span>● respondida</span><span>⚑ revisar</span></div></aside>
       </section>
       <div class="exam-controls">
-        <button class="btn ghost" data-exam-prev ${currentExam.state.currentIndex===0?'disabled':''}>← Anterior</button>
+        <button class="btn ghost" data-exam-prev ${currentExam.state.currentIndex===activeStart?'disabled':''}>← Anterior</button>
         <button id="session-exit-exam" class="btn ghost">Cerrar o continuar después</button>
-        <button id="finish-exam" class="btn danger">Entregar examen</button>
-        <button class="btn primary" data-exam-next>${currentExam.state.currentIndex+1===currentExam.questions.length?'Ir al final':'Siguiente →'}</button>
+        <button id="finish-exam" class="btn danger">${twoPartExamEnabled()&&!currentExam.state.breakTaken?'Finalizar Parte A':'Entregar examen'}</button>
+        <button class="btn primary" data-exam-next>${nextLabel}</button>
       </div>
     </main>`;
     attachTopbar();
@@ -6442,8 +6546,10 @@
       };
     });
     document.querySelectorAll('[data-qindex]').forEach(btn => btn.onclick = async () => {
+      const targetIndex = Number(btn.dataset.qindex);
+      if (targetIndex < activeStart || targetIndex >= activeEnd) return;
       accumulateExamTime();
-      currentExam.state.currentIndex = Number(btn.dataset.qindex);
+      currentExam.state.currentIndex = targetIndex;
       await persistExamState();
       renderExamQuestion();
     });
@@ -6453,7 +6559,7 @@
       renderExamQuestion();
     };
     const goExamPrev = async () => {
-      if (currentExam.state.currentIndex <= 0) return;
+      if (currentExam.state.currentIndex <= activeStart) return;
       accumulateExamTime();
       currentExam.state.currentIndex--;
       await persistExamState(); renderExamQuestion();
@@ -6461,13 +6567,13 @@
     const goExamNext = async () => {
       accumulateExamTime();
       const nextIndex = currentExam.state.currentIndex + 1;
-      if (currentExam.config.breakAfter > 0 && nextIndex === currentExam.config.breakAfter && !currentExam.state.breakTaken && nextIndex < currentExam.questions.length) {
+      if (!twoPartExamEnabled() && currentExam.config.breakAfter > 0 && nextIndex === currentExam.config.breakAfter && !currentExam.state.breakTaken && nextIndex < currentExam.questions.length) {
         currentExam.state.breakTaken = true;
         currentExam.state.currentIndex = nextIndex;
         await persistExamState();
         return renderBreakScreen();
       }
-      if (nextIndex < currentExam.questions.length) {
+      if (nextIndex < activeEnd) {
         currentExam.state.currentIndex = nextIndex;
         await persistExamState(); renderExamQuestion();
       } else renderExamOverview();
@@ -6481,14 +6587,17 @@
   }
 
   function startExamTimer() {
+    clearTimer();
     updateTimer(currentExam.state.remainingSeconds);
     timerId = setInterval(async () => {
+      if (!currentExam) return clearTimer();
       currentExam.state.remainingSeconds--;
       updateTimer(currentExam.state.remainingSeconds);
       if (currentExam.state.remainingSeconds % 30 === 0) await persistExamState();
       if (currentExam.state.remainingSeconds <= 0) {
         clearTimer();
-        await finishExam(true);
+        if (twoPartExamEnabled() && !currentExam.state.breakTaken) await beginExamBreak(true);
+        else await finishExam(true);
       }
     }, 1000);
   }
@@ -6497,38 +6606,115 @@
     const answered = sessionSelected(currentExam.state, q.id) != null;
     const marked = Boolean(currentExam.state.marked[q.id]);
     const current = i === currentExam.state.currentIndex;
-    const label = currentExam?.config?.examLayout === 'paper' ? historicalDisplayNumber(q, i) : String(i + 1);
+    const bounds = activeExamBounds();
+    const label = currentExam?.config?.examLayout === 'paper'
+      ? historicalDisplayNumber(q, i)
+      : String(twoPartExamEnabled() ? i - bounds.start + 1 : i + 1);
     return `<button class="qnav ${answered?'answered':''} ${marked?'marked':''} ${current?'current':''}" data-qindex="${i}">${esc(label)}${marked?'⚑':''}</button>`;
   }
 
   function refreshExamGridOnly() {
     const grid = document.querySelector('.question-grid');
-    if (grid) grid.innerHTML = currentExam.questions.map((x,i) => examGridButton(x,i)).join('');
+    const { start, end } = activeExamBounds();
+    if (grid) grid.innerHTML = activeExamEntries().map(({q:x,index:i}) => examGridButton(x,i)).join('');
     document.querySelectorAll('[data-qindex]').forEach(btn => btn.onclick = async () => {
-      accumulateExamTime(); currentExam.state.currentIndex = Number(btn.dataset.qindex); await persistExamState(); renderExamQuestion();
+      const targetIndex = Number(btn.dataset.qindex);
+      if (targetIndex < start || targetIndex >= end) return;
+      accumulateExamTime(); currentExam.state.currentIndex = targetIndex; await persistExamState(); renderExamQuestion();
     });
   }
 
-  function renderBreakScreen() {
+  async function beginExamBreak(timeExpired = false) {
+    if (!currentExam) return;
+    clearTimer();
+    accumulateExamTime();
+    examQuestionEnteredAt = 0;
+    const split = Number(currentExam.config.breakAfter || 0);
+    currentExam.state.currentIndex = split;
+    currentExam.state.breakTaken = false;
+    currentExam.state.remainingSeconds = 0;
+    currentExam.state.totalRemaining = Math.max(0, Number(currentExam.config.breakDurationSeconds || 0));
+    endSessionActivity();
+    await persistExamState();
+    renderBreakScreen(timeExpired);
+  }
+
+  function startBreakTimer() {
+    if (!currentExam || !twoPartExamEnabled()) return;
+    const timer = document.getElementById('break-timer');
+    if (timer) timer.textContent = formatTime(currentExam.state.totalRemaining || 0);
+    if (!Number(currentExam.state.totalRemaining || 0)) return;
+    clearTimer();
+    timerId = setInterval(async () => {
+      if (!currentExam) return clearTimer();
+      currentExam.state.totalRemaining = Math.max(0, Number(currentExam.state.totalRemaining || 0) - 1);
+      const el = document.getElementById('break-timer');
+      if (el) el.textContent = formatTime(currentExam.state.totalRemaining);
+      if (currentExam.state.totalRemaining % 30 === 0) await persistExamState();
+      if (currentExam.state.totalRemaining <= 0) {
+        clearTimer();
+        await continueAfterExamBreak();
+      }
+    }, 1000);
+  }
+
+  async function continueAfterExamBreak() {
+    if (!currentExam) return;
+    clearTimer();
+    currentExam.state.breakTaken = true;
+    currentExam.state.currentIndex = Number(currentExam.config.breakAfter || 0);
+    currentExam.state.remainingSeconds = examPartSeconds();
+    currentExam.state.totalRemaining = null;
+    beginSessionActivity();
+    await persistExamState();
+    if (currentExam.config.examLayout === 'paper') renderHistoricalExamPaper();
+    else renderExamQuestion();
+  }
+
+  function renderBreakScreen(timeExpired = false) {
     clearTimer();
     const done = currentExam.config.breakAfter;
-    app.innerHTML = `<main class="shell">${topbar('Descanso', false)}<section class="panel empty"><h2>Bloque 1 completado</h2><p>Has llegado a la pregunta ${done}. Tu progreso está guardado.</p><p class="muted">${currentExam.config.pauseDuringBreak ? 'El cronómetro está pausado durante este descanso.' : 'El cronómetro continúa corriendo.'}</p><div class="actions"><button id="continue-block" class="btn primary">Continuar con el siguiente bloque</button><button id="session-exit-break" class="btn ghost">Cerrar o continuar después</button></div></section></main>`;
+    const twoPart = twoPartExamEnabled();
+    const officialBreakSeconds = Number(currentExam.config.breakDurationSeconds || 0);
+    if (twoPart && currentExam.state.totalRemaining == null) currentExam.state.totalRemaining = officialBreakSeconds;
+    const heading = twoPart ? 'Parte A cerrada' : 'Bloque 1 completado';
+    const detail = twoPart
+      ? `${timeExpired ? 'El tiempo de la Parte A terminó.' : 'La Parte A quedó cerrada.'} Sus respuestas ya no pueden modificarse. La Parte B permanece bloqueada hasta iniciar el siguiente bloque.`
+      : `Has llegado a la pregunta ${done}. Tu progreso está guardado.`;
+    const breakInfo = twoPart
+      ? `<p><strong>Intermedio oficial: 60 minutos</strong></p><div id="break-timer" class="timer break-timer">${formatTime(currentExam.state.totalRemaining || 0)}</div><p class="muted">Puedes continuar antes si estás entrenando; hacerlo acorta voluntariamente el intermedio.</p>`
+      : `<p class="muted">${currentExam.config.pauseDuringBreak ? 'El cronómetro está pausado durante este descanso.' : 'El cronómetro continúa corriendo.'}</p>`;
+    app.innerHTML = `<main class="shell">${topbar('Intermedio', false)}<section class="panel empty"><h2>${heading}</h2><p>${detail}</p>${breakInfo}<div class="actions"><button id="continue-block" class="btn primary">${twoPart?'Iniciar Parte B':'Continuar con el siguiente bloque'}</button><button id="session-exit-break" class="btn ghost">Cerrar o continuar después</button></div></section></main>`;
     attachTopbar();
-    if (!currentExam.config.pauseDuringBreak) startExamTimer();
-    document.getElementById('continue-block').onclick = () => currentExam.config.examLayout === 'paper' ? renderHistoricalExamPaper() : renderExamQuestion();
+    if (twoPart) startBreakTimer();
+    else if (!currentExam.config.pauseDuringBreak) startExamTimer();
+    document.getElementById('continue-block').onclick = twoPart
+      ? continueAfterExamBreak
+      : () => currentExam.config.examLayout === 'paper' ? renderHistoricalExamPaper() : renderExamQuestion();
     document.getElementById('session-exit-break').onclick = cancelCurrentExam;
   }
 
   function renderExamOverview() {
     clearTimer();
     accumulateExamTime();
-    const answered = currentExam.questions.filter(q => sessionSelected(currentExam.state, q.id) != null).length;
-    const marked = currentExam.questions.filter(q => currentExam.state.marked[q.id]).length;
-    const uncertain = currentExam.questions.filter(q => questionHasDoubt(currentExam.state.scratch, q.id)).length;
-    app.innerHTML = `<main class="shell">${topbar('Revisión antes de entregar', false)}<section class="panel"><h2>Resumen del simulacro</h2><div class="kpis"><div class="kpi"><div class="value">${answered}</div><div class="label">Respondidas</div></div><div class="kpi"><div class="value">${currentExam.questions.length-answered}</div><div class="label">Sin responder</div></div><div class="kpi"><div class="value">${marked}</div><div class="label">Marcadas para revisar</div></div><div class="kpi"><div class="value">${uncertain}</div><div class="label">Dudosas (?)</div></div><div class="kpi"><div class="value">${formatTime(currentExam.state.remainingSeconds)}</div><div class="label">Tiempo restante</div></div></div><div class="question-grid overview-grid">${currentExam.questions.map((x,i) => examGridButton(x,i)).join('')}</div><div class="footer-actions"><button id="back-exam" class="btn ghost">Volver al examen</button><button id="cancel-overview" class="btn ghost">Cerrar o continuar después</button><button id="submit-exam" class="btn danger">Entregar y corregir</button></div></section></main>`;
+    examQuestionEnteredAt = 0;
+    if (examBreakPending()) return renderBreakScreen();
+    const entries = activeExamEntries();
+    const questionsInScope = entries.map(({q}) => q);
+    const answered = questionsInScope.filter(q => sessionSelected(currentExam.state, q.id) != null).length;
+    const marked = questionsInScope.filter(q => currentExam.state.marked[q.id]).length;
+    const uncertain = questionsInScope.filter(q => questionHasDoubt(currentExam.state.scratch, q.id)).length;
+    const isPartA = twoPartExamEnabled() && !currentExam.state.breakTaken;
+    const title = isPartA ? 'Revisión de Parte A' : 'Revisión antes de entregar';
+    const submitLabel = isPartA ? 'Finalizar Parte A' : 'Entregar y corregir';
+    app.innerHTML = `<main class="shell">${topbar(title, false)}<section class="panel"><h2>${isPartA?'Resumen de la Parte A':'Resumen del simulacro'}</h2><div class="kpis"><div class="kpi"><div class="value">${answered}</div><div class="label">Respondidas</div></div><div class="kpi"><div class="value">${questionsInScope.length-answered}</div><div class="label">Sin responder</div></div><div class="kpi"><div class="value">${marked}</div><div class="label">Marcadas para revisar</div></div><div class="kpi"><div class="value">${uncertain}</div><div class="label">Dudosas (?)</div></div><div class="kpi"><div id="timer" class="value">${formatTime(currentExam.state.remainingSeconds)}</div><div class="label">Tiempo restante</div></div></div><div class="question-grid overview-grid">${entries.map(({q:x,index:i}) => examGridButton(x,i)).join('')}</div><div class="footer-actions"><button id="back-exam" class="btn ghost">Volver al examen</button><button id="cancel-overview" class="btn ghost">Cerrar o continuar después</button><button id="submit-exam" class="btn danger">${submitLabel}</button></div></section></main>`;
     attachTopbar();
+    startExamTimer();
+    const { start, end } = activeExamBounds();
     document.querySelectorAll('[data-qindex]').forEach(btn => btn.onclick = () => {
-      currentExam.state.currentIndex = Number(btn.dataset.qindex);
+      const targetIndex = Number(btn.dataset.qindex);
+      if (targetIndex < start || targetIndex >= end) return;
+      currentExam.state.currentIndex = targetIndex;
       if (currentExam.config.examLayout === 'paper') {
         const index = currentExam.state.currentIndex;
         renderHistoricalExamPaper();
@@ -6538,9 +6724,13 @@
     document.getElementById('back-exam').onclick = () => currentExam.config.examLayout === 'paper' ? renderHistoricalExamPaper() : renderExamQuestion();
     document.getElementById('cancel-overview').onclick = cancelCurrentExam;
     document.getElementById('submit-exam').onclick = async () => {
-      const missing = currentExam.questions.length - answered;
-      const warning = `¿Entregar el simulacro?\n\nRespondidas: ${answered}\nSin responder: ${missing}\nDudosas (?): ${uncertain}\nMarcadas para revisar: ${marked}\n\nDespués se mostrarán las respuestas y explicaciones.`;
-      if (confirm(warning)) await finishExam(false);
+      const missing = questionsInScope.length - answered;
+      const warning = isPartA
+        ? `¿Finalizar la Parte A?\n\nRespondidas: ${answered}\nSin responder: ${missing}\nDudosas (?): ${uncertain}\nMarcadas para revisar: ${marked}\n\nDespués de cerrar A no podrás volver a modificarla. Pasarás al intermedio antes de la Parte B.`
+        : `¿Entregar el simulacro?\n\nRespondidas en este bloque: ${answered}\nSin responder: ${missing}\nDudosas (?): ${uncertain}\nMarcadas para revisar: ${marked}\n\nDespués se mostrarán las respuestas y explicaciones.`;
+      if (!confirm(warning)) return;
+      if (isPartA) await beginExamBreak(false);
+      else await finishExam(false);
     };
   }
 
@@ -6567,7 +6757,9 @@
   async function ensureExamAttempts(exam, questionList) {
     const existing = new Map(attemptsForSession(exam?.row?.id).map(attempt => [attempt.question_id, attempt]));
     const answeredForTiming = questionList.length;
-    const elapsedSessionMs = Math.max(0, (Number(exam.config.totalSeconds || 0) - Number(exam.state.remainingSeconds || 0)) * 1000);
+    const elapsedSessionMs = exam.config.examLayout === 'paper' && Number(exam.state.activeTimeMs || 0) > 0
+      ? Number(exam.state.activeTimeMs || 0)
+      : Math.max(0, (Number(exam.config.totalSeconds || 0) - Number(exam.state.remainingSeconds || 0)) * 1000);
     const historicalAverageMs = answeredForTiming ? Math.round(elapsedSessionMs / answeredForTiming) : 0;
     const payload = [];
 

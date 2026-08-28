@@ -1,36 +1,42 @@
 {
-  "release_id": "REL-20260826-V1.5.5-REVIEW-FLOW-ALIGNMENT",
-  "version": "1.5.5",
-  "date": "2026-08-26",
+  "release_id": "REL-20260828-V1.5.7-REALISTIC-TWO-PART-EXAM",
+  "version": "1.5.7",
+  "date": "2026-08-28",
   "base": {
-    "version": "1.5.4",
-    "archive": "260826_1812_residentado-banco-main_v154.zip"
+    "version": "1.5.5",
+    "archive": "260826_2021_residentado-banco-main_v155.zip",
+    "note": "v1.5.6 was prepared but not applied; v1.5.7 incorporates its approved frontend changes directly over the v1.5.5 baseline."
   },
   "status": "READY_FOR_GITHUB_DESKTOP_PATCH_NO_NEW_SUPABASE_MIGRATION",
-  "release_type": "REVIEW_FEEDBACK_UI_ORDER_AND_ACTION_ALIGNMENT",
+  "release_type": "NAMED_SOURCES_QR_COLLAPSIBLE_AND_REALISTIC_TWO_PART_EXAM",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
     "taxonomy_change": false,
     "memory_algorithm_change": false,
     "scheduler_change": false,
-    "simulators_changed": false,
+    "simulators_changed": true,
     "practice_ui_change": true,
     "quick_reference_change": true,
     "review_flag_semantics_change": false,
     "runtime_sync_change": false
   },
   "changes": {
-    "REVIEW_FLOW_ORDER_155": "Feedback order is explanation → distractors → trap → pearl → memory hook → Quick Reference → Add note → review flag → doubt → next.",
-    "QR_POSITION_155": "Quick Reference renders immediately after Gancho de memoria and before Add note in both feedback paths.",
-    "DOUBT_ALIGNMENT_155": "Post-answer Marcar duda aligns right on desktop and remains full-width on small screens.",
-    "NEXT_ALIGNMENT_155": "Bottom Siguiente pregunta aligns right via a dedicated feedback-only footer class.",
-    "SEMANTICS_PRESERVED_155": "No changes to doubt/note/flag meaning, scheduler, memory, sessions, PT409/recovery, Supabase, taxonomy or dataset.",
-    "DOC_GUARDRAIL_155": "No new version-specific QA release, decision-log or application-instruction files are created."
+    "NAMED_SOURCES_157": "Carries forward the approved v1.5.6 named-source parser and safe http/https rendering over the real v1.5.5 baseline.",
+    "QUICK_REFERENCE_COLLAPSIBLE_157": "Carries forward the full Quick Reference collapsible block, with nested Fuentes y trazabilidad.",
+    "OFFICIAL_2026_TWO_PART_157": "Adds explicit realistic 2026 mode: 200 questions, Part A 100/120 min, 60-minute intermission, Part B 100/120 min.",
+    "PART_ISOLATION_157": "Part B is hidden and unreachable until Part A is closed; after the intermission Part A cannot be edited.",
+    "INDEPENDENT_CLOCKS_157": "Part B starts with a fresh 120-minute clock; unused Part A time does not transfer.",
+    "TIMEOUT_TRANSITION_157": "Part A timeout transitions to the intermission; Part B timeout submits the exam.",
+    "HISTORICAL_INTEGRITY_157": "Historical catalog now requires exact 1..100 numbering, or 1..90 for 2020, without duplicates or gaps.",
+    "HISTORICAL_AB_157": "Historical A+B uses isolated A/intermission/B blocks; 100-question parts use 120 minutes and the 2020 90-question exception is proportionally timed at 108 minutes per part.",
+    "OVERVIEW_TIMER_157": "Review-before-submit continues consuming the active part clock.",
+    "RESPONSIVE_157": "Footer actions wrap safely, including a 320–360 px fallback.",
+    "SEMANTICS_PRESERVED_157": "No changes to scheduler, memory, Supabase, taxonomy, dataset, notes/flags, PT409/recovery or protected session-core/session-storage files."
   },
   "supabase_migration": {
     "required": false,
-    "note": "No migration. v1.5.5 is frontend-only."
+    "note": "No migration. v1.5.7 is frontend-only."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
@@ -66,6 +72,7 @@
     "static_command": "python3 QA/qa_static.py",
     "browser_command": "python3 QA/qa_browser.py",
     "session_core_unit_command": "node QA/test_session_core.js",
-    "manual_smoke": "RECOMMENDED_BEFORE_FULL_STUDY_DAY"
+    "simulator_regression": "OFFICIAL_2026_TWO_PART_AND_HISTORICAL_AB_BROWSER_SMOKE",
+    "manual_smoke": "RECOMMENDED_BEFORE_FULL_SIMULATION"
   }
 }
