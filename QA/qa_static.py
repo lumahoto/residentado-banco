@@ -32,8 +32,11 @@ manifest = json.loads((ROOT/'RELEASE_MANIFEST.json').read_text(encoding='utf-8')
 w3 = (ROOT/'w3-tools.js').read_text(encoding='utf-8')
 w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
-# Guardrail documental: v1.5.8 no crea archivos versionados auxiliares nuevos.
+# Guardrail documental: v1.5.9 no crea archivos versionados auxiliares nuevos.
 for forbidden in [
+    ROOT/'QA'/'QA_RELEASE_V1_5_9.md',
+    ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_5_9.md',
+    ROOT/'docs'/'DECISION_LOG_V1_5_9.md',
     ROOT/'QA'/'QA_RELEASE_V1_5_8.md',
     ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_5_8.md',
     ROOT/'docs'/'DECISION_LOG_V1_5_8.md',
@@ -56,9 +59,9 @@ for forbidden in [
     require(not forbidden.exists(), f'Proliferación documental no permitida: {forbidden.relative_to(ROOT)}')
 
 # Release/version consistency.
-require("version: '1.5.8'" in version, 'version.js no declara 1.5.8')
-require("cacheName: 'residentado-v1-5-8'" in version, 'version.js no declara cache v1.5.8')
-require(manifest.get('version') == '1.5.8', 'RELEASE_MANIFEST no coincide con v1.5.8')
+require("version: '1.5.9'" in version, 'version.js no declara 1.5.9')
+require("cacheName: 'residentado-v1-5-9'" in version, 'version.js no declara cache v1.5.9')
+require(manifest.get('version') == '1.5.9', 'RELEASE_MANIFEST no coincide con v1.5.9')
 require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
@@ -127,7 +130,7 @@ require("if (mode === 'exam') {\n        const selected = (config.randomize ? sh
 require('examQuestionEnteredAt = 0;' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview de simulacro sigue atribuyendo tiempo de revisión a una pregunta')
 require('startExamTimer();' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview de simulacro sigue pausando el cronómetro')
 require('id="timer" class="value"' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview no actualiza visualmente el tiempo restante')
-require(manifest.get('scope', {}).get('practice_ui_change') is True, 'Manifest no marca cambio frontend QRV2')
+require(manifest.get('scope', {}).get('practice_ui_change') is False, 'v1.5.9 no debe declarar cambio de práctica ordinaria')
 
 # v1.5.7 QRV2: referencias nominadas + bloque completo plegable.
 for token in ['function qrv2Profile', 'function qrv2MigrationStatus', 'Núcleo rápido', 'Detalle útil', 'Fuentes y trazabilidad', 'q.audit_source_urls']:
@@ -215,10 +218,41 @@ require("historyDayReview?'':questionDoubtButton(q.id, questionDoubt)" in app, '
 require('allowPostMark:!omitted && !historyDayReview' in app, 'Revisión del día todavía permite mutar duda post-respuesta')
 require('if (historyDayReview || btn.dataset.questionDoubt !== q.id) return;' in app, 'Falta guardia defensiva contra escritura de duda en revisión del día')
 require("if (!historyLegacyAttempt) document.querySelectorAll('[data-review-prev]')" in app, 'La navegación Anterior de revisión histórica filtrada sigue bloqueada')
-require(manifest.get('scope', {}).get('dashboard_order_change') is True, 'Manifest no declara cambio de orden del Dashboard')
-require(manifest.get('scope', {}).get('history_day_review_change') is True, 'Manifest no declara Revisión del día')
+require(manifest.get('scope', {}).get('dashboard_order_change') is False, 'v1.5.9 no debe declarar un nuevo cambio de orden del Dashboard')
+require(manifest.get('scope', {}).get('history_day_review_change') is False, 'v1.5.9 no debe declarar un nuevo cambio de Revisión del día')
 require(manifest.get('scope', {}).get('runtime_sync_change') is False, 'Revisión del día no debe declarar cambios de sincronización')
-require(manifest.get('scope', {}).get('simulators_changed') is False, 'v1.5.8 no debe declarar cambios de simulador')
+require(manifest.get('scope', {}).get('simulators_changed') is True, 'v1.5.9 debe declarar cambios de simulador')
+
+# v1.5.9: todos los simulacros usan cuadernillo + hoja y scratch reversible independiente de duda.
+for token in [
+    "examLayout:'paper'",
+    'function paperExamIsHistorical',
+    'function paperOptionList',
+    "state === 'candidate'",
+    'function toggleScratchCandidate',
+    'function toggleScratchCrossed',
+    'data-candidate-index',
+    'data-discard-index',
+    'function refreshPaperOptionScratch',
+    'function flexibleExamBreakPending',
+    'Modo simulacro · cuadernillo',
+    'preferida tentativa',
+]:
+    require(token in app, f'Falta contrato v1.5.9 de simulacro/cuadernillo: {token}')
+launch_exam = app[app.find('  async function launchExam('):app.find('  async function resumePersistentSession', app.find('  async function launchExam('))]
+require("config = { shuffleOptions:true, ...config, examLayout:'paper'" in launch_exam, 'Los simulacros nuevos no fuerzan cuadernillo universal')
+require('createOptionOrders(selected, config.shuffleOptions !== false)' in launch_exam, 'Cuadernillo universal no preserva mezcla de alternativas personalizada')
+resume_exam = app[app.find('    currentStudy = null;\n    const state = normalizeSessionState(row.state || {});'):app.find('  function accumulateExamTime', app.find('    currentStudy = null;\n    const state = normalizeSessionState(row.state || {});'))]
+require("const config = { ...(row.config || {}), examLayout:'paper' };" in resume_exam, 'Simulacro activo legacy no migra a cuadernillo al reanudar')
+require('function questionDoubtScratchKey' in app and '__question_doubt__' in app, 'La duda de pregunta no usa persistencia scratch compatible con SessionCore')
+question_doubt = app[app.find('  function questionHasDoubt('):app.find('  function setQuestionDoubt', app.find('  function questionHasDoubt('))]
+require("state === 'tentative'" in question_doubt and "state === 'candidate'" not in question_doubt, 'La preferencia tentativa v1.5.9 se acopló indebidamente a ? Duda')
+answer_sheet = app[app.find('  function historicalAnswerSheetHtml()'):app.find('  function historicalAnsweredCount', app.find('  function historicalAnswerSheetHtml()'))]
+require('const sourceLetter = o.sourceLetter || o.letter' in answer_sheet and 'data-answer-letter="${sourceLetter}"' in answer_sheet, 'Hoja de respuestas no conserva mapeo de alternativas mezcladas')
+require('.paper-option-wrap.scratch-candidate' in styles and '.paper-option-wrap.scratch-crossed' in styles and '.paper-option-discard.active' in styles, 'Faltan estilos v1.5.9 para candidata/tachado reversible')
+require(manifest.get('scope', {}).get('simulators_changed') is True, 'Manifest v1.5.9 no declara simulators_changed')
+require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.5.9 no debe cambiar scheduler')
+require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'v1.5.9 no debe cambiar memoria')
 
 # Taxonomía V3: identidad estable y compatibilidad de aliases.
 require('TOPIC_ID:${encodeURIComponent(stableId)}' in app, 'El selector no serializa rentability_topic_id estable')
@@ -335,11 +369,11 @@ require('function reviewEligible(q, now = new Date())' in app, 'Falta elegibilid
 require('return recall < retention;' in app, 'La cola de repaso no respeta targetRetention vigente')
 require('const due = valid.filter(q => reviewEligible(q, now));' in app, 'El plan diario no usa la misma elegibilidad dinámica')
 require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'Manifest marca cambio de memoria por error')
-require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.5.8 no debe marcar cambio de scheduler')
-require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.8 no debe requerir nueva migración')
+require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.5.9 no debe marcar cambio de scheduler')
+require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.9 no debe requerir nueva migración')
 
 if errors:
-    print('QA v1.5.8 DASHBOARD + HISTORY DAY REVIEW: FAIL')
+    print('QA v1.5.9 UNIVERSAL EXAM PAPER + SCRATCH: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.5.8 DASHBOARD + HISTORY DAY REVIEW: OK')
+print('QA v1.5.9 UNIVERSAL EXAM PAPER + SCRATCH: OK')

@@ -1,14 +1,14 @@
-# Residentado v1.5.8 — Dashboard + Revisión del día
+# Residentado v1.5.9 — Simulacro universal en cuadernillo
 
-WebApp estática del banco de Residentado Médico Perú. v1.5.8 es un parche frontend acotado sobre **v1.5.7**: prioriza `Siguiente tarea/Continuar sesión` inmediatamente después de `HOY` y añade una `Revisión del día` filtrable dentro de Historial y ritmo, sin crear sesiones ni intentos por revisar. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
+WebApp estática del banco de Residentado Médico Perú. v1.5.9 es un parche frontend acotado sobre **v1.5.8**: todos los simulacros usan el mismo cuadernillo con hoja de respuestas lateral, el tachado de distractores es reversible y el cuadernillo permite marcar una o dos alternativas como preferidas tentativas antes de pasar la respuesta definitiva a la hoja. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
 
 ## Estado
 
-- Frontend: `v1.5.8` / caché `residentado-v1-5-8`.
+- Frontend: `v1.5.9` / caché `residentado-v1-5-9`.
 - Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- **No hay migración nueva en v1.5.8.**
+- **No hay migración nueva en v1.5.9.**
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
 - Scheduler de rescate/retención v1.5.2 y guardrails PT409/recovery: preservados.
 
@@ -45,9 +45,14 @@ La explicación muestra contexto universal y una referencia en dos capas: **Núc
 - La revisión del día es read-only respecto de progreso: no crea `practice_sessions`, attempts, memoria, outbox/recovery ni notas/flags automáticamente.
 - El control `?` queda informativo dentro de esta vista para evitar mutar retroactivamente el intento. `Añadir nota` y `Revisar pregunta` siguen siendo acciones explícitas disponibles.
 
-## Simulacros v1.5.7
+## Simulacros v1.5.9
 
 El hub separa tres usos:
+
+**Interfaz común v1.5.9:** cualquier simulacro nuevo —realista 2026, histórico o personalizado— abre en formato cuadernillo con hoja de respuestas. En escritorio la hoja permanece lateral; en pantallas estrechas pasa debajo para evitar overflow. La respuesta que cuenta es exclusivamente la marcada en la hoja.
+
+En el cuadernillo cada alternativa tiene dos acciones independientes: pulsar la alternativa alterna una **preferencia tentativa (◉)** y el botón **×** alterna el **tachado**. Se pueden mantener una o dos preferidas a la vez. Pulsar de nuevo × quita el tachado; si una alternativa está tachada, pulsar la propia alternativa también la recupera. Estas marcas son scratch de examen: no crean intentos ni convierten la pregunta en `? Duda`.
+El `?` de pregunta se conserva como una señal independiente y persistente al guardar/reanudar el simulacro.
 
 - **Simulacro realista 2026:** 200 preguntas, Parte A 100 preguntas / 120 min, intermedio oficial de 60 min, Parte B 100 preguntas / 120 min. Los relojes son independientes y B no puede abrirse durante A. Al iniciar B, A deja de ser editable.
 - **Simulacros históricos:** A o B por separado y combinaciones A+B. El catálogo solo acepta series completas y exactamente numeradas; 2020 conserva su excepción de 90 preguntas por prueba. Las combinaciones A+B aíslan los dos bloques.

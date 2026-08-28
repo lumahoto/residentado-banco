@@ -1,41 +1,40 @@
 {
-  "release_id": "REL-20260828-V1.5.8-DASHBOARD-HISTORY-DAY-REVIEW",
-  "version": "1.5.8",
+  "release_id": "REL-20260828-V1.5.9-UNIVERSAL-EXAM-PAPER-SCRATCH",
+  "version": "1.5.9",
   "date": "2026-08-28",
   "base": {
-    "version": "1.5.7",
-    "archive": "260828_0156_residentado-banco-main_v157.zip",
-    "note": "v1.5.8 is a focused frontend patch over the deployed v1.5.7 baseline."
+    "version": "1.5.8",
+    "archive": "260828_1358_residentado-banco-main_v158.zip",
+    "note": "v1.5.9 is a focused simulator UI patch over the deployed v1.5.8 baseline."
   },
   "status": "READY_FOR_GITHUB_DESKTOP_PATCH_NO_NEW_SUPABASE_MIGRATION",
-  "release_type": "DASHBOARD_PRIORITY_ORDER_AND_READ_ONLY_HISTORY_DAY_REVIEW",
+  "release_type": "UNIVERSAL_EXAM_PAPER_AND_REVERSIBLE_SCRATCH",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
     "taxonomy_change": false,
     "memory_algorithm_change": false,
     "scheduler_change": false,
-    "simulators_changed": false,
-    "practice_ui_change": true,
+    "simulators_changed": true,
+    "practice_ui_change": false,
     "quick_reference_change": false,
     "review_flag_semantics_change": false,
     "runtime_sync_change": false,
-    "dashboard_order_change": true,
-    "history_day_review_change": true
+    "dashboard_order_change": false,
+    "history_day_review_change": false
   },
   "changes": {
-    "DASHBOARD_NEXT_TASK_FIRST_158": "Moves Next task / Continue session immediately below HOY and before academic/adaptive priority-reading alerts; technical blocking banners remain above.",
-    "HISTORY_DAY_REVIEW_158": "Adds filtered review of unique questions already answered on the selected date: Todas, Erradas, Duda ?, No sé, Lentas and Revisar.",
-    "READ_ONLY_REVIEW_158": "History day review is an ephemeral reviewContext only; opening/navigating it creates no practice_session, attempt, memory update, outbox/recovery operation or automatic note/flag.",
-    "LATEST_QUALIFYING_ATTEMPT_158": "Each question appears once per filter and displays the latest attempt from that date that qualifies for the selected filter; a wrong-then-correct question remains available in Erradas.",
-    "SLOW_SEMANTICS_158": "Lentas reuses the existing speed rule: correct, not uncertain, not timed out, and response_time_ms above the stored/effective target.",
-    "DOUBT_READ_ONLY_158": "The day-review view suppresses interactive ? controls so reviewing cannot mutate was_uncertain/question_memory_state; existing doubt is shown as read-only evidence.",
-    "EXPLICIT_ACTIONS_PRESERVED_158": "Existing explicit Añadir nota and Revisar pregunta actions remain available inside review; they are never triggered by navigation.",
-    "SEMANTICS_PRESERVED_158": "No changes to scheduler, memory algorithm, Supabase schema, dataset, taxonomy, PT409/recovery or protected session files."
+    "UNIVERSAL_EXAM_PAPER_159": "All exam sessions launch/resume in the paper booklet + separate answer sheet layout; historical exams retain original numbering and custom/2026 exams use session numbering.",
+    "SCRATCH_CANDIDATE_159": "Paper options support independent candidate marks stored as scratch state candidate; multiple candidates are allowed and candidate does not imply question doubt.",
+    "REVERSIBLE_CROSSOUT_159": "Crossout uses an explicit × toggle; clicking × again clears it, and clicking a crossed option also restores it.",
+    "ANSWER_SHEET_SOURCE_MAPPING_159": "Custom exams preserve shuffled alternatives by mapping displayed answer-sheet letters to canonical source letters; historical exams remain unshuffled.",
+    "CUSTOM_BREAK_PAPER_159": "Flexible custom-exam breaks remain reachable from paper mode; official two-part A/B isolation remains unchanged.",
+    "SEMANTICS_PRESERVED_159": "No changes to scheduler, memory algorithm, Supabase schema, dataset, taxonomy, PT409/recovery or protected session files.",
+    "QUESTION_DOUBT_PERSISTENCE_159": "Question-level ? doubt is persisted through a SessionCore-compatible scratch encoding, remaining independent from tentative candidate marks."
   },
   "supabase_migration": {
     "required": false,
-    "note": "No migration. v1.5.8 is frontend-only and reads existing attempts/flags."
+    "note": "No migration. v1.5.9 is frontend-only."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
@@ -71,8 +70,10 @@
     "static_command": "python3 QA/qa_static.py",
     "browser_command": "python3 QA/qa_browser.py",
     "session_core_unit_command": "node QA/test_session_core.js",
-    "history_day_review_regression": "FILTER_COUNTS_DEDUPE_READ_ONLY_NAVIGATION_NO_ATTEMPT_SESSION_MEMORY_WRITE",
-    "responsive_regression": "DASHBOARD_AND_HISTORY_DAY_REVIEW_320_TO_1440",
+    "universal_exam_regression": "CUSTOM_EXAM_PAPER_ANSWER_SHEET_SHUFFLE_MAPPING_AND_BREAK",
+    "scratch_regression": "CANDIDATE_MULTISELECT_CROSSOUT_TOGGLE_QUESTION_DOUBT_PERSISTENCE_NO_COUPLING",
+    "historical_regression": "HISTORICAL_AB_PAPER_BREAK_ISOLATION_PRESERVED",
+    "responsive_regression": "EXAM_PAPER_AND_ANSWER_SHEET_320_TO_1440",
     "manual_smoke": "RECOMMENDED_AFTER_DEPLOY"
   }
 }

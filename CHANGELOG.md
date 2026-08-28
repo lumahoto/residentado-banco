@@ -1,3 +1,18 @@
+## v1.5.9 - 2026-08-28
+
+Parche frontend sobre v1.5.8. **No modifica scheduler, memoria, Supabase, taxonomía, dataset ni archivos críticos de sesión.**
+
+- unifica todos los simulacros nuevos en la interfaz de cuadernillo + hoja de respuestas lateral ya usada por los históricos;
+- convierte también al formato cuadernillo las sesiones de simulacro activas creadas antes del parche cuando se reanudan;
+- preserva mezcla de alternativas en simulacros personalizados y mantiene orden oficial sin mezcla en históricos;
+- añade marca **◉ preferida tentativa** por alternativa, permitiendo una o varias candidatas antes de marcar la hoja;
+- separa esa preferencia tentativa del marcador `?`: no altera `was_uncertain`, memoria ni prioridad por duda;
+- corrige además la persistencia del `?` de pregunta con una codificación scratch compatible con el normalizador existente, sin tocar `session-core.js`;
+- hace el tachado **× reversible**: volver a pulsar × lo quita y pulsar una alternativa tachada también la recupera;
+- conserva la hoja de respuestas como única respuesta definitiva y mantiene el toggle para desmarcar una burbuja seleccionada;
+- preserva descansos configurables en simulacros personalizados y el aislamiento A/B del formato realista 2026;
+- no crea documentos auxiliares versionados nuevos; actualiza únicamente artefactos estables y QA existente.
+
 ## v1.5.8 - 2026-08-28
 
 Parche frontend acotado sobre v1.5.7. **No modifica scheduler, memoria, Supabase, taxonomía, dataset ni archivos críticos de sesión.**
