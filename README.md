@@ -1,14 +1,14 @@
-# Residentado v1.5.9 — Simulacro universal en cuadernillo
+# Residentado v1.6.0 — Dashboard preexamen dinámico + simulacro universal
 
-WebApp estática del banco de Residentado Médico Perú. v1.5.9 es un parche frontend acotado sobre **v1.5.8**: todos los simulacros usan el mismo cuadernillo con hoja de respuestas lateral, el tachado de distractores es reversible y el cuadernillo permite marcar una o dos alternativas como preferidas tentativas antes de pasar la respuesta definitiva a la hoja. Mantiene sin cambios banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler preexamen y guardrails de sesiones/PT409.
+WebApp estática del banco de Residentado Médico Perú. v1.6.0 es un parche frontend sobre **v1.5.9**: corrige el rollover diario del Dashboard preexamen para que las metas caducadas cambien de mensaje automáticamente y los días al examen se cuenten por fecha local desde las 00:00. Conserva íntegro el cuadernillo universal, el scratch reversible y la hoja de respuestas de v1.5.9. No cambia banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler de preguntas ni guardrails de sesiones/PT409.
 
 ## Estado
 
-- Frontend: `v1.5.9` / caché `residentado-v1-5-9`.
+- Frontend: `v1.6.0` / caché `residentado-v1-6-0`.
 - Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- **No hay migración nueva en v1.5.9.**
+- **No hay migración nueva en v1.6.0.**
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
 - Scheduler de rescate/retención v1.5.2 y guardrails PT409/recovery: preservados.
 
@@ -35,6 +35,14 @@ La explicación muestra contexto universal y una referencia en dos capas: **Núc
 
 `audit_source_urls` acepta retrocompatiblemente URLs desnudas y el formato preferido `[Cita compacta](https://...)`, incluso mezclados en una misma celda. Las referencias nominadas muestran la cita compacta; las legacy mantienen fallback por hostname. Solo se aceptan `http/https`, se escapan etiqueta/URL y se deduplica por URL normalizada prefiriendo la etiqueta nominada. No hay backfill ni cambio de schema.
 
+
+
+## Dashboard preexamen v1.6.0
+
+- Los **días al examen** se calculan por fecha local: al iniciar el 29/08, el 06/09 queda a 8 días calendario; el día del examen muestra 0 desde las 00:00.
+- Una meta ideal de cobertura ya vencida deja de mostrarse como instrucción futura. Si MUY_ALTA/ALTA sigue pendiente después de la meta ideal, el Dashboard cambia automáticamente a **Rescate final de MUY_ALTA/ALTA**.
+- El segundo contador también cambia con la fase: muestra días para el objetivo de cobertura, días hasta el corte de rescate ALTA o días de consolidación restantes.
+- El parche no altera el cálculo de memoria, FSRS/retención, elegibilidad de repaso, orden interno de las colas ni los límites de cobertura ya existentes; corrige presentación y semántica de calendario de la planificación diaria.
 
 ## Dashboard e Historial v1.5.8
 

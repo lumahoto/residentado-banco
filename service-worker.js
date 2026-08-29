@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.5.9: cuadernillo + hoja de respuestas para todo simulacro y scratch reversible; sin cambios de datos, scheduler ni archivos críticos de sesión.
+// v1.6.0: Dashboard preexamen dinámico por fecha local; conserva simulacro universal v1.5.9 y no cambia datos, memoria ni archivos críticos de sesión.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-5-9';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-6-0';
 const ASSETS = [
   './',
   './index.html',

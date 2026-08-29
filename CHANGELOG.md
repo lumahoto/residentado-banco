@@ -1,3 +1,15 @@
+## v1.6.0 - 2026-08-29
+
+Parche frontend sobre v1.5.9. **No modifica Supabase, dataset, taxonomía, memoria, elegibilidad de repaso ni archivos críticos de sesión.**
+
+- corrige el conteo de `días al examen` para usar diferencia entre fechas locales, evitando el +1 artificial durante la madrugada causado por contar hasta las 12:00;
+- el 29/08 frente al examen del 06/09 muestra 8 días y el día del examen pasa a 0 desde las 00:00;
+- evita seguir mostrando como futura la meta ideal del 28/08 después de que ya venció;
+- si MUY_ALTA/ALTA sigue pendiente tras la meta ideal, cambia automáticamente a un mensaje de **Rescate final de MUY_ALTA/ALTA**;
+- sustituye `0 días para cerrar primera vuelta útil` por un hito contextual: objetivo de cobertura, corte de rescate ALTA o consolidación restante;
+- conserva íntegramente el cuadernillo universal, hoja de respuestas, candidatos tentativos y tachado reversible de v1.5.9;
+- no crea documentos auxiliares versionados nuevos; actualiza únicamente artefactos estables y QA existente.
+
 ## v1.5.9 - 2026-08-28
 
 Parche frontend sobre v1.5.8. **No modifica scheduler, memoria, Supabase, taxonomía, dataset ni archivos críticos de sesión.**
