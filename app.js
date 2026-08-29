@@ -2669,7 +2669,10 @@
   }
 
   function daysBetween(a, b) { return (parseLocalDate(b) - parseLocalDate(a)) / 86400000; }
-  function daysUntil(iso) { return Math.ceil((parseLocalDate(iso) - new Date()) / 86400000); }
+  // v1.6.0 — metas del Dashboard se cuentan por fecha local, no por horas hasta el mediodía.
+  // Así, 29/08 → 06/09 son 8 días calendario y el día del examen ya es 0 desde las 00:00.
+  function daysUntil(iso) { return Math.round(daysBetween(isoDateLocal(), iso)); }
+  function shortLocalDate(iso) { return parseLocalDate(iso).toLocaleDateString('es-PE',{day:'2-digit',month:'2-digit'}); }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
   function currentPhase(date = isoDateLocal()) {
@@ -4548,8 +4551,10 @@
         key:'coverage_sprint',
         name:highCoverageSprint ? 'Rescate ALTA + memoria' : 'Cobertura MEDIA rentable',
         objective:highCoverageSprint
-          ? `Cerrar MUY_ALTA/ALTA nuevas idealmente antes del ${new Date(parseLocalDate(highGoal)).toLocaleDateString('es-PE',{day:'2-digit',month:'2-digit'})}, sin abandonar vencidas antiguas.`
-          : `Cerrar cobertura MUY_ALTA/ALTA y avanzar MEDIA rentable idealmente antes del ${new Date(parseLocalDate(valuableGoal)).toLocaleDateString('es-PE',{day:'2-digit',month:'2-digit'})}.`,
+          ? (today <= highGoal
+            ? `Cerrar MUY_ALTA/ALTA nuevas idealmente antes del ${shortLocalDate(highGoal)}, sin abandonar vencidas antiguas.`
+            : 'Rescate final de MUY_ALTA/ALTA: prioriza P0 + MUY_ALTA/ALTA, evita abrir material de bajo retorno y mantén vencidas rentables.')
+          : `Cerrar cobertura MUY_ALTA/ALTA y avanzar MEDIA rentable idealmente antes del ${shortLocalDate(valuableGoal)}.`,
       };
     } else {
       const residualNew = stats.valuableUnseen > 0
@@ -4594,6 +4599,9 @@
     return {
       today, phase, done, otherToday, adjustedTarget, tasks, next,
       coverageDeadline:coverageSprint ? coverageGoal : legacyDeadline,
+      coverageGoal,
+      coverageCutoff:highCoverageSprint ? highCutoff : valuableGoal,
+      coverageLate:coverageSprint && today > coverageGoal,
       coverageDaysLeft,
       coverageRisk,
       stats,
@@ -5334,8 +5342,14 @@
     const readingAlert = priorityReadingAlertData();
     const dueCount = smartPool('due').length;
     const slowCount = smartPool('speed').length;
-    const daysExam = daysUntil(profile?.exam_date || DEFAULT_PROFILE.exam_date);
-    const daysReady = daysUntil(plan.coverageDeadline || coverageDeadlineIso());
+    const daysExam = Math.max(0, daysUntil(profile?.exam_date || DEFAULT_PROFILE.exam_date));
+    const phaseMilestone = plan.phase.key === 'coverage_sprint'
+      ? (plan.coverageLate
+        ? { days:Math.max(0, Math.round(daysBetween(plan.today, plan.coverageCutoff))), label:'días hasta corte de rescate ALTA' }
+        : { days:Math.max(0, Math.round(daysBetween(plan.today, plan.coverageGoal))), label:'días para objetivo de cobertura' })
+      : plan.phase.key === 'final_consolidation'
+        ? { days:daysExam, label:'días de consolidación restantes' }
+        : { days:0, label:'hoy: examen' };
     const pace7 = sevenDayPace();
     const completion = plan.adjustedTarget ? Math.min(100, Math.round(plan.done/plan.adjustedTarget*100)) : 100;
     // Las sesiones automáticas pertenecen al checklist del día en que se crearon.
@@ -5355,7 +5369,7 @@
       ${questions.length < 200 ? `<div class="banner"><strong>Piloto de 20 preguntas:</strong> la carga diaria se escala temporalmente al contenido disponible. Las metas completas se activarán al importar el banco maestro.</div>` : ''}
 
       <section class="briefing panel">
-        <div class="briefing-main"><span class="status-pill ${status.cls}">${status.label}</span><h2>Plan 75+/80 · ${esc(plan.phase.name)}</h2><p>${esc(plan.phase.objective)}</p><div class="briefing-dates"><span><strong>${Math.max(0,daysExam)}</strong> días al examen</span><span><strong>${Math.max(0,daysReady)}</strong> días para cerrar primera vuelta útil</span></div></div>
+        <div class="briefing-main"><span class="status-pill ${status.cls}">${status.label}</span><h2>Plan 75+/80 · ${esc(plan.phase.name)}</h2><p>${esc(plan.phase.objective)}</p><div class="briefing-dates"><span><strong>${daysExam}</strong> días al examen</span><span><strong>${phaseMilestone.days}</strong> ${esc(phaseMilestone.label)}</span></div></div>
         <div class="goal compact-goal"><small>Preparación operativa*</small><div class="big">${ready.value}%</div><small>*indicador interno, no predicción de nota</small></div>
       </section>
 

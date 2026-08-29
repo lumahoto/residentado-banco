@@ -32,8 +32,11 @@ manifest = json.loads((ROOT/'RELEASE_MANIFEST.json').read_text(encoding='utf-8')
 w3 = (ROOT/'w3-tools.js').read_text(encoding='utf-8')
 w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
-# Guardrail documental: v1.5.9 no crea archivos versionados auxiliares nuevos.
+# Guardrail documental: v1.6.0 no crea archivos versionados auxiliares nuevos.
 for forbidden in [
+    ROOT/'QA'/'QA_RELEASE_V1_6_0.md',
+    ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_6_0.md',
+    ROOT/'docs'/'DECISION_LOG_V1_6_0.md',
     ROOT/'QA'/'QA_RELEASE_V1_5_9.md',
     ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_5_9.md',
     ROOT/'docs'/'DECISION_LOG_V1_5_9.md',
@@ -59,9 +62,9 @@ for forbidden in [
     require(not forbidden.exists(), f'Proliferación documental no permitida: {forbidden.relative_to(ROOT)}')
 
 # Release/version consistency.
-require("version: '1.5.9'" in version, 'version.js no declara 1.5.9')
-require("cacheName: 'residentado-v1-5-9'" in version, 'version.js no declara cache v1.5.9')
-require(manifest.get('version') == '1.5.9', 'RELEASE_MANIFEST no coincide con v1.5.9')
+require("version: '1.6.0'" in version, 'version.js no declara 1.6.0')
+require("cacheName: 'residentado-v1-6-0'" in version, 'version.js no declara cache v1.6.0')
+require(manifest.get('version') == '1.6.0', 'RELEASE_MANIFEST no coincide con v1.6.0')
 require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
@@ -218,10 +221,18 @@ require("historyDayReview?'':questionDoubtButton(q.id, questionDoubt)" in app, '
 require('allowPostMark:!omitted && !historyDayReview' in app, 'Revisión del día todavía permite mutar duda post-respuesta')
 require('if (historyDayReview || btn.dataset.questionDoubt !== q.id) return;' in app, 'Falta guardia defensiva contra escritura de duda en revisión del día')
 require("if (!historyLegacyAttempt) document.querySelectorAll('[data-review-prev]')" in app, 'La navegación Anterior de revisión histórica filtrada sigue bloqueada')
-require(manifest.get('scope', {}).get('dashboard_order_change') is False, 'v1.5.9 no debe declarar un nuevo cambio de orden del Dashboard')
-require(manifest.get('scope', {}).get('history_day_review_change') is False, 'v1.5.9 no debe declarar un nuevo cambio de Revisión del día')
+require(manifest.get('scope', {}).get('dashboard_order_change') is False, 'v1.6.0 no cambia el orden del Dashboard')
+require(manifest.get('scope', {}).get('history_day_review_change') is False, 'v1.6.0 no cambia Revisión del día')
 require(manifest.get('scope', {}).get('runtime_sync_change') is False, 'Revisión del día no debe declarar cambios de sincronización')
-require(manifest.get('scope', {}).get('simulators_changed') is True, 'v1.5.9 debe declarar cambios de simulador')
+require(manifest.get('scope', {}).get('simulators_changed') is False, 'v1.6.0 no debe declarar nuevos cambios de simulador')
+
+# v1.6.0: rollover del Dashboard por fecha local, sin alterar colas/scheduler.
+require("function daysUntil(iso) { return Math.round(daysBetween(isoDateLocal(), iso)); }" in app, 'El countdown no usa diferencia de fechas locales')
+require("Math.ceil((parseLocalDate(iso) - new Date()) / 86400000)" not in app, 'Sigue presente el +1 de madrugada por contar hasta mediodía')
+require("today <= highGoal" in app and "Rescate final de MUY_ALTA/ALTA" in app, 'La meta ALTA vencida no cambia automáticamente a rescate final')
+require("phaseMilestone" in app and "días hasta corte de rescate ALTA" in app and "días de consolidación restantes" in app, 'Falta hito contextual del Dashboard v1.6.0')
+require("días para cerrar primera vuelta útil" not in app, 'Sigue presente el contador estático/caducable de primera vuelta útil')
+require(manifest.get('scope', {}).get('dashboard_date_rollover_change') is True, 'Manifest v1.6.0 no declara el rollover dinámico del Dashboard')
 
 # v1.5.9: todos los simulacros usan cuadernillo + hoja y scratch reversible independiente de duda.
 for token in [
@@ -250,9 +261,9 @@ require("state === 'tentative'" in question_doubt and "state === 'candidate'" no
 answer_sheet = app[app.find('  function historicalAnswerSheetHtml()'):app.find('  function historicalAnsweredCount', app.find('  function historicalAnswerSheetHtml()'))]
 require('const sourceLetter = o.sourceLetter || o.letter' in answer_sheet and 'data-answer-letter="${sourceLetter}"' in answer_sheet, 'Hoja de respuestas no conserva mapeo de alternativas mezcladas')
 require('.paper-option-wrap.scratch-candidate' in styles and '.paper-option-wrap.scratch-crossed' in styles and '.paper-option-discard.active' in styles, 'Faltan estilos v1.5.9 para candidata/tachado reversible')
-require(manifest.get('scope', {}).get('simulators_changed') is True, 'Manifest v1.5.9 no declara simulators_changed')
-require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.5.9 no debe cambiar scheduler')
-require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'v1.5.9 no debe cambiar memoria')
+require(manifest.get('scope', {}).get('simulators_changed') is False, 'Manifest v1.6.0 debe preservar simuladores sin cambios nuevos')
+require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.6.0 no debe cambiar scheduler')
+require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'v1.6.0 no debe cambiar memoria')
 
 # Taxonomía V3: identidad estable y compatibilidad de aliases.
 require('TOPIC_ID:${encodeURIComponent(stableId)}' in app, 'El selector no serializa rentability_topic_id estable')
@@ -369,11 +380,11 @@ require('function reviewEligible(q, now = new Date())' in app, 'Falta elegibilid
 require('return recall < retention;' in app, 'La cola de repaso no respeta targetRetention vigente')
 require('const due = valid.filter(q => reviewEligible(q, now));' in app, 'El plan diario no usa la misma elegibilidad dinámica')
 require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'Manifest marca cambio de memoria por error')
-require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.5.9 no debe marcar cambio de scheduler')
-require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.5.9 no debe requerir nueva migración')
+require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.6.0 no debe marcar cambio de scheduler')
+require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.6.0 no debe requerir nueva migración')
 
 if errors:
-    print('QA v1.5.9 UNIVERSAL EXAM PAPER + SCRATCH: FAIL')
+    print('QA v1.6.0 DYNAMIC PREEXAM DASHBOARD + v1.5.9 REGRESSIONS: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.5.9 UNIVERSAL EXAM PAPER + SCRATCH: OK')
+print('QA v1.6.0 DYNAMIC PREEXAM DASHBOARD + v1.5.9 REGRESSIONS: OK')
