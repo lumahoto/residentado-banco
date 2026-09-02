@@ -1,3 +1,28 @@
+# Changelog - Residentado
+
+## v1.6.1 - 2026-09-02
+
+Parche frontend preexamen sobre v1.6.0, sin migración Supabase ni cambios de dataset/taxonomía/memoria/sesiones.
+
+**Auditoría predeploy R3 (misma versión visible 1.6.1):**
+- añade una cola explícita de MEDIA observadas no vistas, separada de las 134 anclas seleccionadas;
+- reparte el presupuesto diario MEDIA entre anclas + observadas, evitando que las observadas queden fuera del plan automático;
+- hace que el cierre ALTA/MUY_ALTA no visto preceda al backlog de vencidas; en fase MEDIA, errores/dudas preceden adquisición;
+- recalcula Dudas/Vencidas/weakness por topic solo con preguntas válidas, manteniendo cobertura histórica sobre todo el corpus;
+- corrige la redacción: 134 anclas seleccionadas, QR profundas auditadas 60/134 y aún no aplicadas al dataset;
+- revalida el tier A16 también en el filtro manual `MEDIA 134`, no solo en la cola automática;
+- conserva la versión visible 1.6.1, pero usa release/cache R3 para trazabilidad y para reemplazar de forma inequívoca los ZIP predeploy anteriores no desplegados.
+
+- corrige `MUY_ALTA + ALTA`: A16 es autoritativa y el fallback por corpus solo se usa si falta tier explícito;
+- confirma por regresión que MEDIA/BAJA no pueden entrar al filtro combinado high;
+- separa exposición histórica de dominio: `OBSERVADA_*` sí puede estudiarse y cuenta como vista, pero no entra a precisión/debilidad/due/speed;
+- añade filtro de práctica `Todas las históricas / Solo válidas / Solo observadas`, con Todas por defecto;
+- Dashboard desglosa ALTA/MUY_ALTA no vista en válidas + observadas y muestra observadas totales pendientes;
+- incorpora `MEDIA 134 · anclas`, una pregunta por cada topic MEDIA del handoff auditado del 02/09;
+- plan automático: high histórica primero, MEDIA 134 con >=3 días al examen, consolidación con <=2 días;
+- elimina referencias learner-facing por letra en feedback/historial/placeholder sin cambiar la identidad interna de alternativas;
+- preserva simulacro v1.5.9, `session-core.js`, `session-storage.js`, PT409/recovery y elegibilidad adaptativa de repaso.
+
 ## v1.6.0 - 2026-08-29
 
 Parche frontend sobre v1.5.9. **No modifica Supabase, dataset, taxonomía, memoria, elegibilidad de repaso ni archivos críticos de sesión.**

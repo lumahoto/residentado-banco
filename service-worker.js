@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.6.0: Dashboard preexamen dinámico por fecha local; conserva simulacro universal v1.5.9 y no cambia datos, memoria ni archivos críticos de sesión.
+// v1.6.1 R3: auditoría predeploy; preserva filtro high canónico, exposición MEDIA observada y métricas adaptativas válidas; añade higiene learner-facing sin referencias por letra; conserva simulacro v1.5.9 y archivos críticos de sesión.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-6-0';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-6-1-r3';
 const ASSETS = [
   './',
   './index.html',

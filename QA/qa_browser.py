@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.6.0: Dashboard preexamen dinámico + regresiones v1.5.9, revisión del día y QRV2. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.6.1: Dashboard preexamen dinámico + regresiones v1.5.9, revisión del día y QRV2. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -14,7 +14,7 @@ html = '<!doctype html><html><head><meta charset="utf-8"><style>' + (ROOT/'style
 for filename in SCRIPTS:
     html += '<script>' + (ROOT/filename).read_text(encoding='utf-8').replace('</script>', '<\\/script>') + '</script>'
 html += '<script>window.__TTS_CATALOG__=' + json.dumps(CATALOG, ensure_ascii=False) + ';window.fetch=async input=>{if(String(input).includes("tts_catalog.json"))return {ok:true,status:200,json:async()=>window.__TTS_CATALOG__};throw new Error("offline smoke");};'
-html += 'if(window.PILOT_QUESTIONS){window.PILOT_QUESTIONS.forEach((q,i)=>Object.assign(q,{rentability_topic_id:' + json.dumps(FIRST['topicId']) + ',rentability_topic_label:' + json.dumps(FIRST['topicLabel'],ensure_ascii=False) + ',rentability_tier:"MUY_ALTA",exam_rentability_score:10+i,canonical_area:"Medicina Interna",canonical_specialty:"Endocrinología y Metabolismo"}));const g=window.PILOT_QUESTIONS[window.PILOT_QUESTIONS.length-1];Object.assign(g,{comparison_title:"Fluoroquinolonas — lesión tendinosa",comparison_framework:"Evento: tendinitis o rotura del Aquiles. Riesgo mayor: edad y corticoides. Conducta: suspender y evaluar rotura.",canonical_entity:"Tendinopatía por fluoroquinolonas",tested_aspect_primary:"Toxicidad, reacción adversa o interacción",pivot_text:"Tendinopatía y rotura de Aquiles",exam_logic:"Quinolona + dolor del talón = pensar en lesión del Aquiles.",abbreviations:"FQ: fluoroquinolonas.",memory_hook:"Gancho QA: quinolona + Aquiles.",reference_notes:"Contenido legacy preservado.",audit_source_urls:"https://example.org/source | [ACOG. Gestational Hypertension and Preeclampsia. Practice Bulletin No. 222. 2020.](https://example.org/source) | https://legacy.example.net/guideline | [<img src=x onerror=window.__XSS_EXECUTED__=true>NICE. NG133.](https://safe.example.org/ng133) | [No permitido](javascript:alert(1))"});window.__EXPECTED_RENT_QUESTION__=g.question;const seeds=[...window.PILOT_QUESTIONS];for(const test of ["A","B"]){for(let n=1;n<=90;n++){const base=seeds[(n-1)%seeds.length];window.PILOT_QUESTIONS.push({...base,id:`QA-2020-${test}-${String(n).padStart(3,"0")}`,year:2020,test,question_number:n,question:`QA histórico ${test}-${n}: ${base.question}`,exam_rentability_score:0.01});}}}</script>'
+html += 'if(window.PILOT_QUESTIONS){window.PILOT_QUESTIONS.forEach((q,i)=>Object.assign(q,{rentability_topic_id:' + json.dumps(FIRST['topicId']) + ',rentability_topic_label:' + json.dumps(FIRST['topicLabel'],ensure_ascii=False) + ',rentability_tier:"MUY_ALTA",exam_rentability_score:10+i,canonical_area:"Medicina Interna",canonical_specialty:"Endocrinología y Metabolismo"}));const g=window.PILOT_QUESTIONS[window.PILOT_QUESTIONS.length-1];Object.assign(g,{comparison_title:"Fluoroquinolonas — lesión tendinosa",comparison_framework:"Evento: tendinitis o rotura del Aquiles. Riesgo mayor: edad y corticoides. Conducta: suspender y evaluar rotura.",canonical_entity:"Tendinopatía por fluoroquinolonas",tested_aspect_primary:"Toxicidad, reacción adversa o interacción",pivot_text:"Tendinopatía y rotura de Aquiles",exam_logic:"Quinolona + dolor del talón = pensar en lesión del Aquiles.",abbreviations:"FQ: fluoroquinolonas.",memory_hook:"Gancho QA: quinolona + Aquiles.",reference_notes:"Contenido legacy preservado.",audit_status:"OBSERVADA_AMBIGUA",correct_explanation:`La alternativa ${g.official_answer} representa el concepto correcto.`,audit_current_assessment:`La clave ${g.official_answer} sigue siendo defendible; no debe mostrarse por letra.`,audit_current_answer:`${g.official_answer}. ${g[`option_${g.official_answer.toLowerCase()}`]}`,common_trap:"Elegir entre A y B solo por la letra es un error de presentación.",audit_source_urls:"https://example.org/source | [ACOG. Gestational Hypertension and Preeclampsia. Practice Bulletin No. 222. 2020.](https://example.org/source) | https://legacy.example.net/guideline | [<img src=x onerror=window.__XSS_EXECUTED__=true>NICE. NG133.](https://safe.example.org/ng133) | [No permitido](javascript:alert(1))"});window.__EXPECTED_RENT_QUESTION__=g.question;const seeds=[...window.PILOT_QUESTIONS];for(const test of ["A","B"]){for(let n=1;n<=90;n++){const base=seeds[(n-1)%seeds.length];window.PILOT_QUESTIONS.push({...base,id:`QA-2020-${test}-${String(n).padStart(3,"0")}`,year:2020,test,question_number:n,question:`QA histórico ${test}-${n}: ${base.question}`,exam_rentability_score:0.01});}}const special=seeds[0];window.PILOT_QUESTIONS.push({...special,id:"QA-EXPLICIT-MEDIA",year:null,test:"",question_number:null,question:"QA MEDIA explícita que no debe entrar a high",rentability_tier:"MEDIA",exam_rentability_score:100,audit_status:"VALIDADA"});window.PILOT_QUESTIONS.push({...special,id:"QA-OBSERVED-HIGH",year:null,test:"",question_number:null,question:"QA high observada elegible para exposición",rentability_tier:"ALTA",exam_rentability_score:99,audit_status:"OBSERVADA_AMBIGUA"});window.PILOT_QUESTIONS.push({...special,id:"QA-OBSERVED-MEDIA",year:null,test:"",question_number:null,question:"QA MEDIA observada elegible para exposición histórica",rentability_tier:"MEDIA",exam_rentability_score:55,audit_status:"OBSERVADA_DESACTUALIZADA"});window.PILOT_QUESTIONS.push({...special,id:"RM-2025-A-050",year:null,test:"",question_number:null,question:"QA ancla MEDIA134",rentability_tier:"MEDIA",exam_rentability_score:59,audit_status:"VALIDADA"});}</script>'
 html += r'''<script>(()=>{
   const qs=window.PILOT_QUESTIONS||[];
   const byId=id=>qs.find(q=>q.id===id);
@@ -48,13 +48,16 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.6.0' in page.locator('body').inner_text()
+    assert 'v1.6.1' in page.locator('body').inner_text()
 
 
     # v1.6.0: el Dashboard no conserva el hito estático caducable de primera vuelta.
     dashboard_text = page.locator('body').inner_text()
     assert 'días para cerrar primera vuelta útil' not in dashboard_text
     assert any(label in dashboard_text for label in ['días para objetivo de cobertura','días hasta corte de rescate ALTA','días de consolidación restantes','hoy: examen'])
+    assert 'MEDIA prioritaria por ver:' in dashboard_text
+    assert '1 anclas + 1 observadas = 2' in dashboard_text
+    assert 'ALTA/MUY_ALTA no vistas' in page.locator('#next-task-btn').inner_text()
 
     # Dashboard heredado de v1.5.8: la acción operativa va antes de cualquier alerta académica.
     assert page.locator('#next-task-btn').count() == 1
@@ -133,12 +136,18 @@ with sync_playwright() as p:
     page.get_by_role('button', name='⚙ Personalizar práctica').click()
     page.wait_for_timeout(100)
     assert page.locator('#rentability option[value="muy_alta"]').count() == 1
+    assert page.locator('#rentability option[value="media134"]').count() == 1
+    assert '1' in page.locator('#rentability option[value="media134"]').inner_text()
+    assert page.locator('#editorial-scope option[value="observed"]').count() == 1
+    assert '201' in page.locator('#rentability option[value="high"]').inner_text()  # 200 high canónicas + 1 high observada; MEDIA explícita queda fuera
+    assert '3' in page.locator('#editorial-scope option[value="observed"]').inner_text()
     assert page.locator('input[name="topicPath"]').first.get_attribute('value').startswith('TOPIC_ID:')
     assert page.locator('#selection-order').input_value() == 'RANDOM'
     assert page.locator('#presentation-order').input_value() == 'RANDOM'
     assert page.locator('#randomize').count() == 0
 
-    # Selección RENTABILITY + presentación QUEUE heredada debe seguir escogiendo mayor score.
+    # Selección high canónica + RENTABILITY: una MEDIA explícita con score 100 no puede colarse.
+    page.locator('#rentability').select_option('high')
     page.locator('#selection-order').select_option('RENTABILITY')
     page.locator('#presentation-order').select_option('QUEUE')
     page.locator('#question-count').fill('1')
@@ -160,6 +169,13 @@ with sync_playwright() as p:
     assert 'Tiempo agotado' not in page.locator('#feedback').inner_text()
     feedback_text = page.locator('#feedback').inner_text()
     assert 'Fluoroquinolonas — lesión tendinosa' in feedback_text
+    # Higiene learner-facing: el corpus puede conservar letras históricas, pero la UI las sustituye por el texto de la alternativa.
+    import re
+    assert not re.search(r'\b(?:alternativa|opci[oó]n|respuesta|clave)\s+[A-E]\b', feedback_text, re.I)
+    assert 'no debe mostrarse por letra' in feedback_text
+    current_line = next((line for line in feedback_text.splitlines() if line.startswith('Criterio actual:')), '')
+    assert current_line and not re.search(r'Criterio actual:\s*[A-E][\.\):]', current_line)
+    assert 'Elegir entre «' in feedback_text and '» y «' in feedback_text
     quick = page.locator('#feedback details.qrv2-reference')
     assert quick.count() == 1 and not quick.get_attribute('open')
     quick.locator('summary.qrv2-reference-summary').click()
@@ -399,4 +415,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.6.0 DYNAMIC PREEXAM DASHBOARD + v1.5.9 REGRESSIONS: OK')
+print('QA navegador v1.6.1 CANONICAL EXPOSURE + MEDIA134 + v1.5.9 REGRESSIONS: OK')

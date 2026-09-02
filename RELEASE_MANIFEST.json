@@ -1,39 +1,56 @@
 {
-  "release_id": "REL-20260829-V1.6.0-DYNAMIC-PREEXAM-DASHBOARD",
-  "version": "1.6.0",
-  "date": "2026-08-29",
+  "release_id": "REL-20260902-V1.6.1-R3-CANONICAL-EXPOSURE-MEDIA134",
+  "version": "1.6.1",
+  "date": "2026-09-02",
   "base": {
-    "version": "1.5.9",
-    "archive": "260828_1719_residentado-banco-main_v159.zip",
-    "note": "v1.6.0 is a focused local-calendar/dashboard rollover patch over the deployed v1.5.9 baseline."
+    "version": "1.6.0",
+    "archive": "260901_1926_residentado-banco-main_v160.zip",
+    "note": "Focused preexam frontend patch over the current v1.6.0 baseline."
   },
-  "status": "READY_FOR_GITHUB_DESKTOP_PATCH_NO_NEW_SUPABASE_MIGRATION",
-  "release_type": "DYNAMIC_PREEXAM_DASHBOARD_LOCAL_CALENDAR_ROLLOVER",
+  "status": "READY_FOR_GITHUB_DESKTOP_PATCH_NO_NEW_SUPABASE_MIGRATION_AUDITED_R3",
+  "release_type": "CANONICAL_RENTABILITY_HISTORICAL_EXPOSURE_MEDIA134",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
     "taxonomy_change": false,
     "memory_algorithm_change": false,
+    "review_eligibility_change": false,
+    "simulator_logic_change": false,
+    "practice_ui_change": true,
+    "dashboard_planning_change": true,
+    "media134_curated_queue": true,
+    "runtime_sync_change": false,
     "scheduler_change": false,
     "simulators_changed": false,
-    "practice_ui_change": false,
-    "quick_reference_change": false,
     "review_flag_semantics_change": false,
-    "runtime_sync_change": false,
     "dashboard_order_change": false,
     "history_day_review_change": false,
-    "dashboard_date_rollover_change": true
+    "dashboard_date_rollover_change": false,
+    "media_observed_queue": true,
+    "daily_task_priority_order_change": true,
+    "adaptive_topic_metrics_fix": true,
+    "learner_letter_hygiene_layer": true
   },
   "changes": {
-    "LOCAL_CALENDAR_COUNTDOWN_160": "Dashboard countdowns use local calendar dates instead of hours-to-noon; 2026-08-29 to 2026-09-06 is 8 days and exam day is 0 from 00:00.",
-    "EXPIRED_GOAL_ROLLOVER_160": "Once the ideal high-coverage goal date has passed, the future-tense dated instruction is replaced automatically by a final MUY_ALTA/ALTA rescue message.",
-    "CONTEXTUAL_MILESTONE_160": "The second briefing counter changes by phase: coverage-goal countdown, high-rescue cutoff countdown, or remaining consolidation days.",
-    "SIMULATOR_159_PRESERVED": "Universal paper exam layout, answer sheet, tentative candidates and reversible crossout from v1.5.9 are preserved.",
-    "SEMANTICS_PRESERVED_160": "No changes to Supabase schema, dataset, taxonomy, memory algorithm, review eligibility, PT409/recovery or protected session files."
+    "CANONICAL_HIGH_161": "Explicit A16 tier is authoritative; corpus fallback cannot promote explicit MEDIA/BAJA into MUY_ALTA+ALTA.",
+    "HISTORICAL_EXPOSURE_161": "OBSERVADA_* remains study-eligible and counts toward historical exposure while staying excluded from adaptive domain/weakness/due/speed metrics.",
+    "EDITORIAL_SCOPE_161": "Custom practice can select all historical, valid only, or observed only; all historical is the default.",
+    "DASHBOARD_SPLIT_161": "High unseen is shown as valid + observed = historical exposure pending.",
+    "MEDIA134_161": "Adds the frozen 134-anchor MEDIA queue (one selected anchor per MEDIA topic) and builder filter without modifying the question dataset; deep QR audit is 60/134 and not yet applied.",
+    "FINAL4DAY_PLAN_161": "High historical exposure first; MEDIA134 with >=3 days to exam; consolidation with <=2 days.",
+    "NO_LETTER_LEARNER_TEXT_161": "Runtime learner-facing editorial prose replaces explicit A–E references with the corresponding option text and strips answer-letter prefixes from current-answer displays/learning-note exports; stored bank rows remain untouched until the later Supabase editorial delta.",
+    "SIMULATOR_PRESERVED": "Universal paper exam behavior from v1.5.9 is unchanged.",
+    "PROTECTED_SESSION_FILES": "session-core.js and session-storage.js remain byte-identical to v1.6.0.",
+    "MEDIA_OBSERVED_161_R2": "MEDIA observed historical questions remain explicit study material and receive their own preexam queue after high exposure closes.",
+    "TASK_ORDER_161_R2": "During high rescue, unseen high precedes backlog reviews; during MEDIA acquisition, errors/doubts precede MEDIA anchors/observed forms so a large due backlog cannot hide the active preexam objective.",
+    "ADAPTIVE_TOPIC_METRICS_161_R2": "Mi Estado keeps canonical historical coverage over all questions but recalculates topic weakness/doubt/overdue using only non-observed questions.",
+    "MEDIA134_LABEL_ACCURACY_161_R2": "UI says selected MEDIA anchors, not that all 134 quick references are already audited/applied; current QR audit remains 60/134 and not yet in production.",
+    "LETTER_HYGIENE_161_R3": "Predeploy audit found that legacy QRV2 fields can still contain phrases such as “alternativa C” or “D. ...”. v1.6.1 now sanitizes those references at render/export time using the actual option text, without mutating source questions or content hashes.",
+    "MEDIA134_CANONICAL_GUARD_161_R3": "Both the automated MEDIA134 queue and the manual builder filter revalidate that each frozen anchor still carries explicit canonical tier MEDIA before including it."
   },
   "supabase_migration": {
     "required": false,
-    "note": "No migration. v1.6.0 is frontend-only."
+    "note": "No migration. v1.6.1 is frontend-only."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
@@ -42,7 +59,13 @@
     "questions": 2180,
     "freeze_until": "2026-09-06"
   },
-  "dataset_revision": "QUESTIONS-TAXV3-A16-20260818-R1",
+  "dataset_revision": "QUESTIONS-PATCH-BATCH-R06-12-V002-20260828",
+  "media134": {
+    "source": "260901_MEDIA134_ANCLAS_ACUMULATIVO_A03_134TEMAS.md",
+    "anchor_count": 134,
+    "selection_status": "FROZEN_FOR_PREEXAM_EXPOSURE",
+    "quick_reference_audit_status": "60_OF_134_AUDITED_NOT_APPLIED_TO_DATASET"
+  },
   "modified_runtime_files": [
     "app.js",
     "version.js",
@@ -69,9 +92,8 @@
     "static_command": "python3 QA/qa_static.py",
     "browser_command": "python3 QA/qa_browser.py",
     "session_core_unit_command": "node QA/test_session_core.js",
-    "dashboard_regression": "LOCAL_DATE_20260829_EXAM_20260906_EQUALS_8_AND_EXPIRED_2808_GOAL_ROLLS_TO_RESCUE",
-    "simulator_regression": "V159_UNIVERSAL_PAPER_AND_REVERSIBLE_SCRATCH_PRESERVED",
-    "responsive_regression": "DASHBOARD_AND_EXAM_320_TO_1440",
-    "manual_smoke": "RECOMMENDED_AFTER_DEPLOY"
-  }
+    "manual_smoke": "RECOMMENDED_AFTER_DEPLOY_BEFORE_SIMULACRO: reopen/hard refresh, verify visible v1.6.1, simulator hub 200 A+B, custom practice editorial filter, and Dashboard high/MEDIA-priority split."
+  },
+  "dataset_revision_note": "Última revisión de producción confirmada por el paquete R07; v1.6.1 no modifica el dataset. Exportar public.questions fresco después del simulacro antes del próximo patch clínico-editorial.",
+  "audit_revision": "R3_PREDEPLOY"
 }
