@@ -34,6 +34,9 @@ w4 = (ROOT/'w4-data.js').read_text(encoding='utf-8')
 
 # Guardrail documental: v1.6.0 no crea archivos versionados auxiliares nuevos.
 for forbidden in [
+    ROOT/'QA'/'QA_RELEASE_V1_6_1.md',
+    ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_6_1.md',
+    ROOT/'docs'/'DECISION_LOG_V1_6_1.md',
     ROOT/'QA'/'QA_RELEASE_V1_6_0.md',
     ROOT/'docs'/'INSTRUCCIONES_APLICACION_V1_6_0.md',
     ROOT/'docs'/'DECISION_LOG_V1_6_0.md',
@@ -62,9 +65,9 @@ for forbidden in [
     require(not forbidden.exists(), f'Proliferación documental no permitida: {forbidden.relative_to(ROOT)}')
 
 # Release/version consistency.
-require("version: '1.6.0'" in version, 'version.js no declara 1.6.0')
-require("cacheName: 'residentado-v1-6-0'" in version, 'version.js no declara cache v1.6.0')
-require(manifest.get('version') == '1.6.0', 'RELEASE_MANIFEST no coincide con v1.6.0')
+require("version: '1.6.1'" in version, 'version.js no declara 1.6.1')
+require("cacheName: 'residentado-v1-6-1-r3'" in version, 'version.js no declara cache v1.6.1 R3')
+require(manifest.get('version') == '1.6.1', 'RELEASE_MANIFEST no coincide con v1.6.1')
 require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
@@ -133,7 +136,16 @@ require("if (mode === 'exam') {\n        const selected = (config.randomize ? sh
 require('examQuestionEnteredAt = 0;' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview de simulacro sigue atribuyendo tiempo de revisión a una pregunta')
 require('startExamTimer();' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview de simulacro sigue pausando el cronómetro')
 require('id="timer" class="value"' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview no actualiza visualmente el tiempo restante')
-require(manifest.get('scope', {}).get('practice_ui_change') is False, 'v1.5.9 no debe declarar cambio de práctica ordinaria')
+require(manifest.get('scope', {}).get('practice_ui_change') is True, 'v1.6.1 debe declarar cambio de práctica ordinaria')
+require(manifest.get('scope', {}).get('learner_letter_hygiene_layer') is True, 'Manifest no declara higiene learner-facing por letra')
+for token in ['function learnerEditorialText', 'function learnerCurrentAnswerText', 'learnerOptionLabel(q, letter)', 'la alternativa']:
+    require(token in app, f'Falta capa v1.6.1 R3 de higiene learner-facing: {token}')
+for feedback_name, feedback_end in [('renderReviewFeedbackFallback', 'renderFeedback'), ('renderFeedback', 'function renderQuestion')]:
+    start = app.find(f'function {feedback_name}')
+    end = app.find(feedback_end, start + 1)
+    segment = app[start:end if end != -1 else None]
+    require('learnerEditorialText' in segment, f'{feedback_name} no aplica higiene learner-facing a explicaciones/distractores')
+require('learnerCurrentAnswerText(q, q.audit_current_answer)' in app, 'Criterio actual no elimina prefijos de letra en learner-facing')
 
 # v1.5.7 QRV2: referencias nominadas + bloque completo plegable.
 for token in ['function qrv2Profile', 'function qrv2MigrationStatus', 'Núcleo rápido', 'Detalle útil', 'Fuentes y trazabilidad', 'q.audit_source_urls']:
@@ -163,7 +175,7 @@ require('.feedback-next-actions' in styles and 'justify-content: flex-end' in st
 require('const referent = comparisonTitle || entity || topic' in app, 'QRV2 no prioriza comparison_title/Entidad como referente explícito')
 require('💊 Fármacos y antibióticos' not in app, 'QRV2 conserva encabezado farmacológico genérico que oculta el referente')
 require('rel="noopener noreferrer"' in app, 'Fuentes QRV2 no protegen enlaces externos')
-require(manifest.get('scope', {}).get('review_flag_semantics_change') is False, 'v1.5.7 no debe declarar cambio semántico flag/nota')
+require(manifest.get('scope', {}).get('review_flag_semantics_change') is False, 'v1.6.1 no debe cambiar semántica flag/nota')
 
 # v1.5.7 simulacro realista 2026: dos partes independientes y B bloqueada.
 for token in [
@@ -221,18 +233,18 @@ require("historyDayReview?'':questionDoubtButton(q.id, questionDoubt)" in app, '
 require('allowPostMark:!omitted && !historyDayReview' in app, 'Revisión del día todavía permite mutar duda post-respuesta')
 require('if (historyDayReview || btn.dataset.questionDoubt !== q.id) return;' in app, 'Falta guardia defensiva contra escritura de duda en revisión del día')
 require("if (!historyLegacyAttempt) document.querySelectorAll('[data-review-prev]')" in app, 'La navegación Anterior de revisión histórica filtrada sigue bloqueada')
-require(manifest.get('scope', {}).get('dashboard_order_change') is False, 'v1.6.0 no cambia el orden del Dashboard')
-require(manifest.get('scope', {}).get('history_day_review_change') is False, 'v1.6.0 no cambia Revisión del día')
+require(manifest.get('scope', {}).get('dashboard_order_change') is False, 'v1.6.1 no cambia el orden estructural del Dashboard')
+require(manifest.get('scope', {}).get('history_day_review_change') is False, 'v1.6.1 no cambia Revisión del día')
 require(manifest.get('scope', {}).get('runtime_sync_change') is False, 'Revisión del día no debe declarar cambios de sincronización')
-require(manifest.get('scope', {}).get('simulators_changed') is False, 'v1.6.0 no debe declarar nuevos cambios de simulador')
+require(manifest.get('scope', {}).get('simulators_changed') is False, 'v1.6.1 no debe declarar nuevos cambios de simulador')
 
 # v1.6.0: rollover del Dashboard por fecha local, sin alterar colas/scheduler.
 require("function daysUntil(iso) { return Math.round(daysBetween(isoDateLocal(), iso)); }" in app, 'El countdown no usa diferencia de fechas locales')
 require("Math.ceil((parseLocalDate(iso) - new Date()) / 86400000)" not in app, 'Sigue presente el +1 de madrugada por contar hasta mediodía')
-require("today <= highGoal" in app and "Rescate final de MUY_ALTA/ALTA" in app, 'La meta ALTA vencida no cambia automáticamente a rescate final')
-require("phaseMilestone" in app and "días hasta corte de rescate ALTA" in app and "días de consolidación restantes" in app, 'Falta hito contextual del Dashboard v1.6.0')
+require("highHistoricalUnseen > 0" in app and "Rescate ALTA + exposición histórica" in app, 'v1.6.1 no prioriza exposición high histórica')
+require("phaseMilestone" in app and "días de consolidación restantes" in app, 'Falta hito contextual del Dashboard')
 require("días para cerrar primera vuelta útil" not in app, 'Sigue presente el contador estático/caducable de primera vuelta útil')
-require(manifest.get('scope', {}).get('dashboard_date_rollover_change') is True, 'Manifest v1.6.0 no declara el rollover dinámico del Dashboard')
+require(manifest.get('scope', {}).get('dashboard_planning_change') is True, 'Manifest v1.6.1 no declara cambio de planificación del Dashboard')
 
 # v1.5.9: todos los simulacros usan cuadernillo + hoja y scratch reversible independiente de duda.
 for token in [
@@ -261,9 +273,9 @@ require("state === 'tentative'" in question_doubt and "state === 'candidate'" no
 answer_sheet = app[app.find('  function historicalAnswerSheetHtml()'):app.find('  function historicalAnsweredCount', app.find('  function historicalAnswerSheetHtml()'))]
 require('const sourceLetter = o.sourceLetter || o.letter' in answer_sheet and 'data-answer-letter="${sourceLetter}"' in answer_sheet, 'Hoja de respuestas no conserva mapeo de alternativas mezcladas')
 require('.paper-option-wrap.scratch-candidate' in styles and '.paper-option-wrap.scratch-crossed' in styles and '.paper-option-discard.active' in styles, 'Faltan estilos v1.5.9 para candidata/tachado reversible')
-require(manifest.get('scope', {}).get('simulators_changed') is False, 'Manifest v1.6.0 debe preservar simuladores sin cambios nuevos')
-require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.6.0 no debe cambiar scheduler')
-require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'v1.6.0 no debe cambiar memoria')
+require(manifest.get('scope', {}).get('simulators_changed') is False, 'Manifest v1.6.1 debe preservar simuladores sin cambios nuevos')
+require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.6.1 no cambia algoritmo de scheduler/memoria')
+require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'v1.6.1 no debe cambiar memoria')
 
 # Taxonomía V3: identidad estable y compatibilidad de aliases.
 require('TOPIC_ID:${encodeURIComponent(stableId)}' in app, 'El selector no serializa rentability_topic_id estable')
@@ -288,6 +300,27 @@ require('promedio descriptivo ponderado' in app, 'La UI no distingue score descr
 for token in ['value="muy_alta"','value="alta"','value="media"','value="baja"','matchesRentabilityFilter']:
     require(token in app, f'Falta filtro de rentabilidad {token}')
 require("if (filter === 'high') return isHighRentability(q)" in app, 'Se perdió filtro MUY_ALTA+ALTA')
+require("if (explicit) {" in app[app.find('function isHighRentability'):app.find('function normalizedExplicitRentabilityTier')], 'High no prioriza tier A16 explícito')
+require("filter === 'media134'" in app and 'MEDIA134_ANCHOR_ORDER' in app, 'Falta carril MEDIA134')
+require("if (filter === 'media134') return MEDIA134_ANCHOR_IDS.has(q?.id) && rentabilityTierRank(q) === 2;" in app, 'El filtro manual MEDIA134 no revalida tier MEDIA canónico')
+require("const media134Count = questions.filter(q => matchesRentabilityFilter(q, 'media134')).length;" in app, 'El contador visible MEDIA134 no usa el filtro canónico')
+anchor_match = re.search(r'const MEDIA134_ANCHOR_ORDER = Object\.freeze\(\[(.*?)\]\);', app, re.S)
+anchor_ids = re.findall(r"'([^']+)'", anchor_match.group(1)) if anchor_match else []
+require(len(anchor_ids) == 134 and len(set(anchor_ids)) == 134, f'MEDIA134 debe contener 134 IDs únicos; actual={len(anchor_ids)}/{len(set(anchor_ids))}')
+require('rentabilityTierRank(q) === 2 && !seen.has(q.id)' in app, 'MEDIA134 no valida que cada ancla siga siendo MEDIA canónica')
+require("id=\"editorial-scope\"" in app and "matchesEditorialFilter(q, config.editorialScope)" in app, 'Falta filtro editorial de práctica')
+require('highValidUnseen' in app and 'highObservedUnseen' in app and 'highHistoricalUnseen' in app, 'Dashboard no separa exposición high válida/observada')
+require('mediaObservedUnseen' in app and 'mediaPriorityUnseen' in app and "kind === 'media_observed'" in app, 'Falta exposición MEDIA observada separada')
+require("kind === 'new_high'" in app and "kind === 'media134'" in app, 'Plan v1.6.1 no tiene colas high histórica/MEDIA134')
+plan_body = app[app.find('  function buildTodayPlan'):app.find('  function topicRoadmap')]
+high_branch_start = plan_body.find('if (highCoverageSprint)')
+high_specs_start = plan_body.find('specs = [', high_branch_start)
+high_specs_end = plan_body.find('];', high_specs_start)
+high_specs = plan_body[high_specs_start:high_specs_end]
+require(high_specs.find("['new_high'") >= 0 and high_specs.find("['new_high'") < high_specs.find("['due'"), 'El backlog due vuelve a ocultar el cierre ALTA/MUY_ALTA')
+require("['media_observed'" in plan_body and 'stats.mediaPriorityUnseen' in plan_body, 'Plan MEDIA no integra observadas')
+require('adaptiveWeaknessScore' in app and 'validUncertainAttempts' in app and 'validOverdue' in app, 'Mi Estado no aísla weakness/dudas/vencidas de OBSERVADA_*')
+require('Marcaste: ${esc(a.selected_answer' not in app, 'Historial sigue exponiendo letras como explicación')
 
 # No hardcodear 274 en runtime. Se permite solo en catálogo TTS legacy/documentación/QA explícita.
 runtime_text = '\n'.join((ROOT/name).read_text(encoding='utf-8') for name in ['app.js','w3-tools.js','w4-data.js','version.js','service-worker.js','index.html'])
@@ -380,11 +413,11 @@ require('function reviewEligible(q, now = new Date())' in app, 'Falta elegibilid
 require('return recall < retention;' in app, 'La cola de repaso no respeta targetRetention vigente')
 require('const due = valid.filter(q => reviewEligible(q, now));' in app, 'El plan diario no usa la misma elegibilidad dinámica')
 require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'Manifest marca cambio de memoria por error')
-require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.6.0 no debe marcar cambio de scheduler')
-require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.6.0 no debe requerir nueva migración')
+require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.6.1 no debe marcar cambio del scheduler de memoria')
+require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.6.1 no debe requerir nueva migración')
 
 if errors:
-    print('QA v1.6.0 DYNAMIC PREEXAM DASHBOARD + v1.5.9 REGRESSIONS: FAIL')
+    print('QA v1.6.1 CANONICAL EXPOSURE + MEDIA134 + v1.5.9 REGRESSIONS: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.6.0 DYNAMIC PREEXAM DASHBOARD + v1.5.9 REGRESSIONS: OK')
+print('QA v1.6.1 CANONICAL EXPOSURE + MEDIA134 + v1.5.9 REGRESSIONS: OK')

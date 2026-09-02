@@ -12,6 +12,143 @@
   const DEMO_PROFILE_KEY = 'residentado_learning_profile_v1';
   const DEMO_REVIEW_FLAGS_KEY = 'residentado_question_review_flags_v1';
   const DEMO_LEARNING_NOTES_KEY = 'residentado_question_learning_notes_v1';
+  const MEDIA134_ANCHOR_ORDER = Object.freeze([
+    'RM-2025-A-050',
+    'RM-2020-B-003',
+    'RM-2019-A-052',
+    'RM-2023-A-060',
+    'RM-2022-B-035',
+    'RM-2025-A-052',
+    'RM-2025-B-094',
+    'RM-2019-A-050',
+    'RM-2022-B-075',
+    'RM-2019-A-023',
+    'RM-2022-A-072',
+    'RM-2024-A-088',
+    'RM-2025-B-041',
+    'RM-2024-B-052',
+    'RM-2024-A-011',
+    'RM-2022-B-069',
+    'RM-2023-B-086',
+    'RM-2024-B-003',
+    'RM-2023-A-037',
+    'RM-2018-B-020',
+    'RM-2022-A-052',
+    'RM-2024-B-097',
+    'RM-2022-B-030',
+    'RM-2025-B-083',
+    'RM-2020-A-063',
+    'RM-2024-A-090',
+    'RM-2025-B-071',
+    'RM-2025-A-079',
+    'RM-2022-A-032',
+    'RM-2021-A-038',
+    'RM-2018-A-059',
+    'RM-2024-A-092',
+    'RM-2018-A-045',
+    'RM-2025-A-023',
+    'RM-2015-B-025',
+    'RM-2023-B-028',
+    'RM-2024-B-014',
+    'RM-2020-A-038',
+    'RM-2017-A-051',
+    'RM-2020-B-040',
+    'RM-2019-A-038',
+    'RM-2022-A-091',
+    'RM-2018-A-067',
+    'RM-2022-B-062',
+    'RM-2021-A-059',
+    'RM-2025-B-089',
+    'RM-2021-B-017',
+    'RM-2025-A-027',
+    'RM-2024-A-081',
+    'RM-2017-B-026',
+    'RM-2019-A-048',
+    'RM-2025-B-052',
+    'RM-2016-A-100',
+    'RM-2015-B-091',
+    'RM-2024-A-013',
+    'RM-2024-B-008',
+    'RM-2020-B-004',
+    'RM-2023-B-029',
+    'RM-2025-A-031',
+    'RM-2019-A-092',
+    'RM-2022-B-076',
+    'RM-2025-A-060',
+    'RM-2022-B-050',
+    'RM-2018-B-093',
+    'RM-2024-B-051',
+    'RM-2017-B-017',
+    'RM-2021-A-037',
+    'RM-2025-B-008',
+    'RM-2020-A-068',
+    'RM-2019-B-026',
+    'RM-2024-B-009',
+    'RM-2023-B-012',
+    'RM-2025-A-069',
+    'RM-2020-B-069',
+    'RM-2024-B-038',
+    'RM-2025-A-007',
+    'RM-2023-A-077',
+    'RM-2020-B-076',
+    'RM-2025-B-022',
+    'RM-2020-A-084',
+    'RM-2025-B-065',
+    'RM-2023-B-038',
+    'RM-2022-A-020',
+    'RM-2025-A-076',
+    'RM-2021-A-099',
+    'RM-2023-A-024',
+    'RM-2020-B-042',
+    'RM-2018-B-090',
+    'RM-2025-B-067',
+    'RM-2023-A-004',
+    'RM-2024-A-100',
+    'RM-2023-B-004',
+    'RM-2019-B-091',
+    'RM-2021-B-034',
+    'RM-2019-A-067',
+    'RM-2024-A-097',
+    'RM-2019-B-013',
+    'RM-2025-B-093',
+    'RM-2022-A-022',
+    'RM-2020-B-014',
+    'RM-2021-B-042',
+    'RM-2020-B-074',
+    'RM-2016-B-022',
+    'RM-2024-B-083',
+    'RM-2025-B-053',
+    'RM-2018-B-009',
+    'RM-2016-B-010',
+    'RM-2015-A-091',
+    'RM-2022-A-006',
+    'RM-2015-A-051',
+    'RM-2018-B-098',
+    'RM-2016-B-034',
+    'RM-2023-B-074',
+    'RM-2023-A-081',
+    'RM-2024-B-022',
+    'RM-2022-B-084',
+    'RM-2025-A-063',
+    'RM-2025-B-066',
+    'RM-2021-A-034',
+    'RM-2021-A-052',
+    'RM-2023-B-053',
+    'RM-2018-B-079',
+    'RM-2020-B-061',
+    'RM-2022-B-053',
+    'RM-2017-A-052',
+    'RM-2022-B-047',
+    'RM-2024-A-022',
+    'RM-2018-B-010',
+    'RM-2016-A-013',
+    'RM-2017-B-004',
+    'RM-2023-A-085',
+    'RM-2023-B-073',
+    'RM-2022-B-038',
+    'RM-2020-B-012',
+  ]);
+  const MEDIA134_ANCHOR_IDS = new Set(MEDIA134_ANCHOR_ORDER);
 
   let supa = null;
   let user = null;
@@ -119,6 +256,87 @@
   }
 
   const hasEditorialText = value => Boolean(cleanEditorialText(value));
+
+  function learnerOptionLabel(q = {}, letter = '') {
+    const key = String(letter || '').trim().toLowerCase();
+    const option = key ? cleanOptionText(q?.[`option_${key}`]) : '';
+    return option ? `«${option}»` : 'esa alternativa';
+  }
+
+  // Learner-facing editorial text must identify alternatives by their content, never only by A–E.
+  // The stored source remains untouched; this is a display/export hygiene layer until the bank delta is applied.
+  function learnerEditorialText(q = {}, value = '') {
+    let text = cleanEditorialText(value);
+    if (!text) return '';
+
+    text = text.replace(
+      /\b((?:las\s+)?(?:alternativas|opciones|respuestas|claves))\s+([A-E](?:\s*(?:,|y|o|\/)\s*[A-E]){1,4})\b/gi,
+      (_full, noun, list) => `${noun} ${String(list).replace(/[A-E]/g, letter => learnerOptionLabel(q, letter))}`
+    );
+
+    text = text.replace(
+      /\b((?:la\s+)?(?:alternativa|opci[oó]n|respuesta|clave)(?:\s+(?:hist[oó]rica|oficial|original|del\s+examen))?)\s+([A-E])\b/gi,
+      (_full, noun, letter) => `${noun} ${learnerOptionLabel(q, letter)}`
+    );
+
+    text = text.replace(
+      /\b(entre\s+)([A-E])(\s+(?:y|o)\s+)([A-E])\b/gi,
+      (_full, prefix, left, joiner, right) => `${prefix}${learnerOptionLabel(q, left)}${joiner}${learnerOptionLabel(q, right)}`
+    );
+
+    text = text.replace(
+      /\b([A-E])\s+(?=(?:se\s+conserva\s+como\s+clave|queda\s+como\s+clave|es\s+la\s+clave|solo\s+ser[ií]a\s+defendible))/gi,
+      (_full, letter) => `${learnerOptionLabel(q, letter)} `
+    );
+
+    // Marcos comparativos legados suelen venir serializados como “A. texto | B. texto”.
+    // Solo se trata como marcador de opción si está al inicio o después de un separador y el texto
+    // siguiente comienza en mayúscula/dígito; así se evita confundir abreviaturas como “E. coli”.
+    text = text.replace(
+      /(^|[|\n]\s*)([A-E])\.\s+(?=[A-ZÁÉÍÓÚÜÑ0-9¿¡])/gm,
+      (_full, prefix, letter) => `${prefix}${learnerOptionLabel(q, letter)}: `
+    );
+
+    // Formas explícitas del QA P0: “Clave histórica: A. ...” / “Criterio vigente: B. ...”.
+    text = text.replace(
+      /\b((?:(?:respuesta|clave|criterio)\s+(?:hist[oó]ric[oa]|actual|vigente|oficial)|hist[oó]ric[oa]|actual|vigente))\s*:\s*([A-E])\.\s*(?=[A-ZÁÉÍÓÚÜÑ0-9¿¡])/gi,
+      (_full, descriptor, letter) => `${descriptor}: ${learnerOptionLabel(q, letter)} — `
+    );
+
+    // Juicios sobre una alternativa sin sustantivo (“A es correcta”, “por ello D es la mejor...”).
+    // Se exige inicio/separador o un conector argumentativo para no alterar entidades como
+    // vitamina D, hepatitis C, hemofilia B o estreptococo del grupo B.
+    text = text.replace(
+      /(^|(?:(?:por\s+(?:ello|tanto|lo\s+que)|pero|en\s+cambio|adem[aá]s|aunque)\s+)|[.;:!?]\s+)([A-E])\s+(?=(?:es\s+(?:correct[ao]|verdader[ao]|vigente|hist[oó]ric[ao]|la\s+(?:mejor|[uú]nica|respuesta|opci[oó]n|alternativa|intenci[oó]n)|una\s+(?:respuesta|opci[oó]n|alternativa)\s+(?:v[aá]lida|defendible))|fue\s+correct[ao]|era\s+correct[ao]|puede\s+(?:aceptarse|representar|ser\s+(?:defendible|v[aá]lida|correcta))|describe\b|corresponde\b|representa\b|refleja\b|aporta\b|funciona\b|debe\s+conservarse|sigue\s+siendo|solo\s+(?:refleja|acierta|podr[ií]a|ser[ií]a)|seg[uú]n\s+(?:la\s+)?clave|hist[oó]rica\b|actual\b|tambi[eé]n\s+es\s+(?:v[aá]lida|correcta|m[eé]dicamente|cl[ií]nicamente)))/gim,
+      (_full, prefix, letter) => `${prefix}${learnerOptionLabel(q, letter)} `
+    );
+
+    // Pares explícitos en juicios de ambigüedad (“D y E son...”), sin tocar A/B de grupos,
+    // vitaminas o genotipos cuando no existe ese contexto decisorio.
+    text = text.replace(
+      /(^|[.;:!?]\s+)([A-E])\s+(y|o)\s+([A-E])(?=\s+(?:son|contienen|cumplen|describen|se\s+solapan|pueden|resultan|satisfacen|representan|quedan))/gim,
+      (_full, prefix, left, joiner, right) => `${prefix}${learnerOptionLabel(q, left)} ${joiner} ${learnerOptionLabel(q, right)}`
+    );
+
+    return text;
+  }
+
+  function learnerCurrentAnswerText(q = {}, value = '') {
+    let raw = cleanEditorialText(value);
+    // En este campo las etiquetas “Respuesta histórica: C. ... / Criterio vigente: D. ...”
+    // son estructurales. Se elimina la letra antes de aplicar el resto de la higiene; el concepto
+    // que sigue permanece visible y evita duplicarlo.
+    raw = raw.replace(/\b((?:(?:respuesta|clave|criterio)\s+(?:hist[oó]ric[oa]|actual|vigente|oficial)|hist[oó]ric[oa]|actual|vigente))\s*:\s*[A-E]\.\s*/gi, '$1: ');
+    let text = learnerEditorialText(q, raw);
+    // audit_current_answer is semantically an answer field: a leading “B. ...” is an option label,
+    // not prose. Strip it regardless of whether the current criterion differs from the historical key.
+    text = text.replace(/^\s*[A-E][\.\):]\s+/, '');
+    // Secondary answer comparisons may still carry “D. Texto”; avoid genus abbreviations such as E. coli
+    // by requiring an uppercase/digit after the prefix.
+    text = text.replace(/\b([A-E])\.\s+(?=[A-ZÁÉÍÓÚÜÑ0-9])/g, (_full, letter) => `${learnerOptionLabel(q, letter)} — `);
+    text = text.replace(/\b([A-E])\s+(?=(?:es\s+posible|solo\s+ser[ií]a\s+defendible|se\s+conserva|queda\s+como\s+clave))/gi, (_full, letter) => `${learnerOptionLabel(q, letter)} `);
+    return text.trim();
+  }
 
   function makeUuid() {
     if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -1452,7 +1670,7 @@
   }
 
   function referenceQuickHtml(q = {}) {
-    const comparison = cleanEditorialText(q.comparison_framework);
+    const comparison = learnerEditorialText(q, q.comparison_framework);
     const comparisonTitle = cleanEditorialText(q.comparison_title);
     const topic = cleanTaxonomyLabel(q.rentability_topic_label || q.topic);
     const entity = cleanTaxonomyLabel(q.canonical_entity || q.subtopic);
@@ -1460,7 +1678,7 @@
     const phase = cleanEditorialText(q.management_phase);
     const pivot = cleanEditorialText(q.pivot_text);
     const rule = cleanEditorialText(q.exam_logic);
-    const abbreviations = cleanEditorialText(q.abbreviations);
+    const abbreviations = learnerEditorialText(q, q.abbreviations);
     const sourceLinks = auditSourceLinks(q.audit_source_urls);
     const profile = qrv2Profile(q);
     const migration = qrv2MigrationStatus(q);
@@ -1506,10 +1724,10 @@
   }
 
   function auditEditorialHtml(q = {}) {
-    const assessment = cleanEditorialText(q.audit_current_assessment || q.update_alert);
-    const currentAnswer = cleanEditorialText(q.audit_current_answer);
+    const assessment = learnerEditorialText(q, q.audit_current_assessment || q.update_alert);
+    const currentAnswer = learnerCurrentAnswerText(q, q.audit_current_answer);
     if (observed(q)) {
-      return `<div class="explain-block audit-box"><h4>⚠ Auditoría médica</h4><p><strong>Pregunta histórica observada: se conserva la clave oficial, pero no cuenta en dominio por defecto.</strong></p>${assessment ? `<p>${esc(assessment)}</p>` : ''}${currentAnswer ? `<p><strong>Criterio actual:</strong> ${esc(currentAnswer)}</p>` : ''}</div>`;
+      return `<div class="explain-block audit-box"><h4>⚠ Auditoría médica</h4><p><strong>Pregunta histórica observada: sí cuenta para exposición histórica; se conserva la clave oficial y se excluye de dominio, debilidades y repaso adaptativo.</strong></p>${assessment ? `<p>${esc(assessment)}</p>` : ''}${currentAnswer ? `<p><strong>Criterio actual:</strong> ${esc(currentAnswer)}</p>` : ''}</div>`;
     }
     if (caveat(q) && assessment) return `<div class="explain-block"><h4>⚠ Precisión clínica</h4><p>${esc(assessment)}</p></div>`;
     return '';
@@ -2380,7 +2598,7 @@
         <button class="review-flag-choice ${selectedScope==='EDITORIAL_TECHNICAL'?'selected':''}" type="button" data-set-review-scope="EDITORIAL_TECHNICAL" role="radio" aria-checked="${selectedScope==='EDITORIAL_TECHNICAL'}"><strong>🛠 Editorial / técnico</strong><span>Solo auditoría: typo, formato, texto cortado, duplicación o interfaz.</span></button>
       </div>
       <label class="review-flag-note-label" for="review-flag-note"><strong>Describe el problema</strong><span class="muted">Opcional · máximo 2000 caracteres</span></label>
-      <textarea id="review-flag-note" class="input review-flag-note" maxlength="2000" rows="5" placeholder="Ejemplo: la explicación no diferencia este diagnóstico de la alternativa C.">${esc(existing?.user_note || '')}</textarea>
+      <textarea id="review-flag-note" class="input review-flag-note" maxlength="2000" rows="5" placeholder="Ejemplo: la explicación no diferencia este diagnóstico de otra alternativa plausible.">${esc(existing?.user_note || '')}</textarea>
       <div id="review-flag-save-error" class="error-msg"></div>
       <div class="review-flag-close-actions"><button class="btn primary" type="submit">Guardar observación</button><button class="btn ghost" type="button" data-close-review-flag>Cancelar</button></div>
       ${existing ? `<div class="review-flag-existing-actions"><button class="btn small" type="button" data-resolve-review-flag-dialog>✓ Registrar parche</button><button class="btn small danger ghost-danger" type="button" data-remove-review-flag-dialog>Quitar sin parche</button></div>` : ''}
@@ -3709,14 +3927,16 @@
         explicit.includes('MUY ALTA') ||
         explicit.startsWith('ALTA');
 
-      const high = explicitHigh || item.score >= effectiveThreshold;
+      // v1.6.1: cuando A16 ya clasificó explícitamente la pregunta, ese tier es autoritativo.
+      // El fallback histórico por corpus solo se usa si realmente falta clasificación canónica.
+      const high = explicit ? explicitHigh : item.score >= effectiveThreshold;
       corpusRentabilityByQuestion.set(item.q.id, {
         score: explicitHigh ? 1 : item.score,
         high,
         topicScore: item.components.topic,
         specialtyScore: item.components.specialty,
         areaScore: item.components.area,
-        source: explicitHigh ? 'explicit' : 'corpus_runtime_v2',
+        source: explicit ? 'explicit' : 'corpus_runtime_v2',
       });
     }
 
@@ -3736,7 +3956,9 @@
 
   function isHighRentability(q) {
     const explicit = explicitRentabilityTier(q);
-    if (explicit.includes('MUY_ALTA') || explicit.includes('MUY ALTA') || explicit.startsWith('ALTA')) return true;
+    if (explicit) {
+      return explicit.includes('MUY_ALTA') || explicit.includes('MUY ALTA') || explicit.startsWith('ALTA');
+    }
     return Boolean(corpusRentabilityByQuestion.get(q.id)?.high);
   }
 
@@ -3747,11 +3969,19 @@
   function matchesRentabilityFilter(q, filter = 'all') {
     if (!filter || filter === 'all') return true;
     if (filter === 'high') return isHighRentability(q);
+    if (filter === 'media134') return MEDIA134_ANCHOR_IDS.has(q?.id) && rentabilityTierRank(q) === 2;
     const explicit = normalizedExplicitRentabilityTier(q);
     if (filter === 'muy_alta') return explicit === 'MUY_ALTA';
     if (filter === 'alta') return explicit === 'ALTA';
     if (filter === 'media') return explicit === 'MEDIA';
     if (filter === 'baja') return explicit === 'BAJA';
+    return true;
+  }
+
+  function matchesEditorialFilter(q, filter = 'all') {
+    if (!filter || filter === 'all') return true;
+    if (filter === 'valid') return !observed(q);
+    if (filter === 'observed') return observed(q);
     return true;
   }
 
@@ -3955,6 +4185,32 @@
     return ordered;
   }
 
+  function historicalHighUnseenPool() {
+    const seen = new Set(attempts.map(a => a.question_id));
+    return questions
+      .filter(q => !seen.has(q.id) && rentabilityTierRank(q) >= 3)
+      .sort((a,b) => {
+        const tierDelta = rentabilityTierRank(b) - rentabilityTierRank(a);
+        if (tierDelta) return tierDelta;
+        const editorialDelta = Number(observed(a)) - Number(observed(b)); // válida antes que observada dentro del tier
+        if (editorialDelta) return editorialDelta;
+        return compareCanonicalRentability(a,b);
+      });
+  }
+
+  function media134UnseenPool() {
+    const seen = new Set(attempts.map(a => a.question_id));
+    const byId = new Map(questions.map(q => [q.id, q]));
+    return MEDIA134_ANCHOR_ORDER.map(id => byId.get(id)).filter(q => q && rentabilityTierRank(q) === 2 && !seen.has(q.id));
+  }
+
+  function mediaObservedUnseenPool() {
+    const seen = new Set(attempts.map(a => a.question_id));
+    return questions
+      .filter(q => !seen.has(q.id) && !MEDIA134_ANCHOR_IDS.has(q.id) && observed(q) && rentabilityTierRank(q) === 2)
+      .sort(compareCanonicalRentability);
+  }
+
   function latestAttemptsMap() {
     const latest = new Map();
     for (const attempt of attempts) {
@@ -3980,9 +4236,22 @@
       const unseen = nonObserved.filter(q => !attempts.some(a => a.question_id === q.id));
       return sortByPriority(unseen, now, { diversifyYears:true, tolerance:0.75 });
     }
+    if (kind === 'new_high') {
+      // v1.6.1: exposición histórica completa de MUY_ALTA/ALTA. Incluye OBSERVADA_*;
+      // dentro de cada tier, las válidas se exponen antes que las observadas.
+      return historicalHighUnseenPool();
+    }
+    if (kind === 'media134') {
+      // Carril curado: una ancla por cada uno de los 134 topics MEDIA, en el orden de selección congelado.
+      return media134UnseenPool();
+    }
+    if (kind === 'media_observed') {
+      // Exposición histórica complementaria: preguntas MEDIA observadas todavía no vistas.
+      // Se estudian con advertencia, pero continúan fuera de dominio/weakness/due/speed.
+      return mediaObservedUnseenPool();
+    }
     if (kind === 'new_coverage') {
-      // Primera vuelta: MUY_ALTA → ALTA → MEDIA → BAJA, y dentro de cada tier
-      // conserva el orden adaptativo por prioridad/rentabilidad.
+      // Compatibilidad legacy: cobertura válida general, sin observadas.
       return unseenCoveragePool(now);
     }
     if (kind === 'fragile') {
@@ -4464,18 +4733,33 @@
 
   function planCoverageSnapshot(now = new Date()) {
     const valid = questions.filter(q => !observed(q));
+    const observedQuestions = questions.filter(observed);
     const seen = new Set(attempts.map(a => a.question_id));
-    const unseen = valid.filter(q => !seen.has(q.id));
+    const unseenValid = valid.filter(q => !seen.has(q.id));
+    const unseenObserved = observedQuestions.filter(q => !seen.has(q.id));
     const due = valid.filter(q => reviewEligible(q, now));
     const highDue = due.filter(q => rentabilityTierRank(q) >= 3);
-    const highUnseen = unseen.filter(q => rentabilityTierRank(q) >= 3);
-    const valuableUnseen = unseen.filter(q => rentabilityTierRank(q) >= 2);
+    const highValidUnseen = unseenValid.filter(q => rentabilityTierRank(q) >= 3);
+    const highObservedUnseen = unseenObserved.filter(q => rentabilityTierRank(q) >= 3);
+    const valuableUnseen = unseenValid.filter(q => rentabilityTierRank(q) >= 2);
+    const mediaAnchorsLoaded = MEDIA134_ANCHOR_ORDER.filter(id => { const q = questions.find(item => item.id === id); return q && rentabilityTierRank(q) === 2; }).length;
+    const mediaAnchorUnseen = media134UnseenPool();
+    const mediaObservedUnseen = mediaObservedUnseenPool();
     return {
       validTotal:valid.length,
-      seenValid:valid.length - unseen.length,
-      unseenTotal:unseen.length,
-      highUnseen:highUnseen.length,
+      seenValid:valid.length - unseenValid.length,
+      unseenTotal:unseenValid.length,
+      observedTotal:observedQuestions.length,
+      observedUnseen:unseenObserved.length,
+      highUnseen:highValidUnseen.length,
+      highValidUnseen:highValidUnseen.length,
+      highObservedUnseen:highObservedUnseen.length,
+      highHistoricalUnseen:highValidUnseen.length + highObservedUnseen.length,
       valuableUnseen:valuableUnseen.length,
+      media134Loaded:mediaAnchorsLoaded,
+      media134Unseen:mediaAnchorUnseen.length,
+      mediaObservedUnseen:mediaObservedUnseen.length,
+      mediaPriorityUnseen:mediaAnchorUnseen.length + mediaObservedUnseen.length,
       dueTotal:due.length,
       highDue:highDue.length,
     };
@@ -4508,18 +4792,17 @@
     const exam = profile?.exam_date || DEFAULT_PROFILE.exam_date;
     const daysExam = Math.max(0, daysUntil(exam));
     const legacyDeadline = coverageDeadlineIso();
-    const highGoal = highCoverageGoalIso();
-    const valuableGoal = valuableCoverageGoalIso();
-    const highCutoff = highCoverageCutoffIso();
+    const highGoal = highCoverageCutoffIso(); // examen-3: objetivo operativo de cierre high actual
+    const mediaGoal = highCoverageCutoffIso(); // miércoles/jueves si el examen es domingo
 
-    // v1.5.1 — el cambio de fase depende de cobertura útil real, no de una fecha rígida.
-    // MUY_ALTA/ALTA pueden seguir entrando como nuevas hasta 3 días antes del examen si
-    // aún quedan; MEDIA se intenta cerrar hasta 5 días antes. BAJA no prolonga la fase.
-    const highCoverageSprint = stats.highUnseen > 0 && today <= highCutoff;
-    const valuableCoverageSprint = !highCoverageSprint && stats.valuableUnseen > 0 && today <= valuableGoal;
-    const coverageSprint = highCoverageSprint || valuableCoverageSprint;
-    const coverageGoal = highCoverageSprint ? highGoal : valuableGoal;
-    const coverageRemaining = highCoverageSprint ? stats.highUnseen : stats.valuableUnseen;
+    // v1.6.1: primero cerrar exposición histórica MUY_ALTA/ALTA (válidas + observadas).
+    // Una vez cerrada, los días con >=3 días al examen se destinan a las 134 anclas MEDIA.
+    // Con <=2 días, no se abre cobertura ordinaria amplia: se consolida memoria/errores/simulacro.
+    const highCoverageSprint = stats.highHistoricalUnseen > 0 && daysExam > 0;
+    const media134Sprint = !highCoverageSprint && stats.mediaPriorityUnseen > 0 && daysExam >= 3;
+    const coverageSprint = highCoverageSprint || media134Sprint;
+    const coverageGoal = highCoverageSprint ? highGoal : mediaGoal;
+    const coverageRemaining = highCoverageSprint ? stats.highHistoricalUnseen : stats.mediaPriorityUnseen;
     const coverageDaysLeft = Math.max(1, Math.floor(daysBetween(today, coverageGoal)) + 1);
 
     let specs = [];
@@ -4528,54 +4811,74 @@
     if (daysExam <= 0) {
       phase = { key:'exam', name:'Día del examen', objective:'Ejecutar. No aprender temas grandes nuevos.' };
     } else if (coverageSprint) {
-      // Primera exposición de alto retorno: objetivo relativo al examen y a lo que falta.
-      // El tope de 120 evita que la cobertura nueva destruya la recuperación espaciada.
       const newTarget = Math.min(120, Math.max(1, Math.ceil(coverageRemaining / coverageDaysLeft)));
 
-      // El backlog vencido se recupera en paralelo. La cola `due` reserva posiciones
-      // tempranas para MUY_ALTA/ALTA antiguas, de modo que sesiones parciales no las oculten.
       const dueTarget = stats.dueTotal
-        ? Math.min(140, Math.max(90, Math.ceil((stats.highDue + Math.max(0, stats.dueTotal - stats.highDue) * 0.35) / 3)))
+        ? Math.min(140, Math.max(90, Math.ceil((stats.highDue + Math.max(0, stats.dueTotal - stats.highDue) * 0.30) / 3)))
         : 0;
 
       const fragileTarget = Math.min(25, smartPool('fragile').length);
-      const speedTarget = Math.min(20, smartPool('speed').length);
+      const speedTarget = Math.min(15, smartPool('speed').length);
 
-      specs = [
-        ['due', dueTarget, '🧠 Repasos rentables'],
-        ['new_coverage', newTarget, '🚀 Cobertura nueva'],
-        ['fragile', fragileTarget, '🧩 Errores y dudas'],
-        ['speed', speedTarget, '⚡ Automatización'],
-      ];
-      phase = {
-        key:'coverage_sprint',
-        name:highCoverageSprint ? 'Rescate ALTA + memoria' : 'Cobertura MEDIA rentable',
-        objective:highCoverageSprint
-          ? (today <= highGoal
-            ? `Cerrar MUY_ALTA/ALTA nuevas idealmente antes del ${shortLocalDate(highGoal)}, sin abandonar vencidas antiguas.`
-            : 'Rescate final de MUY_ALTA/ALTA: prioriza P0 + MUY_ALTA/ALTA, evita abrir material de bajo retorno y mantén vencidas rentables.')
-          : `Cerrar cobertura MUY_ALTA/ALTA y avanzar MEDIA rentable idealmente antes del ${shortLocalDate(valuableGoal)}.`,
-      };
+      if (highCoverageSprint) {
+        // Cierre de primera exposición high antes de abrir MEDIA. La cola nueva va primero:
+        // un backlog de due no debe ocultar las preguntas ALTA/MUY_ALTA nunca vistas.
+        specs = [
+          ['new_high', newTarget, '🚀 ALTA/MUY_ALTA no vistas'],
+          ['fragile', fragileTarget, '🧩 Errores y dudas'],
+          ['due', dueTarget, '🧠 Repasos rentables'],
+          ['speed', speedTarget, '⚡ Automatización'],
+        ];
+        phase = {
+          key:'coverage_sprint',
+          name:'Rescate ALTA + exposición histórica',
+          objective:`Cerrar MUY_ALTA/ALTA no vistas: ${stats.highValidUnseen} válidas + ${stats.highObservedUnseen} observadas. Las observadas cuentan para exposición, no para dominio adaptativo.`,
+        };
+      } else {
+        // MEDIA de estos dos días: cubrir amplitud con las 134 anclas y, en paralelo,
+        // no perder las formas históricas observadas. Se reparte un único presupuesto diario.
+        const totalMediaPriority = Math.max(1, stats.mediaPriorityUnseen);
+        let anchorTarget = Math.min(stats.media134Unseen, Math.ceil(newTarget * stats.media134Unseen / totalMediaPriority));
+        let observedTarget = Math.min(stats.mediaObservedUnseen, Math.max(0, newTarget - anchorTarget));
+        let remainingBudget = Math.max(0, newTarget - anchorTarget - observedTarget);
+        if (remainingBudget && anchorTarget < stats.media134Unseen) {
+          const add = Math.min(remainingBudget, stats.media134Unseen - anchorTarget);
+          anchorTarget += add;
+          remainingBudget -= add;
+        }
+        if (remainingBudget && observedTarget < stats.mediaObservedUnseen) {
+          observedTarget += Math.min(remainingBudget, stats.mediaObservedUnseen - observedTarget);
+        }
+
+        specs = [
+          ['fragile', fragileTarget, '🔥 Errores y dudas'],
+          ['media134', anchorTarget, '📚 MEDIA 134 · anclas'],
+          ['media_observed', observedTarget, '⚠ MEDIA observadas · exposición histórica'],
+          ['due', dueTarget, '🧠 Repasos rentables'],
+          ['speed', speedTarget, '⚡ Automatización'],
+        ];
+        phase = {
+          key:'coverage_sprint',
+          name:'MEDIA prioritaria · adquisición selectiva',
+          objective:`Avanzar 134 anclas seleccionadas y las MEDIA observadas no vistas (${stats.media134Unseen} anclas + ${stats.mediaObservedUnseen} observadas pendientes), sin abrir las 741 MEDIA indiscriminadamente.`,
+        };
+      }
     } else {
-      const residualNew = stats.valuableUnseen > 0
-        ? Math.min(60, stats.valuableUnseen)
-        : Math.min(20, stats.unseenTotal);
       const dueTarget = stats.dueTotal ? Math.min(120, Math.max(70, Math.ceil(stats.dueTotal / 3))) : 0;
       const fragileTarget = Math.min(40, smartPool('fragile').length);
       const speedTarget = Math.min(20, smartPool('speed').length);
-      const mixedTarget = residualNew > 0 ? 60 : 80;
+      const mixedTarget = 80;
 
       specs = [
+        ['fragile', fragileTarget, '🔥 Errores y dudas'],
         ['due', dueTarget, '🧠 Mantener memoria'],
         ['mixed', mixedTarget, '📝 Bloque mixto tipo examen'],
-        ['fragile', fragileTarget, '🔥 Errores y dudas'],
         ['speed', speedTarget, '⚡ Automatización'],
-        ['new_coverage', residualNew, '📚 Cobertura residual'],
       ];
       phase = {
         key:'final_consolidation',
         name:'Consolidación final',
-        objective:'Convertir cobertura en rendimiento: memoria rentable, errores/dudas, velocidad y bloques tipo examen.',
+        objective:'Convertir cobertura en rendimiento: errores/dudas, memoria rentable, velocidad y bloques tipo examen. No abrir cobertura MEDIA amplia en los últimos 2 días.',
       };
     }
 
@@ -4585,7 +4888,7 @@
       const completed = attempts.filter(a => isoDateLocal(a.answered_at) === today && a.study_mode === mode).length;
       const poolKind = kind === 'mixed' ? 'priority' : kind;
       const available = smartPool(poolKind).filter(q => !attemptedTodayIds(today).has(q.id)).length;
-      const count = pilotLimited ? Math.min(plannedCount, completed + available) : plannedCount;
+      const count = pilotLimited ? Math.min(plannedCount, completed + available) : Math.min(plannedCount, completed + available);
       return { id:`task_${idx}`, kind, mode, label, count, completed:Math.min(completed,count), remaining:Math.max(0,count-completed) };
     }).filter(t => t.count > 0);
 
@@ -4600,7 +4903,7 @@
       today, phase, done, otherToday, adjustedTarget, tasks, next,
       coverageDeadline:coverageSprint ? coverageGoal : legacyDeadline,
       coverageGoal,
-      coverageCutoff:highCoverageSprint ? highCutoff : valuableGoal,
+      coverageCutoff:coverageGoal,
       coverageLate:coverageSprint && today > coverageGoal,
       coverageDaysLeft,
       coverageRisk,
@@ -5376,7 +5679,7 @@
       <section class="plan-progress panel">
         <div class="plan-progress-head"><div><strong>HOY</strong><div class="muted">${plan.done} de ${plan.adjustedTarget} preguntas planificadas${plan.otherToday?` · ${plan.otherToday} adicionales ya hechas`:''}</div></div><div class="plan-percent">${completion}%</div></div>
         <div class="meter"><div style="width:${completion}%"></div></div>
-        <div class="plan-meta"><span>Por ver válidas: <strong>${plan.stats.unseenTotal}</strong></span><span>ALTA/MUY_ALTA por ver: <strong>${plan.stats.highUnseen}</strong></span><span>Vencidas rentables: <strong>${plan.stats.highDue}</strong></span><span>Ritmo 7 días: <strong>${pace7.toFixed(0)}/día</strong></span><span>Lentas: <strong>${slowCount}</strong></span></div>
+        <div class="plan-meta"><span>Por ver válidas: <strong>${plan.stats.unseenTotal}</strong></span><span>ALTA/MUY_ALTA por ver: <strong>${plan.stats.highValidUnseen} válidas + ${plan.stats.highObservedUnseen} observadas = ${plan.stats.highHistoricalUnseen}</strong></span><span>MEDIA prioritaria por ver: <strong>${plan.stats.media134Unseen} anclas + ${plan.stats.mediaObservedUnseen} observadas = ${plan.stats.mediaPriorityUnseen}</strong></span><span>Observadas por ver (todas): <strong>${plan.stats.observedUnseen}</strong></span><span>Vencidas rentables: <strong>${plan.stats.highDue}</strong></span><span>Ritmo 7 días: <strong>${pace7.toFixed(0)}/día</strong></span><span>Lentas: <strong>${slowCount}</strong></span></div>
       </section>
 
       ${primaryActiveSession
@@ -5587,6 +5890,9 @@
       baja:questions.filter(q => matchesRentabilityFilter(q, 'baja')).length,
     };
     const highCount = questions.filter(isHighRentability).length;
+    const media134Count = questions.filter(q => matchesRentabilityFilter(q, 'media134')).length;
+    const observedCount = questions.filter(observed).length;
+    const validCount = questions.length - observedCount;
     const isExam = mode === 'exam';
 
     app.innerHTML = `<main class="shell">
@@ -5604,8 +5910,9 @@
           <div class="builder-grid">
             <fieldset><legend>Contenido</legend>
               <label>Estado previo<select id="pool-type" class="input"><option value="all">Todas</option><option value="unseen">Nunca vistas</option><option value="errors">Solo errores</option><option value="correct">Ya acertadas</option></select></label>
-              <label>Rentabilidad<select id="rentability" class="input"><option value="all">Todas</option><option value="high" ${highCount ? '' : 'disabled'}>MUY_ALTA + ALTA · ${highCount}</option><option value="muy_alta" ${tierCounts.muy_alta ? '' : 'disabled'}>MUY_ALTA · ${tierCounts.muy_alta}</option><option value="alta" ${tierCounts.alta ? '' : 'disabled'}>ALTA · ${tierCounts.alta}</option><option value="media" ${tierCounts.media ? '' : 'disabled'}>MEDIA · ${tierCounts.media}</option><option value="baja" ${tierCounts.baja ? '' : 'disabled'}>BAJA · ${tierCounts.baja}</option></select></label>
-              <small class="muted">La rentabilidad usa el tier y score auditados del topic primario cuando están disponibles. Si la base aún no fue migrada, la app conserva temporalmente el cálculo automático por corpus. No depende de cuántas preguntas hayas respondido.</small>
+              <label>Rentabilidad<select id="rentability" class="input"><option value="all">Todas</option><option value="high" ${highCount ? '' : 'disabled'}>MUY_ALTA + ALTA · ${highCount}</option><option value="muy_alta" ${tierCounts.muy_alta ? '' : 'disabled'}>MUY_ALTA · ${tierCounts.muy_alta}</option><option value="alta" ${tierCounts.alta ? '' : 'disabled'}>ALTA · ${tierCounts.alta}</option><option value="media134" ${media134Count ? '' : 'disabled'}>MEDIA 134 · anclas · ${media134Count}</option><option value="media" ${tierCounts.media ? '' : 'disabled'}>MEDIA completa · ${tierCounts.media}</option><option value="baja" ${tierCounts.baja ? '' : 'disabled'}>BAJA · ${tierCounts.baja}</option></select></label>
+              ${!isExam ? `<label>Estado editorial<select id="editorial-scope" class="input"><option value="all" selected>Todas las históricas · ${questions.length}</option><option value="valid">Solo válidas · ${validCount}</option><option value="observed">Solo observadas · ${observedCount}</option></select></label>` : ''}
+              <small class="muted">A16 es autoritativa: si existe tier canónico, el fallback histórico no puede reclasificar MEDIA/BAJA como ALTA. Las observadas pueden estudiarse; se separan de dominio, debilidades y repaso adaptativo.</small>
             </fieldset>
 
             <fieldset><legend>Cantidad</legend>
@@ -5780,6 +6087,7 @@
       shuffleOptions: document.getElementById('shuffle-options').checked,
       poolType: document.getElementById('pool-type').value,
       rentability: document.getElementById('rentability').value,
+      editorialScope: mode === 'exam' ? 'all' : (document.getElementById('editorial-scope')?.value || 'all'),
       areas: checked('area'),
       years: checked('year').map(Number),
       topicPaths: checked('topicPath'),
@@ -5850,6 +6158,7 @@
       if (config.years.length && !config.years.includes(Number(q.year))) return false;
       if (config.topicPaths.length && !topicSelectionMatches(q, config.topicPaths)) return false;
       if (!matchesRentabilityFilter(q, config.rentability)) return false;
+      if (!matchesEditorialFilter(q, config.editorialScope)) return false;
       if (config.poolType === 'unseen' && seenIds.has(q.id)) return false;
       if (config.poolType === 'errors' && !wrongIds.has(q.id)) return false;
       if (config.poolType === 'correct' && !correctIds.has(q.id)) return false;
@@ -7444,14 +7753,14 @@
 
     const selectedDisplayLetter = selected ? displayLetterFor(selected) : null;
     const officialDisplayLetter = displayLetterFor(q?.official_answer);
-    const correctText = cleanEditorialText(q?.correct_explanation);
+    const correctText = learnerEditorialText(q, q?.correct_explanation);
     const distractors = feedbackOptions
       .filter(o => (o.sourceLetter || o.letter) !== q?.official_answer)
       .map(o => {
         const sourceLetter = o.sourceLetter || o.letter;
         const key = typeof sourceLetter === 'string' ? sourceLetter.toLowerCase() : '';
-        const reason = cleanEditorialText(key ? q?.[`why_not_${key}`] : '');
-        return reason ? `<p><strong>${esc(o.letter)}. ${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
+        const reason = learnerEditorialText(q, key ? q?.[`why_not_${key}`] : '');
+        return reason ? `<p><strong>${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
       }).filter(Boolean).join('');
     const quickReference = referenceQuickHtml(q);
 
@@ -7464,16 +7773,16 @@
 
     target.innerHTML = `<div class="feedback">
       <h3>${feedbackMeta.didNotKnow ? '🤷 No sabía' : timedOut ? '⏱ Tiempo agotado' : feedbackMeta.omitted ? '— Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
-      ${selected ? `<p>Tu respuesta: <strong>${esc(selectedDisplayLetter)}. ${esc(optionTextFor(selected))}</strong></p>` : ''}
-      <p class="answer-line">Respuesta correcta: ${esc(officialDisplayLetter)}. ${esc(q?.official_answer_text || optionTextFor(q?.official_answer))}</p>
+      ${selected ? `<p>Tu respuesta: <strong>${esc(optionTextFor(selected))}</strong></p>` : ''}
+      <p class="answer-line">Respuesta correcta: ${esc(q?.official_answer_text || optionTextFor(q?.official_answer))}</p>
       ${responseSeconds != null ? `<div class="feedback-time ${responseSeconds <= targetSeconds ? 'ok' : responseSeconds <= targetSeconds * 1.6 ? 'warn' : 'bad'}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
       ${auditEditorialHtml(q)}
       ${alreadyUncertain ? `<div class="explain-block uncertainty-box"><h4>❓ Duda registrada</h4><p>Marcaste la pregunta completa como dudosa. El marcador no genera contenido ni una nota por sí solo.</p></div>` : ''}
       ${correctText ? `<details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>` : ''}
       ${distractors ? `<details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>` : ''}
-      ${hasEditorialText(q?.common_trap) ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(cleanEditorialText(q.common_trap))}</p></div>` : ''}
-      ${hasEditorialText(q?.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(cleanEditorialText(q.exam_pearl))}</p></div>` : ''}
-      ${hasEditorialText(q?.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(cleanEditorialText(q.memory_hook))}</p></div>` : ''}
+      ${hasEditorialText(q?.common_trap) ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(learnerEditorialText(q, q.common_trap))}</p></div>` : ''}
+      ${hasEditorialText(q?.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(learnerEditorialText(q, q.exam_pearl))}</p></div>` : ''}
+      ${hasEditorialText(q?.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(learnerEditorialText(q, q.memory_hook))}</p></div>` : ''}
       ${quickReference}
       <div class="learning-note-action"><div><strong>¿Qué te falta entender o recordar?</strong><p class="muted">Guarda una duda personal para resolverla después y compararla con tu Anki. Es independiente de los flags de auditoría.</p></div>${learningNoteButton(q)}</div>
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
@@ -7531,20 +7840,20 @@
       : `${responseSeconds < 10 ? responseSeconds.toFixed(1) : Math.round(responseSeconds)} s`;
     const postMarkAvailable = Boolean(feedbackMeta.attemptId) && feedbackMeta.omitted !== true && (!reviewOnly || feedbackMeta.allowPostMark !== false);
     const alreadyUncertain = Boolean(feedbackMeta.questionDoubt ?? feedbackMeta.wasUncertainAtAnswer) || uncertainOptions.length > 0;
-    const correctText = cleanEditorialText(q.correct_explanation);
+    const correctText = learnerEditorialText(q, q.correct_explanation);
     const distractors = feedbackOptions
       .filter(o => (o.sourceLetter || o.letter) !== q.official_answer)
       .map(o => {
         const sourceLetter = o.sourceLetter || o.letter;
-        const reason = cleanEditorialText(q[`why_not_${sourceLetter.toLowerCase()}`]);
-        return reason ? `<p><strong>${esc(o.letter)}. ${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
+        const reason = learnerEditorialText(q, q[`why_not_${sourceLetter.toLowerCase()}`]);
+        return reason ? `<p><strong>${esc(o.text)}:</strong> ${esc(reason)}</p>` : '';
       }).filter(Boolean).join('');
     const quickReference = referenceQuickHtml(q);
 
     target.innerHTML = `<div class="feedback">
       <h3>${feedbackMeta.didNotKnow ? '🤷 No sabía' : timedOut ? '⏱ Tiempo agotado' : feedbackMeta.omitted ? '— Sin respuesta' : isCorrect ? '✅ Correcto' : '❌ Incorrecto'}</h3>
-      ${selected ? `<p>Tu respuesta: <strong>${esc(selectedDisplayLetter)}. ${esc(q[`option_${selected.toLowerCase()}`])}</strong></p>` : ''}
-      <p class="answer-line">Respuesta correcta: ${esc(officialDisplayLetter)}. ${esc(q.official_answer_text)}</p>
+      ${selected ? `<p>Tu respuesta: <strong>${esc(q[`option_${selected.toLowerCase()}`])}</strong></p>` : ''}
+      <p class="answer-line">Respuesta correcta: ${esc(q.official_answer_text)}</p>
       ${responseSeconds != null ? `<div class="feedback-time ${timeState}">⏱ <strong>${esc(timeLabel)}</strong> · objetivo ${targetSeconds} s${responseSeconds <= targetSeconds ? ' · dentro del objetivo' : ' · el algoritmo registró la lentitud'}</div>` : ''}
 
       ${auditEditorialHtml(q)}
@@ -7552,9 +7861,9 @@
       ${alreadyUncertain ? `<div class="explain-block uncertainty-box"><h4>❓ Duda registrada</h4><p>Marcaste la pregunta completa como dudosa. El marcador no genera contenido ni una nota por sí solo.</p></div>` : ''}
       ${correctText ? `<details class="explain-block" open><summary><strong>Por qué la clave es correcta</strong></summary><p>${esc(correctText)}</p></details>` : ''}
       ${distractors ? `<details class="explain-block"><summary><strong>Por qué no las otras</strong></summary>${distractors}</details>` : ''}
-      ${hasEditorialText(q.common_trap) ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(cleanEditorialText(q.common_trap))}</p></div>` : ''}
-      ${hasEditorialText(q.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(cleanEditorialText(q.exam_pearl))}</p></div>` : ''}
-      ${hasEditorialText(q.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(cleanEditorialText(q.memory_hook))}</p></div>` : ''}
+      ${hasEditorialText(q.common_trap) ? `<div class="explain-block trap"><h4>⚠ Trampa frecuente</h4><p>${esc(learnerEditorialText(q, q.common_trap))}</p></div>` : ''}
+      ${hasEditorialText(q.exam_pearl) ? `<div class="explain-block pearl"><h4>💡 Perla de examen</h4><p>${esc(learnerEditorialText(q, q.exam_pearl))}</p></div>` : ''}
+      ${hasEditorialText(q.memory_hook) ? `<div class="explain-block memory"><h4>🪝 Gancho de memoria</h4><p>${esc(learnerEditorialText(q, q.memory_hook))}</p></div>` : ''}
       ${quickReference}
       <div class="learning-note-action"><div><strong>¿Qué te falta entender o recordar?</strong><p class="muted">Guarda una duda personal para resolverla después y compararla con tu Anki. Es independiente de los flags de auditoría.</p></div>${learningNoteButton(q)}</div>
       <div class="content-review-action"><div><strong>¿Hay algo que corregir en esta pregunta?</strong><p class="muted">Guárdala en tu lista de auditoría sin alterar tu resultado ni el repaso.</p></div>${reviewFlagButton(q)}</div>
@@ -7931,7 +8240,7 @@
         <div class="history-attempt-tags">${attemptStatusMarkup(a)}<span class="tag">${esc(studyModeLabel(a.study_mode))}</span></div>
         <strong>${esc(source)}</strong>
         <p>${esc(q?.topic || 'Pregunta no disponible')} · ${esc(q?.area || '')}</p>
-        <small>Marcaste: ${esc(a.selected_answer || '—')} · Clave oficial: ${esc(q?.official_answer || '—')}</small>
+        <small>Tu respuesta: ${esc(a.selected_answer ? q?.[`option_${String(a.selected_answer).toLowerCase()}`] || '—' : '—')} · Respuesta correcta: ${esc(q?.official_answer_text || (q?.official_answer ? q?.[`option_${String(q.official_answer).toLowerCase()}`] : '') || '—')}</small>
       </div>
       <button class="btn small" data-history-attempt="${esc(a.id)}">Revisar</button>
     </article>`;
@@ -8608,19 +8917,19 @@
         option_c:q.option_c,
         option_d:q.option_d,
         option_e:q.option_e,
-        why_not_a:cleanEditorialText(q.why_not_a),
-        why_not_b:cleanEditorialText(q.why_not_b),
-        why_not_c:cleanEditorialText(q.why_not_c),
-        why_not_d:cleanEditorialText(q.why_not_d),
-        why_not_e:cleanEditorialText(q.why_not_e),
+        why_not_a:learnerEditorialText(q, q.why_not_a),
+        why_not_b:learnerEditorialText(q, q.why_not_b),
+        why_not_c:learnerEditorialText(q, q.why_not_c),
+        why_not_d:learnerEditorialText(q, q.why_not_d),
+        why_not_e:learnerEditorialText(q, q.why_not_e),
         audit_status:q.audit_status || q.medical_review_status || '',
-        audit_current_assessment:cleanEditorialText(q.audit_current_assessment),
-        audit_current_answer:cleanEditorialText(q.audit_current_answer),
-        correct_explanation:cleanEditorialText(q.correct_explanation),
-        comparison_framework:cleanEditorialText(q.comparison_framework),
-        abbreviations:cleanEditorialText(q.abbreviations),
-        common_trap:cleanEditorialText(q.common_trap),
-        exam_pearl:cleanEditorialText(q.exam_pearl),
+        audit_current_assessment:learnerEditorialText(q, q.audit_current_assessment),
+        audit_current_answer:learnerCurrentAnswerText(q, q.audit_current_answer),
+        correct_explanation:learnerEditorialText(q, q.correct_explanation),
+        comparison_framework:learnerEditorialText(q, q.comparison_framework),
+        abbreviations:learnerEditorialText(q, q.abbreviations),
+        common_trap:learnerEditorialText(q, q.common_trap),
+        exam_pearl:learnerEditorialText(q, q.exam_pearl),
         content_revision:note.content_revision || questionContentRevision(q.id),
         note_created_at:note.created_at,
         note_updated_at:note.updated_at,
@@ -8654,8 +8963,8 @@
       lines.push(`- Indicación preliminar de orden: ${row.anki_order_hint}`);
       lines.push(`- Historial personal: ${row.attempts_count} intentos; ${row.attempts_correct} correctos${row.latest_was_uncertain==='SI'?' · última recuperación dudosa':''}`);
       lines.push(`- Enunciado fuente: ${String(row.question || '').replace(/\s+/g,' ').trim()}`);
-      lines.push(`- Alternativas: ${['A','B','C','D','E'].map(letter => `${letter}. ${row[`option_${letter.toLowerCase()}`] || '—'}`).join(' | ')}`);
-      lines.push(`- Clave histórica: ${row.official_answer}. ${row.official_answer_text}`);
+      lines.push(`- Alternativas: ${['A','B','C','D','E'].map(letter => row[`option_${letter.toLowerCase()}`] || '—').join(' | ')}`);
+      lines.push(`- Respuesta histórica: ${row.official_answer_text}`);
       if (row.audit_status) lines.push(`- Estado de auditoría: ${row.audit_status}`);
       if (row.audit_current_answer) lines.push(`- Criterio actual auditado: ${row.audit_current_answer}`);
       if (row.audit_current_assessment) lines.push(`- Caveat/valoración vigente: ${row.audit_current_assessment.replace(/\s+/g,' ').trim()}`);
@@ -8845,14 +9154,37 @@
   }
 
   function enrichCoverageTopics(topics = []) {
+    const questionById = new Map(questions.map(q => [q.id, q]));
+    const now = new Date();
     return topics.map(topic => {
       const tts = ttsForCoverageTopic(topic);
       const ttsStatusLabel = W4Data.catalogCompactLabel
         ? W4Data.catalogCompactLabel(tts)
         : (W4Data.catalogStatusLabel ? W4Data.catalogStatusLabel(tts) : (tts?.status || 'Pendiente'));
       const canonical = rentabilityTopicsById.get(String(topic.id || topic.key || '')) || {};
+
+      // Cobertura (vistas/total) sigue siendo histórica y conserva OBSERVADA_*.
+      // Dudas, vencidas y weakness son adaptativos: se recalculan solo con preguntas válidas.
+      const validIds = new Set((topic.questionIds || []).filter(id => {
+        const q = questionById.get(id);
+        return q && !observed(q);
+      }));
+      const validAttempts = attempts.filter(a => validIds.has(a.question_id));
+      const seenValid = new Set(validAttempts.map(a => a.question_id));
+      const validWrongAttempts = validAttempts.filter(a => !a.is_correct).length;
+      const validUncertainAttempts = validAttempts.filter(a => Boolean(a.was_uncertain) || cleanEditorialText(a.uncertainty_note)).length;
+      const validOverdue = [...validIds].filter(id => {
+        const state = memoryByQuestion.get(id);
+        return state?.due_at && new Date(state.due_at) <= now;
+      }).length;
+      const unseenValid = Math.max(0, validIds.size - seenValid.size);
+      const adaptiveWeaknessScore = validWrongAttempts * 3 + validUncertainAttempts * 2 + validOverdue * 2 + unseenValid * 0.25;
+
       return {
         ...topic,
+        uncertainAttempts:validUncertainAttempts,
+        overdue:validOverdue,
+        weaknessScore:adaptiveWeaknessScore,
         tierConfidence:canonical.tier_confidence || topic.tierConfidence || topic.scoreConfidence || null,
         sampleBand:canonical.sample_band || null,
         scoringReliabilityPolicy:canonical.scoring_reliability_policy || null,
@@ -8913,16 +9245,17 @@
     const topicQuestions = topic.questionIds.map(id => questions.find(q => q.id === id)).filter(Boolean);
     const seen = new Set(attempts.map(a => a.question_id));
     const correctEver = new Set(attempts.filter(a => a.is_correct).map(a => a.question_id));
+    const topicObservedCount = topicQuestions.filter(observed).length;
 
     app.innerHTML = `<main class="shell">${topbar('Detalle de tema', true)}
       <section class="panel topic-coverage-detail-head">
         <button id="coverage-back" class="btn small ghost" type="button">← Volver a Mi estado</button>
         <div class="meta-line"><span class="tag">${esc(topicTierLabel(topic.tier))}</span>${topic.score != null ? `<span class="tag">Rentabilidad ${Math.round(topic.score)}</span>` : ''}${String(topic.tierConfidence||'').toUpperCase()==='BORDERLINE'?'<span class="tag warn">Tier cerca del corte</span>':''}<span class="tag ${topic.ttsAvailable?'ok':''}">TTS ${esc(topic.ttsStatusLabel)}</span></div>${topic.scoringReliabilityPolicy==='PARENT_AWARE_INTERPRETATION_REQUIRED'?'<p class="muted">Score con muestra pequeña: interprétalo junto con su especialidad; el topic permanece congelado y contable de forma exclusiva.</p>':''}
         <h2>${esc(topic.label)}</h2><p class="muted">${esc(topic.area)} → ${esc(topic.specialty)}</p>
-        <div class="coverage-detail-kpis"><span><strong>${topic.seen}/${topic.total}</strong> vistas</span><span><strong>${topic.correctEver}/${topic.total}</strong> acertadas alguna vez</span><span><strong>${topic.overdue}</strong> vencidas</span><span><strong>${topic.uncertainAttempts}</strong> intentos dudosos</span></div>
+        <div class="coverage-detail-kpis"><span><strong>${topic.seen}/${topic.total}</strong> vistas</span><span><strong>${topic.correctEver}/${topic.total}</strong> acertadas alguna vez</span><span><strong>${topicObservedCount}</strong> observadas históricas</span><span><strong>${topic.overdue}</strong> vencidas válidas</span><span><strong>${topic.uncertainAttempts}</strong> intentos dudosos</span></div>
         <div class="footer-actions"><button id="topic-unseen-session" class="btn primary" ${topic.seen===topic.total?'disabled':''}>Practicar no vistas</button><button id="topic-all-session" class="btn">Crear sesión del tema</button><button id="topic-tts-request" class="btn ghost">📋 ${topic.ttsAvailable?'Pedir suplemento TTS':'Pedir TTS'}</button></div>
       </section>
-      <section class="panel"><h2>Preguntas del tema</h2><div class="topic-question-list">${topicQuestions.map(q => `<article><div><strong>${esc(q.id)}</strong><span class="tag ${!seen.has(q.id)?'':'ok'}">${!seen.has(q.id)?'No vista':correctEver.has(q.id)?'Acertada alguna vez':'Vista sin acierto'}</span></div><p>${esc(q.question)}</p></article>`).join('')}</div></section>
+      <section class="panel"><h2>Preguntas del tema</h2><div class="topic-question-list">${topicQuestions.map(q => `<article><div><strong>${esc(q.id)}</strong><span class="tag ${!seen.has(q.id)?'':'ok'}">${!seen.has(q.id)?'No vista':correctEver.has(q.id)?'Acertada alguna vez':'Vista sin acierto'}</span>${observed(q)?'<span class="tag warn">Histórica observada</span>':'<span class="tag ok">Válida</span>'}</div><p>${esc(q.question)}</p></article>`).join('')}</div></section>
     </main>`;
     attachTopbar();
     document.getElementById('coverage-back').onclick = () => renderStats(returnSort, returnView);

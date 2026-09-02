@@ -1,14 +1,14 @@
-# Residentado v1.6.0 — Dashboard preexamen dinámico + simulacro universal
+# Residentado v1.6.1 — Exposición histórica coherente + MEDIA 134 + simulacro universal
 
-WebApp estática del banco de Residentado Médico Perú. v1.6.0 es un parche frontend sobre **v1.5.9**: corrige el rollover diario del Dashboard preexamen para que las metas caducadas cambien de mensaje automáticamente y los días al examen se cuenten por fecha local desde las 00:00. Conserva íntegro el cuadernillo universal, el scratch reversible y la hoja de respuestas de v1.5.9. No cambia banco canónico, Taxonomía V3 A16, fórmula de memoria, scheduler de preguntas ni guardrails de sesiones/PT409.
+WebApp estática del banco de Residentado Médico Perú. v1.6.1 es un parche frontend sobre **v1.6.0**: corrige la selección MUY_ALTA+ALTA para obedecer A16, hace explícita la exposición a preguntas históricas observadas y añade el carril curado MEDIA 134 para los últimos días preexamen. Conserva íntegro el cuadernillo universal, el scratch reversible y la hoja de respuestas de v1.5.9. No cambia banco canónico, Taxonomía V3 A16, fórmula de memoria, elegibilidad adaptativa de repaso ni guardrails de sesiones/PT409.
 
 ## Estado
 
-- Frontend: `v1.6.0` / caché `residentado-v1-6-0`.
-- Dataset: `QUESTIONS-TAXV3-A16-20260818-R1` sin cambios.
+- Frontend: `v1.6.1` / revisión predeploy `R3` / caché `residentado-v1-6-1-r3`.
+- Dataset de producción confirmado: `QUESTIONS-PATCH-BATCH-R06-12-V002-20260828`; v1.6.1 no lo modifica.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- **No hay migración nueva en v1.6.0.**
+- **No hay migración nueva en v1.6.1.**
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
 - Scheduler de rescate/retención v1.5.2 y guardrails PT409/recovery: preservados.
 
@@ -36,6 +36,20 @@ La explicación muestra contexto universal y una referencia en dos capas: **Núc
 `audit_source_urls` acepta retrocompatiblemente URLs desnudas y el formato preferido `[Cita compacta](https://...)`, incluso mezclados en una misma celda. Las referencias nominadas muestran la cita compacta; las legacy mantienen fallback por hostname. Solo se aceptan `http/https`, se escapan etiqueta/URL y se deduplica por URL normalizada prefiriendo la etiqueta nominada. No hay backfill ni cambio de schema.
 
 
+
+## Exposición histórica y MEDIA 134 v1.6.1
+
+- El filtro combinado **MUY_ALTA + ALTA** usa el tier A16 como autoridad. Una pregunta MEDIA o BAJA con tier explícito ya no puede entrar por el fallback histórico de corpus.
+- Las preguntas `OBSERVADA_*` **sí son elegibles para exposición histórica** y pueden aparecer en `Nunca vistas`; continúan excluidas de dominio, debilidades, velocidad y repaso adaptativo. La auditoría R2/R3 también corrige las métricas por topic de Mi Estado para que Dudas/Vencidas/Máxima debilidad no reintroduzcan observadas por una vía secundaria.
+- Práctica personalizada añade **Estado editorial**: Todas las históricas (por defecto), Solo válidas o Solo observadas.
+- El Dashboard desglosa MUY_ALTA/ALTA no vistas en **válidas + observadas = exposición histórica pendiente**.
+- Se incorpora **MEDIA 134 · anclas**: exactamente una pregunta seleccionada por cada uno de los 134 topics MEDIA del handoff del 02/09/2026. La selección 134/134 está cerrada; las QR profundas están auditadas 60/134 y todavía no fueron aplicadas al banco.
+- Las **MEDIA observadas no vistas** reciben una cola histórica complementaria. Así, pasar a MEDIA no significa elegir entre breadth temática y exposición a formas ambiguas/desactualizadas: ambas se muestran por separado.
+- Plan preexamen: cerrar primero MUY_ALTA/ALTA histórica; con ≥3 días al examen repartir un único presupuesto diario entre MEDIA 134 + MEDIA observadas; con ≤2 días consolidar sin abrir las 741 MEDIA indiscriminadamente.
+- Higiene learner-facing R3: si un campo legado aún contiene referencias como “alternativa C”, “opciones A y B” o un `audit_current_answer` prefijado por letra, la WebApp muestra el **texto real de la alternativa** en vez de la letra. El dato fuente no se muta; el saneamiento definitivo del banco queda para el próximo delta Supabase.
+- En rescate high, la tarea de **ALTA/MUY_ALTA no vistas** va antes del backlog de vencidas. En fase MEDIA, **errores/dudas** van antes de la adquisición nueva.
+- Las explicaciones, historial y formularios dejan de referirse a alternativas por letra cuando muestran texto learner-facing.
+- `session-core.js` y `session-storage.js` permanecen protegidos y byte-idénticos.
 
 ## Dashboard preexamen v1.6.0
 
