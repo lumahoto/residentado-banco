@@ -1,14 +1,14 @@
-# Residentado v1.6.2 — Telemetría de decisión + navegación estable de simulacro
+# Residentado v1.6.3 — MEDIA134 desbloqueada + telemetría de decisión
 
-WebApp estática del banco de Residentado Médico Perú. v1.6.2 es un parche frontend/UX sobre la **v1.6.1 auditada**. Conserva sus correcciones de rentabilidad A16, exposición histórica y MEDIA 134, y añade dos mejoras de estudio: numeración estable de tres cifras en simulacros y telemetría de candidatas/tachados en práctica ordinaria. No cambia banco canónico, Taxonomía V3 A16, fórmula de memoria, elegibilidad adaptativa de repaso ni guardrails de sesiones/PT409.
+WebApp estática del banco de Residentado Médico Perú. v1.6.3 es un parche frontend mínimo sobre la **v1.6.2 auditada**. Mantiene numeración estable de simulacro, telemetría de candidatas/tachados y todos los guardrails previos, y corrige únicamente la orquestación del Dashboard para aplicar la Hoja de Ruta Sprint Final V002: las MUY_ALTA/ALTA observadas siguen siendo exposición histórica, pero ya no bloquean el acceso a MEDIA134 cuando las high válidas están cerradas.
 
 ## Estado
 
-- Frontend: `v1.6.2` / revisión predeploy `R1` / caché `residentado-v1-6-2-r1`.
-- Dataset de producción confirmado: `QUESTIONS-PATCH-PREEXAM-AUD195-V001-20260903`; v1.6.2 no lo modifica.
+- Frontend: `v1.6.3` / revisión predeploy `R1` / caché `residentado-v1-6-3-r1`.
+- Dataset de producción confirmado: `QUESTIONS-PATCH-PREEXAM-AUD195-V001-20260903`; v1.6.3 no lo modifica.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- **No hay migración nueva en v1.6.2.**
+- **No hay migración nueva en v1.6.3.**
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
 - Scheduler de rescate/retención v1.5.2 y guardrails PT409/recovery: preservados.
 
@@ -37,6 +37,16 @@ La explicación muestra contexto universal y una referencia en dos capas: **Núc
 
 
 
+
+## Plan diario V002 v1.6.3
+
+- `MUY_ALTA/ALTA` válida o `VALIDADA_CON_CAVEAT` nunca vista es la única high que puede bloquear la entrada a MEDIA134.
+- `OBSERVADA_AMBIGUA` / `OBSERVADA_DESACTUALIZADA` de tier high permanece disponible para exposición histórica, pero se muestra en un carril separado.
+- Si `highValidUnseen = 0` y faltan ≥3 días al examen, el orden operativo es: **Errores y dudas → MEDIA 134 · anclas → ALTA/MUY_ALTA observadas · exposición histórica → Repasos rentables → Automatización**.
+- El bloque histórico high se limita a hasta 20 preguntas por checklist diario para no desplazar MEDIA134.
+- Con ≤2 días al examen se conserva la consolidación final heredada.
+- Esta corrección no cambia A16, attempts, sesiones, memoria, FSRS, due dates, simulacros ni Supabase.
+
 ## Telemetría de decisión y simulacro v1.6.2
 
 - En simulacros, la numeración usa tres cifras (`001`, `015`, `100`). En históricos A+B se conserva la procedencia (`A-001`, `B-001`).
@@ -53,9 +63,9 @@ La explicación muestra contexto universal y una referencia en dos capas: **Núc
 - Las preguntas `OBSERVADA_*` **sí son elegibles para exposición histórica** y pueden aparecer en `Nunca vistas`; continúan excluidas de dominio, debilidades, velocidad y repaso adaptativo. La auditoría R2/R3 también corrige las métricas por topic de Mi Estado para que Dudas/Vencidas/Máxima debilidad no reintroduzcan observadas por una vía secundaria.
 - Práctica personalizada añade **Estado editorial**: Todas las históricas (por defecto), Solo válidas o Solo observadas.
 - El Dashboard desglosa MUY_ALTA/ALTA no vistas en **válidas + observadas = exposición histórica pendiente**.
-- Se incorpora **MEDIA 134 · anclas**: exactamente una pregunta seleccionada por cada uno de los 134 topics MEDIA del handoff del 02/09/2026. La selección 134/134 está cerrada; las QR profundas están auditadas 60/134 y todavía no fueron aplicadas al banco.
+- Se incorpora **MEDIA 134 · anclas**: exactamente una pregunta seleccionada por cada uno de los 134 topics MEDIA del handoff del 02/09/2026. La selección 134/134 está cerrada; las primeras 60 QR profundas ya fueron aplicadas al banco mediante `QUESTIONS-PATCH-PREEXAM-AUD195-V001-20260903`.
 - Las **MEDIA observadas no vistas** reciben una cola histórica complementaria. Así, pasar a MEDIA no significa elegir entre breadth temática y exposición a formas ambiguas/desactualizadas: ambas se muestran por separado.
-- Plan preexamen: cerrar primero MUY_ALTA/ALTA histórica; con ≥3 días al examen repartir un único presupuesto diario entre MEDIA 134 + MEDIA observadas; con ≤2 días consolidar sin abrir las 741 MEDIA indiscriminadamente.
+- Plan preexamen original de v1.6.2: cerrar primero MUY_ALTA/ALTA histórica. **Esta regla queda supersedida por v1.6.3/V002**: solo high válida bloquea; high observada se intercala después de MEDIA134.
 - Higiene learner-facing R3: si un campo legado aún contiene referencias como “alternativa C”, “opciones A y B” o un `audit_current_answer` prefijado por letra, la WebApp muestra el **texto real de la alternativa** en vez de la letra. El dato fuente no se muta; el saneamiento definitivo del banco queda para el próximo delta Supabase.
 - En rescate high, la tarea de **ALTA/MUY_ALTA no vistas** va antes del backlog de vencidas. En fase MEDIA, **errores/dudas** van antes de la adquisición nueva.
 - Las explicaciones, historial y formularios dejan de referirse a alternativas por letra cuando muestran texto learner-facing.

@@ -1,5 +1,17 @@
 # Changelog - Residentado
 
+## v1.6.3 - 2026-09-03
+
+Parche frontend mínimo sobre v1.6.2 para alinear el Dashboard con la Hoja de Ruta Sprint Final V002. No requiere migración Supabase y no modifica dataset, taxonomía A16, simulacros, telemetría de decisión, scheduler, memoria, PT409/recovery ni archivos críticos de sesión.
+
+- solo las MUY_ALTA/ALTA **válidas o con caveat** nunca vistas bloquean la entrada a MEDIA134;
+- las `OBSERVADA_*` MUY_ALTA/ALTA siguen siendo estudiables, pero pasan a un carril histórico separado que **no bloquea MEDIA134**;
+- cuando `highValidUnseen = 0` y faltan ≥3 días al examen, el checklist cambia a `Errores y dudas → MEDIA 134 · anclas → ALTA/MUY_ALTA observadas · exposición histórica → Repasos rentables → Automatización`;
+- el bloque histórico high queda acotado a hasta 20 preguntas por checklist diario;
+- `new_high` queda reservado a high válida/caveat, y se añade `high_observed` para exposición histórica;
+- conserva íntegramente v1.6.2: numeración `001`, slot fijo `?`, candidata `◉`, tachado `×` y telemetría en `practice_sessions.state.scratch`;
+- conserva dataset de producción `QUESTIONS-PATCH-PREEXAM-AUD195-V001-20260903` y las 60 QR MEDIA134 ya aplicadas mediante AUD195.
+
 ## v1.6.2 - 2026-09-03
 
 Parche frontend/UX sobre v1.6.1. No requiere migración Supabase y no modifica dataset, taxonomía A16, scheduler, memoria, PT409/recovery ni archivos críticos de sesión.

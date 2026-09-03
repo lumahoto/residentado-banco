@@ -4198,6 +4198,14 @@
       });
   }
 
+  function validHighUnseenPool() {
+    return historicalHighUnseenPool().filter(q => !observed(q));
+  }
+
+  function observedHighUnseenPool() {
+    return historicalHighUnseenPool().filter(observed);
+  }
+
   function media134UnseenPool() {
     const seen = new Set(attempts.map(a => a.question_id));
     const byId = new Map(questions.map(q => [q.id, q]));
@@ -4237,9 +4245,14 @@
       return sortByPriority(unseen, now, { diversifyYears:true, tolerance:0.75 });
     }
     if (kind === 'new_high') {
-      // v1.6.1: exposición histórica completa de MUY_ALTA/ALTA. Incluye OBSERVADA_*;
-      // dentro de cada tier, las válidas se exponen antes que las observadas.
-      return historicalHighUnseenPool();
+      // v1.6.3: el carril bloqueante high contiene solo preguntas válidas/caveat.
+      // Las OBSERVADA_* siguen siendo estudiables, pero van en un carril histórico intercalado.
+      return validHighUnseenPool();
+    }
+    if (kind === 'high_observed') {
+      // Exposición histórica ALTA/MUY_ALTA separada: no bloquea la entrada a MEDIA134
+      // y continúa fuera de dominio/weakness/due/speed.
+      return observedHighUnseenPool();
     }
     if (kind === 'media134') {
       // Carril curado: una ancla por cada uno de los 134 topics MEDIA, en el orden de selección congelado.
@@ -4795,14 +4808,16 @@
     const highGoal = highCoverageCutoffIso(); // examen-3: objetivo operativo de cierre high actual
     const mediaGoal = highCoverageCutoffIso(); // miércoles/jueves si el examen es domingo
 
-    // v1.6.1: primero cerrar exposición histórica MUY_ALTA/ALTA (válidas + observadas).
-    // Una vez cerrada, los días con >=3 días al examen se destinan a las 134 anclas MEDIA.
+    // v1.6.3 / Hoja de ruta V002:
+    // 1) solo las ALTA/MUY_ALTA válidas/caveat no vistas bloquean la entrada a MEDIA134;
+    // 2) las ALTA/MUY_ALTA OBSERVADA_* siguen siendo exposición histórica, pero intercalada;
+    // 3) con >=3 días al examen, al cerrar high válida se abre MEDIA134 aunque queden observadas high.
     // Con <=2 días, no se abre cobertura ordinaria amplia: se consolida memoria/errores/simulacro.
-    const highCoverageSprint = stats.highHistoricalUnseen > 0 && daysExam > 0;
-    const media134Sprint = !highCoverageSprint && stats.mediaPriorityUnseen > 0 && daysExam >= 3;
+    const highCoverageSprint = stats.highValidUnseen > 0 && daysExam > 0;
+    const media134Sprint = !highCoverageSprint && stats.media134Unseen > 0 && daysExam >= 3;
     const coverageSprint = highCoverageSprint || media134Sprint;
     const coverageGoal = highCoverageSprint ? highGoal : mediaGoal;
-    const coverageRemaining = highCoverageSprint ? stats.highHistoricalUnseen : stats.mediaPriorityUnseen;
+    const coverageRemaining = highCoverageSprint ? stats.highValidUnseen : stats.media134Unseen;
     const coverageDaysLeft = Math.max(1, Math.floor(daysBetween(today, coverageGoal)) + 1);
 
     let specs = [];
@@ -4821,46 +4836,36 @@
       const speedTarget = Math.min(15, smartPool('speed').length);
 
       if (highCoverageSprint) {
-        // Cierre de primera exposición high antes de abrir MEDIA. La cola nueva va primero:
-        // un backlog de due no debe ocultar las preguntas ALTA/MUY_ALTA nunca vistas.
+        // Cierre de primera exposición high VÁLIDA antes de abrir MEDIA. La cola nueva va primero:
+        // un backlog de due no debe ocultar las preguntas ALTA/MUY_ALTA válidas nunca vistas.
         specs = [
-          ['new_high', newTarget, '🚀 ALTA/MUY_ALTA no vistas'],
+          ['new_high', newTarget, '🚀 ALTA/MUY_ALTA válidas no vistas'],
           ['fragile', fragileTarget, '🧩 Errores y dudas'],
           ['due', dueTarget, '🧠 Repasos rentables'],
           ['speed', speedTarget, '⚡ Automatización'],
         ];
         phase = {
           key:'coverage_sprint',
-          name:'Rescate ALTA + exposición histórica',
-          objective:`Cerrar MUY_ALTA/ALTA no vistas: ${stats.highValidUnseen} válidas + ${stats.highObservedUnseen} observadas. Las observadas cuentan para exposición, no para dominio adaptativo.`,
+          name:'Rescate ALTA/MUY_ALTA válida',
+          objective:`Cerrar las ${stats.highValidUnseen} MUY_ALTA/ALTA válidas no vistas. Las ${stats.highObservedUnseen} observadas high pendientes siguen siendo exposición histórica, pero ya no bloquean MEDIA134.`,
         };
       } else {
-        // MEDIA de estos dos días: cubrir amplitud con las 134 anclas y, en paralelo,
-        // no perder las formas históricas observadas. Se reparte un único presupuesto diario.
-        const totalMediaPriority = Math.max(1, stats.mediaPriorityUnseen);
-        let anchorTarget = Math.min(stats.media134Unseen, Math.ceil(newTarget * stats.media134Unseen / totalMediaPriority));
-        let observedTarget = Math.min(stats.mediaObservedUnseen, Math.max(0, newTarget - anchorTarget));
-        let remainingBudget = Math.max(0, newTarget - anchorTarget - observedTarget);
-        if (remainingBudget && anchorTarget < stats.media134Unseen) {
-          const add = Math.min(remainingBudget, stats.media134Unseen - anchorTarget);
-          anchorTarget += add;
-          remainingBudget -= add;
-        }
-        if (remainingBudget && observedTarget < stats.mediaObservedUnseen) {
-          observedTarget += Math.min(remainingBudget, stats.mediaObservedUnseen - observedTarget);
-        }
+        // Hoja de ruta V002: errores/dudas primero, después MEDIA134; las high observadas
+        // se intercalan en un bloque histórico acotado y no compiten con las anclas MEDIA.
+        const anchorTarget = Math.min(stats.media134Unseen, newTarget);
+        const highObservedTarget = Math.min(20, stats.highObservedUnseen);
 
         specs = [
           ['fragile', fragileTarget, '🔥 Errores y dudas'],
           ['media134', anchorTarget, '📚 MEDIA 134 · anclas'],
-          ['media_observed', observedTarget, '⚠ MEDIA observadas · exposición histórica'],
+          ['high_observed', highObservedTarget, '⚠️ ALTA/MUY_ALTA observadas · exposición histórica'],
           ['due', dueTarget, '🧠 Repasos rentables'],
           ['speed', speedTarget, '⚡ Automatización'],
         ];
         phase = {
           key:'coverage_sprint',
           name:'MEDIA prioritaria · adquisición selectiva',
-          objective:`Avanzar 134 anclas seleccionadas y las MEDIA observadas no vistas (${stats.media134Unseen} anclas + ${stats.mediaObservedUnseen} observadas pendientes), sin abrir las 741 MEDIA indiscriminadamente.`,
+          objective:`ALTA/MUY_ALTA válida ya está cerrada. Avanza las ${stats.media134Unseen} anclas MEDIA pendientes e intercala hasta 20 de las ${stats.highObservedUnseen} observadas high, sin permitir que estas vuelvan a bloquear MEDIA.`,
         };
       }
     } else {
