@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.6.1 R3: auditoría predeploy; preserva filtro high canónico, exposición MEDIA observada y métricas adaptativas válidas; añade higiene learner-facing sin referencias por letra; conserva simulacro v1.5.9 y archivos críticos de sesión.
+// v1.6.2 R1: numeración estable de simulacro y telemetría de candidatas/tachados en práctica ordinaria; preserva sesiones, memoria, A16 y lógica de entrega.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-6-1-r3';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-6-2-r1';
 const ASSETS = [
   './',
   './index.html',

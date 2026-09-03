@@ -5280,13 +5280,20 @@
     return Boolean(exam?.config?.studyMode === 'historical_exam' || exam?.config?.historicalYear);
   }
 
+  function formatExamQuestionNumber(value) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return String(Math.max(0, Math.trunc(numeric))).padStart(3, '0');
+    return String(value ?? '');
+  }
+
   function historicalDisplayNumber(q, index) {
     if (paperExamIsHistorical()) {
       const combined = currentExam?.config?.historicalKind === 'combined';
-      return combined ? `${String(q.test).toUpperCase()}-${q.question_number}` : String(q.question_number);
+      const number = formatExamQuestionNumber(q.question_number);
+      return combined ? `${String(q.test).toUpperCase()}-${number}` : number;
     }
     const bounds = activeExamBounds();
-    return String(index - bounds.start + 1);
+    return formatExamQuestionNumber(index - bounds.start + 1);
   }
 
   function paperOptionList(q) {
@@ -5298,11 +5305,13 @@
   }
 
   function paperScratchQuestionId(kind, qId) {
+    // Se conserva el prefijo __paper_* por compatibilidad con simulacros y queries de exportación previos.
+    // Desde v1.6.2 el mismo canal scratch se reutiliza también en práctica ordinaria.
     return `__paper_${kind}__${qId}`;
   }
 
-  function scratchOptionState(qId, letter) {
-    const scratch = currentExam?.state?.scratch || {};
+  function decisionScratchOptionState(scratch, qId, letter) {
+    scratch ||= {};
     if (scratch[paperScratchQuestionId('crossed', qId)]?.[letter] === 'tentative') return 'crossed';
     if (scratch[paperScratchQuestionId('candidate', qId)]?.[letter] === 'tentative') return 'candidate';
     // Compatibilidad defensiva con estados efímeros de builds previas antes de normalizar.
@@ -5310,41 +5319,51 @@
     return legacy === 'crossed' || legacy === 'candidate' ? legacy : 'neutral';
   }
 
+  function scratchOptionState(qId, letter) {
+    return decisionScratchOptionState(currentExam?.state?.scratch || {}, qId, letter);
+  }
+
   function scratchStateLabel(state) {
-    if (state === 'candidate') return 'Preferida tentativa';
+    if (state === 'candidate') return 'Candidata tentativa';
     if (state === 'crossed') return 'Tachada';
     return 'Sin marca';
   }
 
-  function setScratchOptionState(qId, letter, next) {
-    currentExam.state.scratch ||= {};
+  function setDecisionScratchOptionState(scratch, qId, letter, next) {
+    if (!scratch || !qId || !['A','B','C','D','E'].includes(letter)) return 'neutral';
     const candidateKey = paperScratchQuestionId('candidate', qId);
     const crossedKey = paperScratchQuestionId('crossed', qId);
 
     for (const key of [candidateKey, crossedKey]) {
-      if (currentExam.state.scratch[key]) {
-        delete currentExam.state.scratch[key][letter];
-        if (!Object.keys(currentExam.state.scratch[key]).length) delete currentExam.state.scratch[key];
+      if (scratch[key]) {
+        delete scratch[key][letter];
+        if (!Object.keys(scratch[key]).length) delete scratch[key];
       }
     }
     // Elimina cualquier estado no canónico efímero que pudiera quedar en la fila real de la pregunta.
-    if (['candidate','crossed'].includes(currentExam.state.scratch[qId]?.[letter])) {
-      delete currentExam.state.scratch[qId][letter];
-      if (!Object.keys(currentExam.state.scratch[qId]).length) delete currentExam.state.scratch[qId];
+    if (['candidate','crossed'].includes(scratch[qId]?.[letter])) {
+      delete scratch[qId][letter];
+      if (!Object.keys(scratch[qId]).length) delete scratch[qId];
     }
 
     if (next === 'candidate' || next === 'crossed') {
       const key = next === 'candidate' ? candidateKey : crossedKey;
-      currentExam.state.scratch[key] ||= {};
-      // SessionCore protege y persiste `tentative`; el questionId sintético evita acoplarlo a ? Duda.
-      currentExam.state.scratch[key][letter] = 'tentative';
+      scratch[key] ||= {};
+      // SessionCore normaliza/persiste el token `tentative`; la clave sintética mantiene esta telemetría
+      // completamente separada de la duda de pregunta (`?`) y por tanto de memory_rating/FSRS.
+      scratch[key][letter] = 'tentative';
     }
     return next;
   }
 
+  function setScratchOptionState(qId, letter, next) {
+    currentExam.state.scratch ||= {};
+    return setDecisionScratchOptionState(currentExam.state.scratch, qId, letter, next);
+  }
+
   function toggleScratchCandidate(qId, letter) {
     const current = scratchOptionState(qId, letter);
-    // Si estaba tachada, pulsar de nuevo la alternativa la recupera directamente.
+    // Preserva semántica v1.5.9 del simulacro: pulsar una alternativa tachada la recupera a neutral.
     const next = current === 'crossed' ? 'neutral' : (current === 'candidate' ? 'neutral' : 'candidate');
     return setScratchOptionState(qId, letter, next);
   }
@@ -5353,6 +5372,24 @@
     const current = scratchOptionState(qId, letter);
     const next = current === 'crossed' ? 'neutral' : 'crossed';
     return setScratchOptionState(qId, letter, next);
+  }
+
+  function studyScratchOptionState(qId, letter) {
+    return decisionScratchOptionState(currentStudy?.scratch || {}, qId, letter);
+  }
+
+  function toggleStudyScratchCandidate(qId, letter) {
+    currentStudy.scratch ||= {};
+    const current = studyScratchOptionState(qId, letter);
+    const next = current === 'candidate' ? 'neutral' : 'candidate';
+    return setDecisionScratchOptionState(currentStudy.scratch, qId, letter, next);
+  }
+
+  function toggleStudyScratchCrossed(qId, letter) {
+    currentStudy.scratch ||= {};
+    const current = studyScratchOptionState(qId, letter);
+    const next = current === 'crossed' ? 'neutral' : 'crossed';
+    return setDecisionScratchOptionState(currentStudy.scratch, qId, letter, next);
   }
 
   function paperOptionHtml(q, index, o) {
@@ -5440,7 +5477,11 @@
       const uncertain = questionHasDoubt(currentExam.state.scratch, q.id);
       const flagged = Boolean(currentExam.state.marked?.[q.id]);
       return `${heading}<div class="answer-row ${selected?'answered':''} ${uncertain?'uncertain':''} ${flagged?'flagged':''}" data-answer-row="${index}">
-        <button class="answer-number" data-scroll-question="${index}" title="Ir a la pregunta">${flagged?'⚑ ':''}${esc(historicalDisplayNumber(q,index))}${uncertain?' ?':''}</button>
+        <button class="answer-number" data-scroll-question="${index}" title="Ir a la pregunta" aria-label="Ir a la pregunta ${esc(historicalDisplayNumber(q,index))}${uncertain?', marcada con duda':''}${flagged?', marcada para revisar':''}">
+          <span class="answer-number-flag" aria-hidden="true">${flagged?'⚑':'&nbsp;'}</span>
+          <span class="answer-number-value">${esc(historicalDisplayNumber(q,index))}</span>
+          <span class="answer-number-doubt" aria-hidden="true">${uncertain?'?':'&nbsp;'}</span>
+        </button>
         <div class="answer-bubbles">
           ${paperOptionList(q).map(o => {
             const sourceLetter = o.sourceLetter || o.letter;
@@ -5472,7 +5513,15 @@
         row.classList.toggle('flagged', flagged);
       }
       const numberBtn = document.querySelector(`[data-scroll-question="${i}"]`);
-      if (numberBtn) numberBtn.textContent = `${flagged?'⚑ ':''}${historicalDisplayNumber(q,i)}${uncertain?' ?':''}`;
+      if (numberBtn) {
+        const flagSlot = numberBtn.querySelector('.answer-number-flag');
+        const valueSlot = numberBtn.querySelector('.answer-number-value');
+        const doubtSlot = numberBtn.querySelector('.answer-number-doubt');
+        if (flagSlot) flagSlot.innerHTML = flagged ? '⚑' : '&nbsp;';
+        if (valueSlot) valueSlot.textContent = historicalDisplayNumber(q,i);
+        if (doubtSlot) doubtSlot.innerHTML = uncertain ? '?' : '&nbsp;';
+        numberBtn.setAttribute('aria-label', `Ir a la pregunta ${historicalDisplayNumber(q,i)}${uncertain?', marcada con duda':''}${flagged?', marcada para revisar':''}`);
+      }
       document.querySelectorAll(`[data-answer-index="${i}"]`).forEach(btn => {
         btn.classList.toggle('selected', btn.dataset.answerLetter === selected);
       });
@@ -5519,7 +5568,7 @@
             <span class="roadmap-kicker">CUADERNILLO</span>
             <h1>${esc(currentExam.config.title)}</h1>
             <p>Lee el cuadernillo y marca tu respuesta definitiva únicamente en la hoja lateral. En cada alternativa puedes marcar una preferencia tentativa o tacharla como distractor; usa <strong>?</strong> solo si la pregunta completa te genera duda.</p>
-            <div class="scratch-legend"><span><b>◉</b> preferida tentativa · puedes marcar 1 o 2</span><span><b>×</b> tachar / volver a pulsar para recuperar</span><span><b>?</b> duda de la pregunta</span><span>La hoja de respuestas es la que cuenta.</span></div>
+            <div class="scratch-legend"><span><b>◉</b> preferida tentativa · puedes marcar una o varias</span><span><b>×</b> tachar / volver a pulsar para recuperar</span><span><b>?</b> duda de la pregunta</span><span>La hoja de respuestas es la que cuenta.</span></div>
           </div>
           ${historicalPaperQuestionsHtml()}
         </div>
@@ -6291,7 +6340,8 @@
         <div class="q-body"><p class="q-text">${esc(q.question)}</p>
           ${questionMediaHtml(q)}
           ${locked ? `<div class="banner compact"><strong>⏱ Pregunta cerrada.</strong> ${responseState.timedOut ? 'El tiempo terminó sin respuesta; contará como un único intento fallido por tiempo.' : 'El tiempo terminó después de que respondiste; se conserva esa respuesta y ya no puede modificarse.'}</div>` : ''}
-          <div class="options">${opts.map(o => optionButton(o, selected)).join('')}</div>
+          <div class="options study-options">${opts.map(o => studyOptionHtml(q, o, selected, locked)).join('')}</div>
+          <div class="study-decision-legend muted"><span><b>◉</b> candidata que estás considerando</span><span><b>×</b> descartar/tachar</span><span>Estas marcas se guardan como telemetría de razonamiento y no cambian tu memoria ni el marcador <b>?</b>.</span></div>
           <div class="dont-know-row"><button id="dont-know-study" class="btn ghost dont-know-btn" type="button">${currentStudy.config.feedback === 'immediate' ? '🤷 No sé · mostrar respuesta' : '🤷 No sé · continuar'}</button><span class="muted">Cuenta como respuesta incorrecta explícita; no como pregunta en blanco ni como tiempo agotado.</span></div>
         </div>
         <div id="feedback"></div>
@@ -6300,9 +6350,31 @@
     </main>`;
     attachTopbar();
 
-    document.querySelectorAll('.option').forEach(btn => {
+    document.querySelectorAll('.study-option-wrap .option').forEach(btn => {
       if (locked) btn.disabled = true;
       else btn.onclick = () => handleStudyAnswer(btn.dataset.letter);
+    });
+    document.querySelectorAll('[data-study-candidate]').forEach(btn => {
+      if (locked) { btn.disabled = true; return; }
+      btn.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const sourceLetter = btn.dataset.studyCandidate;
+        toggleStudyScratchCandidate(q.id, sourceLetter);
+        refreshStudyOptionScratch(q.id, sourceLetter);
+        scheduleCurrentSessionSave();
+      };
+    });
+    document.querySelectorAll('[data-study-discard]').forEach(btn => {
+      if (locked) { btn.disabled = true; return; }
+      btn.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const sourceLetter = btn.dataset.studyDiscard;
+        toggleStudyScratchCrossed(q.id, sourceLetter);
+        refreshStudyOptionScratch(q.id, sourceLetter);
+        scheduleCurrentSessionSave();
+      };
     });
     const dontKnowBtn = document.getElementById('dont-know-study');
     if (dontKnowBtn) {
@@ -6426,6 +6498,7 @@
       currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
       scheduleCurrentSessionSave();
       disableOptionsAndPaint(q, letter);
+      disableStudyDecisionControls();
       revealStudyQuestionMetadata(q);
       renderFeedback(q, letter, isCorrect, () => {
         currentStudy.index++;
@@ -6469,6 +6542,7 @@
       currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
       scheduleCurrentSessionSave();
       disableOptionsAndPaint(q, null);
+      disableStudyDecisionControls();
       revealStudyQuestionMetadata(q);
       const dontKnowBtn = document.getElementById('dont-know-study');
       if (dontKnowBtn) dontKnowBtn.disabled = true;
@@ -6520,6 +6594,7 @@
         currentStudy.responses[q.id] = { ...currentStudy.responses[q.id], metadataRevealed: true };
         scheduleCurrentSessionSave();
         disableOptionsAndPaint(q, null);
+        disableStudyDecisionControls();
         revealStudyQuestionMetadata(q);
           renderFeedback(
           q, null, false,
@@ -7049,8 +7124,8 @@
     const bounds = activeExamBounds();
     const label = currentExam?.config?.examLayout === 'paper'
       ? historicalDisplayNumber(q, i)
-      : String(twoPartExamEnabled() ? i - bounds.start + 1 : i + 1);
-    return `<button class="qnav ${answered?'answered':''} ${marked?'marked':''} ${current?'current':''}" data-qindex="${i}">${esc(label)}${marked?'⚑':''}</button>`;
+      : formatExamQuestionNumber(twoPartExamEnabled() ? i - bounds.start + 1 : i + 1);
+    return `<button class="qnav ${answered?'answered':''} ${marked?'marked':''} ${current?'current':''}" data-qindex="${i}"><span class="qnav-number">${esc(label)}</span><span class="qnav-mark" aria-hidden="true">${marked?'⚑':'&nbsp;'}</span></button>`;
   }
 
   function refreshExamGridOnly() {
@@ -7668,6 +7743,49 @@
   function optionButton(o, selected) {
     const sourceLetter = o.sourceLetter || o.letter;
     return `<button class="option ${selected===sourceLetter?'selected':''}" data-letter="${sourceLetter}"><span class="letter">${o.letter}</span><span>${esc(o.text)}</span></button>`;
+  }
+
+  function studyOptionHtml(q, o, selected, locked = false) {
+    const sourceLetter = o.sourceLetter || o.letter;
+    const state = studyScratchOptionState(q.id, sourceLetter);
+    const candidateTitle = state === 'candidate' ? 'Quitar candidata tentativa' : 'Marcar como candidata tentativa';
+    const discardTitle = state === 'crossed' ? 'Quitar tachado' : 'Tachar alternativa';
+    return `<div class="study-option-wrap scratch-${state}" data-study-option-source="${sourceLetter}">
+      <button class="option ${selected===sourceLetter?'selected':''}" data-letter="${sourceLetter}" type="button" ${locked?'disabled':''}>
+        <span class="letter">${o.letter}</span><span class="study-option-text">${esc(o.text)}</span>
+      </button>
+      <button class="study-option-candidate ${state==='candidate'?'active':''}" type="button" data-study-candidate="${sourceLetter}"
+        aria-pressed="${state==='candidate'?'true':'false'}" title="${candidateTitle}" aria-label="${candidateTitle}: ${o.letter}" ${locked?'disabled':''}>◉</button>
+      <button class="study-option-discard ${state==='crossed'?'active':''}" type="button" data-study-discard="${sourceLetter}"
+        aria-pressed="${state==='crossed'?'true':'false'}" title="${discardTitle}" aria-label="${discardTitle}: ${o.letter}" ${locked?'disabled':''}>×</button>
+    </div>`;
+  }
+
+  function refreshStudyOptionScratch(qId, sourceLetter) {
+    const wrap = document.querySelector(`[data-study-option-source="${sourceLetter}"]`);
+    if (!wrap || studyCurrentQuestion()?.id !== qId) return;
+    const state = studyScratchOptionState(qId, sourceLetter);
+    wrap.classList.remove('scratch-neutral', 'scratch-candidate', 'scratch-crossed');
+    wrap.classList.add(`scratch-${state}`);
+    const candidate = wrap.querySelector('[data-study-candidate]');
+    const discard = wrap.querySelector('[data-study-discard]');
+    const displayLetter = wrap.querySelector('.letter')?.textContent?.trim() || sourceLetter;
+    if (candidate) {
+      candidate.classList.toggle('active', state === 'candidate');
+      candidate.setAttribute('aria-pressed', state === 'candidate' ? 'true' : 'false');
+      candidate.title = state === 'candidate' ? 'Quitar candidata tentativa' : 'Marcar como candidata tentativa';
+      candidate.setAttribute('aria-label', `${candidate.title}: ${displayLetter}`);
+    }
+    if (discard) {
+      discard.classList.toggle('active', state === 'crossed');
+      discard.setAttribute('aria-pressed', state === 'crossed' ? 'true' : 'false');
+      discard.title = state === 'crossed' ? 'Quitar tachado' : 'Tachar alternativa';
+      discard.setAttribute('aria-label', `${discard.title}: ${displayLetter}`);
+    }
+  }
+
+  function disableStudyDecisionControls() {
+    document.querySelectorAll('[data-study-candidate],[data-study-discard]').forEach(btn => { btn.disabled = true; });
   }
 
   function auditBadge(q) {
