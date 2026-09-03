@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.6.1: Dashboard preexamen dinámico + regresiones v1.5.9, revisión del día y QRV2. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.6.2: telemetría de decisión + numeración estable + regresiones v1.6.1/v1.5.9. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -48,7 +48,7 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.6.1' in page.locator('body').inner_text()
+    assert 'v1.6.2' in page.locator('body').inner_text()
 
 
     # v1.6.0: el Dashboard no conserva el hito estático caducable de primera vuelta.
@@ -161,12 +161,23 @@ with sync_playwright() as p:
     assert 'No sé · mostrar respuesta' in page.locator('#dont-know-study').inner_text()
     assert page.locator('.uncertainty-toggle').count() == 0
     assert page.locator('[data-question-doubt-top]').count() == 1
+    # v1.6.2: candidata/tachado son controles hermanos y no seleccionan la respuesta ni activan ?.
+    assert page.locator('[data-study-candidate]').count() >= 4
+    assert page.locator('[data-study-discard]').count() >= 4
+    page.locator('[data-study-candidate]').nth(0).click()
+    page.locator('[data-study-discard]').nth(1).click()
+    assert page.locator('.study-option-wrap.scratch-candidate').count() == 1
+    assert page.locator('.study-option-wrap.scratch-crossed').count() == 1
+    assert page.locator('.option.selected').count() == 0
+    assert 'active' not in (page.locator('[data-question-doubt-top]').get_attribute('class') or '')
     page.locator('[data-question-doubt-top]').click()
     assert 'active' in (page.locator('[data-question-doubt-top]').get_attribute('class') or '')
     page.locator('#dont-know-study').click()
     page.wait_for_timeout(250)
     assert 'No sabía' in page.locator('#feedback').inner_text()
     assert 'Tiempo agotado' not in page.locator('#feedback').inner_text()
+    assert page.locator('[data-study-candidate]').nth(0).is_disabled()
+    assert page.locator('[data-study-discard]').nth(1).is_disabled()
     feedback_text = page.locator('#feedback').inner_text()
     assert 'Fluoroquinolonas — lesión tendinosa' in feedback_text
     # Higiene learner-facing: el corpus puede conservar letras históricas, pero la UI las sustituye por el texto de la alternativa.
@@ -263,6 +274,10 @@ with sync_playwright() as p:
     assert page.locator('.answer-sheet').count() == 1
     assert page.locator('.paper-question').count() == 1
     assert 'Respuesta correcta:' not in page.locator('body').inner_text()
+    # v1.6.2: numeración a tres cifras y slot ? reservado sin cambiar el ancho.
+    assert page.locator('[data-answer-row="0"] .answer-number-value').inner_text() == '001'
+    assert page.locator('[data-answer-row="0"] .answer-number-doubt').inner_text().strip() == ''
+    number_width_before = page.locator('[data-answer-row="0"] .answer-number').bounding_box()['width']
 
     # v1.5.9: dos candidatas tentativas simultáneas sin convertir la pregunta en duda.
     page.locator('[data-candidate-index="0"]').nth(0).click()
@@ -286,6 +301,9 @@ with sync_playwright() as p:
     page.locator('[data-paper-flag-index="0"]').click()
     page.wait_for_timeout(80)
     assert 'uncertain' in (page.locator('[data-answer-row="0"]').get_attribute('class') or '')
+    assert page.locator('[data-answer-row="0"] .answer-number-doubt').inner_text().strip() == '?'
+    number_width_after = page.locator('[data-answer-row="0"] .answer-number').bounding_box()['width']
+    assert abs(number_width_after - number_width_before) < 0.5
     page.locator('#historical-finish').click()
     page.wait_for_timeout(120)
     assert 'Revisión de bloque 1' in page.locator('body').inner_text()
@@ -342,6 +360,7 @@ with sync_playwright() as p:
     assert 'Modo histórico realista' in page.locator('body').inner_text()
     assert 'Prueba A' in page.locator('.historical-toolbar').inner_text()
     assert page.locator('.paper-question').count() == 90
+    assert page.locator('[data-answer-row="0"] .answer-number-value').inner_text() == 'A-001'
     assert page.locator('[data-answer-index="0"]').count() >= 4
     assert page.locator('[data-answer-index="90"]').count() == 0
     assert 'QA histórico B-1' not in page.locator('.historical-paper').inner_text()
@@ -361,6 +380,9 @@ with sync_playwright() as p:
     page.locator('[data-paper-flag-index="0"]').click()
     page.wait_for_timeout(80)
     assert 'uncertain' in (page.locator('[data-answer-row="0"]').get_attribute('class') or '')
+    assert page.locator('[data-answer-row="0"] .answer-number-doubt').inner_text().strip() == '?'
+    number_width_after = page.locator('[data-answer-row="0"] .answer-number').bounding_box()['width']
+    assert abs(number_width_after - number_width_before) < 0.5
     page.locator('[data-answer-index="0"]').first.click()
     page.locator('#historical-finish').click()
     page.wait_for_timeout(100)
@@ -415,4 +437,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.6.1 CANONICAL EXPOSURE + MEDIA134 + v1.5.9 REGRESSIONS: OK')
+print('QA navegador v1.6.2 DECISION TELEMETRY + STABLE EXAM NAV + REGRESSIONS: OK')

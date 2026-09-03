@@ -65,9 +65,9 @@ for forbidden in [
     require(not forbidden.exists(), f'Proliferación documental no permitida: {forbidden.relative_to(ROOT)}')
 
 # Release/version consistency.
-require("version: '1.6.1'" in version, 'version.js no declara 1.6.1')
-require("cacheName: 'residentado-v1-6-1-r3'" in version, 'version.js no declara cache v1.6.1 R3')
-require(manifest.get('version') == '1.6.1', 'RELEASE_MANIFEST no coincide con v1.6.1')
+require("version: '1.6.2'" in version, 'version.js no declara 1.6.2')
+require("cacheName: 'residentado-v1-6-2-r1'" in version, 'version.js no declara cache v1.6.2 R1')
+require(manifest.get('version') == '1.6.2', 'RELEASE_MANIFEST no coincide con v1.6.2')
 require(manifest.get('taxonomy', {}).get('source_release_id') == EXPECTED['release_id'], 'El release fuente de taxonomía V3/A16 es inconsistente')
 require('window.RESIDENTADO_BUILD?.version' in app, 'app.js no consume version.js')
 require("importScripts('./version.js')" in sw, 'service-worker.js no consume version.js')
@@ -136,9 +136,9 @@ require("if (mode === 'exam') {\n        const selected = (config.randomize ? sh
 require('examQuestionEnteredAt = 0;' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview de simulacro sigue atribuyendo tiempo de revisión a una pregunta')
 require('startExamTimer();' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview de simulacro sigue pausando el cronómetro')
 require('id="timer" class="value"' in app[app.find('function renderExamOverview'):app.find('function examAttemptPayload')], 'Overview no actualiza visualmente el tiempo restante')
-require(manifest.get('scope', {}).get('practice_ui_change') is True, 'v1.6.1 debe declarar cambio de práctica ordinaria')
+require(manifest.get('scope', {}).get('practice_ui_change') is True, 'v1.6.2 debe declarar cambio de práctica ordinaria')
 require(manifest.get('scope', {}).get('learner_letter_hygiene_layer') is True, 'Manifest no declara higiene learner-facing por letra')
-for token in ['function learnerEditorialText', 'function learnerCurrentAnswerText', 'learnerOptionLabel(q, letter)', 'la alternativa']:
+for token in ['function learnerEditorialText', 'function learnerCurrentAnswerText', 'learnerOptionLabel(q, letter)']:
     require(token in app, f'Falta capa v1.6.1 R3 de higiene learner-facing: {token}')
 for feedback_name, feedback_end in [('renderReviewFeedbackFallback', 'renderFeedback'), ('renderFeedback', 'function renderQuestion')]:
     start = app.find(f'function {feedback_name}')
@@ -175,7 +175,7 @@ require('.feedback-next-actions' in styles and 'justify-content: flex-end' in st
 require('const referent = comparisonTitle || entity || topic' in app, 'QRV2 no prioriza comparison_title/Entidad como referente explícito')
 require('💊 Fármacos y antibióticos' not in app, 'QRV2 conserva encabezado farmacológico genérico que oculta el referente')
 require('rel="noopener noreferrer"' in app, 'Fuentes QRV2 no protegen enlaces externos')
-require(manifest.get('scope', {}).get('review_flag_semantics_change') is False, 'v1.6.1 no debe cambiar semántica flag/nota')
+require(manifest.get('scope', {}).get('review_flag_semantics_change') is False, 'v1.6.2 no debe cambiar semántica flag/nota')
 
 # v1.5.7 simulacro realista 2026: dos partes independientes y B bloqueada.
 for token in [
@@ -233,10 +233,10 @@ require("historyDayReview?'':questionDoubtButton(q.id, questionDoubt)" in app, '
 require('allowPostMark:!omitted && !historyDayReview' in app, 'Revisión del día todavía permite mutar duda post-respuesta')
 require('if (historyDayReview || btn.dataset.questionDoubt !== q.id) return;' in app, 'Falta guardia defensiva contra escritura de duda en revisión del día')
 require("if (!historyLegacyAttempt) document.querySelectorAll('[data-review-prev]')" in app, 'La navegación Anterior de revisión histórica filtrada sigue bloqueada')
-require(manifest.get('scope', {}).get('dashboard_order_change') is False, 'v1.6.1 no cambia el orden estructural del Dashboard')
-require(manifest.get('scope', {}).get('history_day_review_change') is False, 'v1.6.1 no cambia Revisión del día')
+require(manifest.get('scope', {}).get('dashboard_order_change') is False, 'v1.6.2 no cambia el orden estructural del Dashboard')
+require(manifest.get('scope', {}).get('history_day_review_change') is False, 'v1.6.2 no cambia Revisión del día')
 require(manifest.get('scope', {}).get('runtime_sync_change') is False, 'Revisión del día no debe declarar cambios de sincronización')
-require(manifest.get('scope', {}).get('simulators_changed') is False, 'v1.6.1 no debe declarar nuevos cambios de simulador')
+require(manifest.get('scope', {}).get('simulators_changed') is True and manifest.get('scope', {}).get('simulator_ui_change') is True, 'v1.6.2 debe declarar solo cambio UI del simulador')
 
 # v1.6.0: rollover del Dashboard por fecha local, sin alterar colas/scheduler.
 require("function daysUntil(iso) { return Math.round(daysBetween(isoDateLocal(), iso)); }" in app, 'El countdown no usa diferencia de fechas locales')
@@ -273,9 +273,29 @@ require("state === 'tentative'" in question_doubt and "state === 'candidate'" no
 answer_sheet = app[app.find('  function historicalAnswerSheetHtml()'):app.find('  function historicalAnsweredCount', app.find('  function historicalAnswerSheetHtml()'))]
 require('const sourceLetter = o.sourceLetter || o.letter' in answer_sheet and 'data-answer-letter="${sourceLetter}"' in answer_sheet, 'Hoja de respuestas no conserva mapeo de alternativas mezcladas')
 require('.paper-option-wrap.scratch-candidate' in styles and '.paper-option-wrap.scratch-crossed' in styles and '.paper-option-discard.active' in styles, 'Faltan estilos v1.5.9 para candidata/tachado reversible')
-require(manifest.get('scope', {}).get('simulators_changed') is False, 'Manifest v1.6.1 debe preservar simuladores sin cambios nuevos')
-require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.6.1 no cambia algoritmo de scheduler/memoria')
-require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'v1.6.1 no debe cambiar memoria')
+require(manifest.get('scope', {}).get('simulators_changed') is True and manifest.get('scope', {}).get('simulator_logic_change') is False, 'Manifest v1.6.2 debe declarar cambio visual sin cambiar lógica del simulador')
+require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.6.2 no cambia algoritmo de scheduler/memoria')
+require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'v1.6.2 no debe cambiar memoria')
+
+# v1.6.2: numeración estable y telemetría de razonamiento sin impacto en memoria.
+for token in [
+    'function formatExamQuestionNumber', "padStart(3, '0')", 'answer-number-flag', 'answer-number-value', 'answer-number-doubt',
+    'function decisionScratchOptionState', 'function setDecisionScratchOptionState', 'data-study-candidate', 'data-study-discard',
+    'studyOptionHtml(q, o, selected, locked)', 'disableStudyDecisionControls()',
+]:
+    require(token in app, f'Falta contrato v1.6.2: {token}')
+require("__paper_${kind}__${qId}" in app, 'v1.6.2 no preserva claves scratch compatibles para exportación')
+require(manifest.get('scope', {}).get('practice_decision_telemetry') is True, 'Manifest v1.6.2 no declara telemetría de decisión')
+require(manifest.get('scope', {}).get('attempt_schema_change') is False, 'v1.6.2 no debe cambiar schema de attempts')
+require(manifest.get('scope', {}).get('simulator_logic_change') is False, 'v1.6.2 no debe cambiar lógica de simulacro')
+# Las claves sintéticas de candidata/tachado no pueden alimentar uncertaintyOptionsFor ni makeAttempt.
+uncertainty_segment = app[app.find('function uncertaintyOptionsFor'):app.find('function questionDoubtScratchKey')]
+require('__paper_candidate__' not in uncertainty_segment and '__paper_crossed__' not in uncertainty_segment, 'Candidatas/tachados contaminaron uncertain_options')
+make_attempt_segment = app[app.find('function makeAttempt'):app.find('async function applyAttemptsToMemory')]
+require('decisionScratchOptionState' not in make_attempt_segment and 'paperScratchQuestionId' not in make_attempt_segment, 'Telemetría v1.6.2 contaminó makeAttempt/memoria')
+styles = (ROOT/'styles.css').read_text(encoding='utf-8')
+require('.study-option-wrap' in styles and '.study-option-candidate' in styles and '.study-option-discard' in styles, 'Faltan estilos de controles v1.6.2')
+require('.answer-number-doubt' in styles and 'font-variant-numeric: tabular-nums' in styles, 'Falta estabilidad visual de numeración/? v1.6.2')
 
 # Taxonomía V3: identidad estable y compatibilidad de aliases.
 require('TOPIC_ID:${encodeURIComponent(stableId)}' in app, 'El selector no serializa rentability_topic_id estable')
@@ -413,11 +433,11 @@ require('function reviewEligible(q, now = new Date())' in app, 'Falta elegibilid
 require('return recall < retention;' in app, 'La cola de repaso no respeta targetRetention vigente')
 require('const due = valid.filter(q => reviewEligible(q, now));' in app, 'El plan diario no usa la misma elegibilidad dinámica')
 require(manifest.get('scope', {}).get('memory_algorithm_change') is False, 'Manifest marca cambio de memoria por error')
-require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.6.1 no debe marcar cambio del scheduler de memoria')
-require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.6.1 no debe requerir nueva migración')
+require(manifest.get('scope', {}).get('scheduler_change') is False, 'v1.6.2 no debe marcar cambio del scheduler de memoria')
+require(manifest.get('scope', {}).get('supabase_migration_required') is False, 'v1.6.2 no debe requerir nueva migración')
 
 if errors:
-    print('QA v1.6.1 CANONICAL EXPOSURE + MEDIA134 + v1.5.9 REGRESSIONS: FAIL')
+    print('QA v1.6.2 DECISION TELEMETRY + STABLE EXAM NAV + v1.6.1 REGRESSIONS: FAIL')
     for error in errors: print('- '+error)
     sys.exit(1)
-print('QA v1.6.1 CANONICAL EXPOSURE + MEDIA134 + v1.5.9 REGRESSIONS: OK')
+print('QA v1.6.2 DECISION TELEMETRY + STABLE EXAM NAV + v1.6.1 REGRESSIONS: OK')

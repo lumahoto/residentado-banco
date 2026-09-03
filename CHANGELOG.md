@@ -1,5 +1,18 @@
 # Changelog - Residentado
 
+## v1.6.2 - 2026-09-03
+
+Parche frontend/UX sobre v1.6.1. No requiere migración Supabase y no modifica dataset, taxonomía A16, scheduler, memoria, PT409/recovery ni archivos críticos de sesión.
+
+- numera las preguntas de simulacro con tres cifras (`001`, `015`, `100`); en históricos combinados conserva procedencia (`A-001`, `B-001`);
+- reserva espacios fijos independientes para `⚑`, número y `?` en la hoja de respuestas, evitando que marcar duda cambie el ancho de la fila;
+- añade en toda práctica ordinaria dos controles físicamente separados de la respuesta definitiva: `◉` candidata tentativa y `×` tachado reversible;
+- el clic en `◉`/`×` nunca selecciona la respuesta: los controles son botones hermanos y detienen propagación de eventos;
+- persiste candidatas/tachados en `practice_sessions.state.scratch` usando el mismo canal sintético ya validado por simulacros (`__paper_candidate__*` / `__paper_crossed__*`), por lo que pueden exportarse posteriormente sin migrar `attempts`;
+- candidatas/tachados son telemetría pedagógica: no alimentan `uncertain_options`, `was_uncertain`, `memory_rating`, `speed_bucket` ni FSRS;
+- en corrección inmediata las marcas quedan congeladas al responder, antes de mostrar feedback; en corrección al final siguen editables mientras la respuesta siga editable;
+- conserva íntegramente las correcciones v1.6.1 de exposición histórica, MEDIA134 y rentabilidad A16.
+
 ## v1.6.1 - 2026-09-02
 
 Parche frontend preexamen sobre v1.6.0, sin migración Supabase ni cambios de dataset/taxonomía/memoria/sesiones.

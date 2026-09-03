@@ -1,14 +1,14 @@
 {
-  "release_id": "REL-20260902-V1.6.1-R3-CANONICAL-EXPOSURE-MEDIA134",
-  "version": "1.6.1",
-  "date": "2026-09-02",
+  "release_id": "REL-20260903-V1.6.2-R1-DECISION-TELEMETRY-STABLE-EXAM-NAV",
+  "version": "1.6.2",
+  "date": "2026-09-03",
   "base": {
-    "version": "1.6.0",
-    "archive": "260901_1926_residentado-banco-main_v160.zip",
-    "note": "Focused preexam frontend patch over the current v1.6.0 baseline."
+    "version": "1.6.1",
+    "archive": "260903_0212_residentado-banco-main_v161.zip",
+    "note": "Focused preexam UX/telemetry patch over the audited v1.6.1 baseline."
   },
-  "status": "READY_FOR_GITHUB_DESKTOP_PATCH_NO_NEW_SUPABASE_MIGRATION_AUDITED_R3",
-  "release_type": "CANONICAL_RENTABILITY_HISTORICAL_EXPOSURE_MEDIA134",
+  "status": "READY_FOR_DEPLOY_AUDITED_R1",
+  "release_type": "EXAM_NAV_STABILITY_AND_DECISION_TELEMETRY",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
@@ -16,41 +16,38 @@
     "memory_algorithm_change": false,
     "review_eligibility_change": false,
     "simulator_logic_change": false,
+    "simulator_ui_change": true,
     "practice_ui_change": true,
-    "dashboard_planning_change": true,
-    "media134_curated_queue": true,
+    "practice_decision_telemetry": true,
+    "attempt_schema_change": false,
     "runtime_sync_change": false,
     "scheduler_change": false,
-    "simulators_changed": false,
     "review_flag_semantics_change": false,
-    "dashboard_order_change": false,
-    "history_day_review_change": false,
-    "dashboard_date_rollover_change": false,
+    "media134_preserved": true,
+    "canonical_rentability_preserved": true,
+    "learner_letter_hygiene_layer": true,
+    "dashboard_planning_change": true,
     "media_observed_queue": true,
     "daily_task_priority_order_change": true,
     "adaptive_topic_metrics_fix": true,
-    "learner_letter_hygiene_layer": true
+    "dashboard_order_change": false,
+    "history_day_review_change": false,
+    "dashboard_date_rollover_change": true,
+    "simulators_changed": true
   },
   "changes": {
-    "CANONICAL_HIGH_161": "Explicit A16 tier is authoritative; corpus fallback cannot promote explicit MEDIA/BAJA into MUY_ALTA+ALTA.",
-    "HISTORICAL_EXPOSURE_161": "OBSERVADA_* remains study-eligible and counts toward historical exposure while staying excluded from adaptive domain/weakness/due/speed metrics.",
-    "EDITORIAL_SCOPE_161": "Custom practice can select all historical, valid only, or observed only; all historical is the default.",
-    "DASHBOARD_SPLIT_161": "High unseen is shown as valid + observed = historical exposure pending.",
-    "MEDIA134_161": "Adds the frozen 134-anchor MEDIA queue (one selected anchor per MEDIA topic) and builder filter without modifying the question dataset; deep QR audit is 60/134 and not yet applied.",
-    "FINAL4DAY_PLAN_161": "High historical exposure first; MEDIA134 with >=3 days to exam; consolidation with <=2 days.",
-    "NO_LETTER_LEARNER_TEXT_161": "Runtime learner-facing editorial prose replaces explicit A–E references with the corresponding option text and strips answer-letter prefixes from current-answer displays/learning-note exports; stored bank rows remain untouched until the later Supabase editorial delta.",
-    "SIMULATOR_PRESERVED": "Universal paper exam behavior from v1.5.9 is unchanged.",
-    "PROTECTED_SESSION_FILES": "session-core.js and session-storage.js remain byte-identical to v1.6.0.",
-    "MEDIA_OBSERVED_161_R2": "MEDIA observed historical questions remain explicit study material and receive their own preexam queue after high exposure closes.",
-    "TASK_ORDER_161_R2": "During high rescue, unseen high precedes backlog reviews; during MEDIA acquisition, errors/doubts precede MEDIA anchors/observed forms so a large due backlog cannot hide the active preexam objective.",
-    "ADAPTIVE_TOPIC_METRICS_161_R2": "Mi Estado keeps canonical historical coverage over all questions but recalculates topic weakness/doubt/overdue using only non-observed questions.",
-    "MEDIA134_LABEL_ACCURACY_161_R2": "UI says selected MEDIA anchors, not that all 134 quick references are already audited/applied; current QR audit remains 60/134 and not yet in production.",
-    "LETTER_HYGIENE_161_R3": "Predeploy audit found that legacy QRV2 fields can still contain phrases such as “alternativa C” or “D. ...”. v1.6.1 now sanitizes those references at render/export time using the actual option text, without mutating source questions or content hashes.",
-    "MEDIA134_CANONICAL_GUARD_161_R3": "Both the automated MEDIA134 queue and the manual builder filter revalidate that each frozen anchor still carries explicit canonical tier MEDIA before including it."
+    "EXAM_3DIGIT_162": "Question numbering uses fixed three-digit formatting; combined historical exams preserve A/B provenance.",
+    "ANSWER_SHEET_FIXED_SLOTS_162": "Answer-sheet number cells reserve independent fixed slots for review flag, number, and question doubt so ? does not resize rows.",
+    "STUDY_DECISION_CONTROLS_162": "Ordinary practice adds physically separate candidate (◉) and discard (×) controls next to every option without changing final-answer click behavior.",
+    "DECISION_TELEMETRY_162": "Candidate/crossed states persist in practice_sessions.state.scratch with the established __paper_candidate__/__paper_crossed__ synthetic keys for later export.",
+    "MEMORY_ISOLATION_162": "Candidate/crossed telemetry is intentionally excluded from uncertain_options/was_uncertain/memory_rating/speed_bucket/FSRS.",
+    "IMMEDIATE_FEEDBACK_FREEZE_162": "Decision marks become read-only once an immediate-feedback answer is submitted, preventing post-feedback contamination.",
+    "V161_PRESERVED": "Canonical A16 filtering, observed historical exposure, MEDIA134 queues and learner-facing letter hygiene remain intact.",
+    "PROTECTED_SESSION_FILES": "session-core.js and session-storage.js remain byte-identical to v1.6.1/v1.6.0 protected baseline."
   },
   "supabase_migration": {
     "required": false,
-    "note": "No migration. v1.6.1 is frontend-only."
+    "note": "No migration. Telemetry is stored in existing practice_sessions.state JSONB scratch."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
@@ -59,15 +56,16 @@
     "questions": 2180,
     "freeze_until": "2026-09-06"
   },
-  "dataset_revision": "QUESTIONS-PATCH-BATCH-R06-12-V002-20260828",
+  "dataset_revision": "QUESTIONS-PATCH-PREEXAM-AUD195-V001-20260903",
+  "dataset_revision_note": "Supabase postcheck confirmed the PREEXAM AUD195 patch: 195 questions updated, 2 flags resolved, 195 history rows, 44 open flags remaining.",
   "media134": {
-    "source": "260901_MEDIA134_ANCLAS_ACUMULATIVO_A03_134TEMAS.md",
     "anchor_count": 134,
     "selection_status": "FROZEN_FOR_PREEXAM_EXPOSURE",
-    "quick_reference_audit_status": "60_OF_134_AUDITED_NOT_APPLIED_TO_DATASET"
+    "quick_reference_audit_status": "60_OF_134_APPLIED_VIA_PREEXAM_AUD195"
   },
   "modified_runtime_files": [
     "app.js",
+    "styles.css",
     "version.js",
     "service-worker.js"
   ],
@@ -85,15 +83,13 @@
     "w3-tools.js",
     "w4-data.js",
     "config.js",
-    "question-parser.js",
-    "styles.css"
+    "question-parser.js"
   ],
   "qa": {
     "static_command": "python3 QA/qa_static.py",
     "browser_command": "python3 QA/qa_browser.py",
     "session_core_unit_command": "node QA/test_session_core.js",
-    "manual_smoke": "RECOMMENDED_AFTER_DEPLOY_BEFORE_SIMULACRO: reopen/hard refresh, verify visible v1.6.1, simulator hub 200 A+B, custom practice editorial filter, and Dashboard high/MEDIA-priority split."
+    "manual_smoke": "Verify visible v1.6.2; simulator 001/015 and fixed ? slot; ordinary practice ◉/× do not select answers; candidate/crossed persist after navigation/reopen."
   },
-  "dataset_revision_note": "Última revisión de producción confirmada por el paquete R07; v1.6.1 no modifica el dataset. Exportar public.questions fresco después del simulacro antes del próximo patch clínico-editorial.",
-  "audit_revision": "R3_PREDEPLOY"
+  "audit_revision": "R1_PREDEPLOY"
 }

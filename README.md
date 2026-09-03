@@ -1,14 +1,14 @@
-# Residentado v1.6.1 — Exposición histórica coherente + MEDIA 134 + simulacro universal
+# Residentado v1.6.2 — Telemetría de decisión + navegación estable de simulacro
 
-WebApp estática del banco de Residentado Médico Perú. v1.6.1 es un parche frontend sobre **v1.6.0**: corrige la selección MUY_ALTA+ALTA para obedecer A16, hace explícita la exposición a preguntas históricas observadas y añade el carril curado MEDIA 134 para los últimos días preexamen. Conserva íntegro el cuadernillo universal, el scratch reversible y la hoja de respuestas de v1.5.9. No cambia banco canónico, Taxonomía V3 A16, fórmula de memoria, elegibilidad adaptativa de repaso ni guardrails de sesiones/PT409.
+WebApp estática del banco de Residentado Médico Perú. v1.6.2 es un parche frontend/UX sobre la **v1.6.1 auditada**. Conserva sus correcciones de rentabilidad A16, exposición histórica y MEDIA 134, y añade dos mejoras de estudio: numeración estable de tres cifras en simulacros y telemetría de candidatas/tachados en práctica ordinaria. No cambia banco canónico, Taxonomía V3 A16, fórmula de memoria, elegibilidad adaptativa de repaso ni guardrails de sesiones/PT409.
 
 ## Estado
 
-- Frontend: `v1.6.1` / revisión predeploy `R3` / caché `residentado-v1-6-1-r3`.
-- Dataset de producción confirmado: `QUESTIONS-PATCH-BATCH-R06-12-V002-20260828`; v1.6.1 no lo modifica.
+- Frontend: `v1.6.2` / revisión predeploy `R1` / caché `residentado-v1-6-2-r1`.
+- Dataset de producción confirmado: `QUESTIONS-PATCH-PREEXAM-AUD195-V001-20260903`; v1.6.2 no lo modifica.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- **No hay migración nueva en v1.6.1.**
+- **No hay migración nueva en v1.6.2.**
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
 - Scheduler de rescate/retención v1.5.2 y guardrails PT409/recovery: preservados.
 
@@ -37,7 +37,17 @@ La explicación muestra contexto universal y una referencia en dos capas: **Núc
 
 
 
-## Exposición histórica y MEDIA 134 v1.6.1
+## Telemetría de decisión y simulacro v1.6.2
+
+- En simulacros, la numeración usa tres cifras (`001`, `015`, `100`). En históricos A+B se conserva la procedencia (`A-001`, `B-001`).
+- La hoja de respuestas reserva espacios independientes para `⚑`, número y `?`; activar o quitar duda no cambia el ancho de la fila.
+- En práctica ordinaria, cada alternativa tiene tres superficies separadas: el texto/alternativa para **respuesta definitiva**, `◉` para **candidata tentativa** y `×` para **tachado reversible**.
+- `◉` y `×` no seleccionan la respuesta ni activan `?`. Persisten en `practice_sessions.state.scratch` mediante las claves compatibles `__paper_candidate__*` y `__paper_crossed__*`.
+- Estas marcas son telemetría pedagógica y no modifican `uncertain_options`, `was_uncertain`, `memory_rating`, `speed_bucket` ni FSRS.
+- En feedback inmediato las marcas quedan congeladas al responder, antes de ver la corrección; con corrección al final siguen editables mientras la pregunta sea editable.
+
+
+## Exposición histórica y MEDIA 134 v1.6.2
 
 - El filtro combinado **MUY_ALTA + ALTA** usa el tier A16 como autoridad. Una pregunta MEDIA o BAJA con tier explícito ya no puede entrar por el fallback histórico de corpus.
 - Las preguntas `OBSERVADA_*` **sí son elegibles para exposición histórica** y pueden aparecer en `Nunca vistas`; continúan excluidas de dominio, debilidades, velocidad y repaso adaptativo. La auditoría R2/R3 también corrige las métricas por topic de Mi Estado para que Dudas/Vencidas/Máxima debilidad no reintroduzcan observadas por una vía secundaria.
