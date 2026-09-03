@@ -1,14 +1,14 @@
 {
-  "release_id": "REL-20260903-V1.6.2-R1-DECISION-TELEMETRY-STABLE-EXAM-NAV",
-  "version": "1.6.2",
+  "release_id": "REL-20260903-V1.6.3-R1-V002-MEDIA134-UNLOCK",
+  "version": "1.6.3",
   "date": "2026-09-03",
   "base": {
-    "version": "1.6.1",
-    "archive": "260903_0212_residentado-banco-main_v161.zip",
-    "note": "Focused preexam UX/telemetry patch over the audited v1.6.1 baseline."
+    "version": "1.6.2",
+    "archive": "260903_0315_residentado-banco-main_v162.zip",
+    "note": "Focused dashboard-planning correction over the deployed/audited v1.6.2 baseline."
   },
   "status": "READY_FOR_DEPLOY_AUDITED_R1",
-  "release_type": "EXAM_NAV_STABILITY_AND_DECISION_TELEMETRY",
+  "release_type": "PREEXAM_V002_DASHBOARD_MEDIA134_UNLOCK",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
@@ -16,8 +16,8 @@
     "memory_algorithm_change": false,
     "review_eligibility_change": false,
     "simulator_logic_change": false,
-    "simulator_ui_change": true,
-    "practice_ui_change": true,
+    "simulator_ui_change": false,
+    "practice_ui_change": false,
     "practice_decision_telemetry": true,
     "attempt_schema_change": false,
     "runtime_sync_change": false,
@@ -27,27 +27,27 @@
     "canonical_rentability_preserved": true,
     "learner_letter_hygiene_layer": true,
     "dashboard_planning_change": true,
+    "high_observed_no_longer_blocks_media134": true,
+    "high_observed_interleave_queue": true,
     "media_observed_queue": true,
     "daily_task_priority_order_change": true,
     "adaptive_topic_metrics_fix": true,
     "dashboard_order_change": false,
     "history_day_review_change": false,
     "dashboard_date_rollover_change": true,
-    "simulators_changed": true
+    "simulators_changed": false
   },
   "changes": {
-    "EXAM_3DIGIT_162": "Question numbering uses fixed three-digit formatting; combined historical exams preserve A/B provenance.",
-    "ANSWER_SHEET_FIXED_SLOTS_162": "Answer-sheet number cells reserve independent fixed slots for review flag, number, and question doubt so ? does not resize rows.",
-    "STUDY_DECISION_CONTROLS_162": "Ordinary practice adds physically separate candidate (◉) and discard (×) controls next to every option without changing final-answer click behavior.",
-    "DECISION_TELEMETRY_162": "Candidate/crossed states persist in practice_sessions.state.scratch with the established __paper_candidate__/__paper_crossed__ synthetic keys for later export.",
-    "MEMORY_ISOLATION_162": "Candidate/crossed telemetry is intentionally excluded from uncertain_options/was_uncertain/memory_rating/speed_bucket/FSRS.",
-    "IMMEDIATE_FEEDBACK_FREEZE_162": "Decision marks become read-only once an immediate-feedback answer is submitted, preventing post-feedback contamination.",
-    "V161_PRESERVED": "Canonical A16 filtering, observed historical exposure, MEDIA134 queues and learner-facing letter hygiene remain intact.",
-    "PROTECTED_SESSION_FILES": "session-core.js and session-storage.js remain byte-identical to v1.6.1/v1.6.0 protected baseline."
+    "V002_HIGH_BLOCKING_RULE_163": "Only non-observed MUY_ALTA/ALTA unseen questions block MEDIA134. OBSERVADA_* high remains historical exposure but is non-blocking.",
+    "MEDIA134_UNLOCK_163": "When highValidUnseen is zero and daysExam >= 3, the daily plan opens MEDIA134 even if highObservedUnseen remains positive.",
+    "HIGH_OBSERVED_INTERLEAVE_163": "Adds an explicit high_observed daily task capped at 20 questions after MEDIA134, preserving historical exposure without displacing MEDIA acquisition.",
+    "P0_FIRST_163": "Errors/doubts remain first in the MEDIA phase, followed by MEDIA134, historical high exposure, due review and speed automation.",
+    "V162_PRESERVED": "Three-digit simulator numbering, fixed doubt slot, candidate/discard controls and decision telemetry are unchanged.",
+    "PROTECTED_SESSION_FILES": "session-core.js and session-storage.js remain byte-identical to the protected baseline."
   },
   "supabase_migration": {
     "required": false,
-    "note": "No migration. Telemetry is stored in existing practice_sessions.state JSONB scratch."
+    "note": "No migration. This patch changes only frontend plan orchestration."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
@@ -57,7 +57,7 @@
     "freeze_until": "2026-09-06"
   },
   "dataset_revision": "QUESTIONS-PATCH-PREEXAM-AUD195-V001-20260903",
-  "dataset_revision_note": "Supabase postcheck confirmed the PREEXAM AUD195 patch: 195 questions updated, 2 flags resolved, 195 history rows, 44 open flags remaining.",
+  "dataset_revision_note": "Supabase postcheck confirmed 195 questions updated, 2 flags resolved, 195 history rows, 44 open flags remaining.",
   "media134": {
     "anchor_count": 134,
     "selection_status": "FROZEN_FOR_PREEXAM_EXPOSURE",
@@ -65,7 +65,6 @@
   },
   "modified_runtime_files": [
     "app.js",
-    "styles.css",
     "version.js",
     "service-worker.js"
   ],
@@ -89,7 +88,7 @@
     "static_command": "python3 QA/qa_static.py",
     "browser_command": "python3 QA/qa_browser.py",
     "session_core_unit_command": "node QA/test_session_core.js",
-    "manual_smoke": "Verify visible v1.6.2; simulator 001/015 and fixed ? slot; ordinary practice ◉/× do not select answers; candidate/crossed persist after navigation/reopen."
+    "manual_smoke": "Verify visible v1.6.3; with 0 high valid and high observed remaining, Dashboard shows MEDIA 134 before the high-observed historical block; v1.6.2 simulator and decision telemetry remain unchanged."
   },
   "audit_revision": "R1_PREDEPLOY"
 }

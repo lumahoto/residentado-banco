@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.6.2 R1: numeración estable de simulacro y telemetría de candidatas/tachados en práctica ordinaria; preserva sesiones, memoria, A16 y lógica de entrega.
+// v1.6.3 R1: aplica la hoja de ruta V002 al plan diario: high válida bloquea; high observada se intercala y no bloquea MEDIA134.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-6-2-r1';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-6-3-r1';
 const ASSETS = [
   './',
   './index.html',

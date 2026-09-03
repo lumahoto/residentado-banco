@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.6.2: telemetría de decisión + numeración estable + regresiones v1.6.1/v1.5.9. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.6.3: V002 MEDIA134 unlock + regresiones v1.6.2/v1.5.9. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -48,7 +48,7 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.6.2' in page.locator('body').inner_text()
+    assert 'v1.6.3' in page.locator('body').inner_text()
 
 
     # v1.6.0: el Dashboard no conserva el hito estático caducable de primera vuelta.
@@ -57,7 +57,7 @@ with sync_playwright() as p:
     assert any(label in dashboard_text for label in ['días para objetivo de cobertura','días hasta corte de rescate ALTA','días de consolidación restantes','hoy: examen'])
     assert 'MEDIA prioritaria por ver:' in dashboard_text
     assert '1 anclas + 1 observadas = 2' in dashboard_text
-    assert 'ALTA/MUY_ALTA no vistas' in page.locator('#next-task-btn').inner_text()
+    assert 'ALTA/MUY_ALTA válidas no vistas' in page.locator('#next-task-btn').inner_text()
 
     # Dashboard heredado de v1.5.8: la acción operativa va antes de cualquier alerta académica.
     assert page.locator('#next-task-btn').count() == 1
@@ -437,4 +437,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.6.2 DECISION TELEMETRY + STABLE EXAM NAV + REGRESSIONS: OK')
+print('QA navegador v1.6.3 V002 MEDIA134 UNLOCK + v1.6.2 REGRESSIONS: OK')
