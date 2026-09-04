@@ -1,17 +1,24 @@
-# Residentado v1.6.3 — MEDIA134 desbloqueada + telemetría de decisión
+# Residentado v1.6.4 — Presentación preexamen + MEDIA134
 
-WebApp estática del banco de Residentado Médico Perú. v1.6.3 es un parche frontend mínimo sobre la **v1.6.2 auditada**. Mantiene numeración estable de simulacro, telemetría de candidatas/tachados y todos los guardrails previos, y corrige únicamente la orquestación del Dashboard para aplicar la Hoja de Ruta Sprint Final V002: las MUY_ALTA/ALTA observadas siguen siendo exposición histórica, pero ya no bloquean el acceso a MEDIA134 cuando las high válidas están cerradas.
+WebApp estática del banco de Residentado Médico Perú. v1.6.4 es un parche frontend de **presentación** sobre la v1.6.3 auditada. Mantiene la planificación MEDIA134/high observada y la telemetría de decisión, y corrige dos interferencias visuales: tentativa/tachado ya no ocultan el feedback verde/rojo y la Referencia rápida QRV2 muestra el pseudo-Markdown legacy de forma legible y segura.
 
 ## Estado
 
-- Frontend: `v1.6.3` / revisión predeploy `R1` / caché `residentado-v1-6-3-r1`.
-- Dataset de producción confirmado: `QUESTIONS-PATCH-PREEXAM-AUD195-V001-20260903`; v1.6.3 no lo modifica.
+- Frontend: `v1.6.4` / revisión predeploy `R1` / caché `residentado-v1-6-4-r1`.
+- Dataset de producción confirmado: `QUESTIONS-PATCH-MEDIA134-A13A16-74-V002-20260903`; v1.6.4 no lo modifica.
 - Preguntas: 2.180 IDs estables.
 - Taxonomía: V3 A16, 287 topics activos; freeze hasta 2026-09-06.
-- **No hay migración nueva en v1.6.3.**
+- **No hay migración nueva en v1.6.4.**
 - `session-core.js` y `session-storage.js`: preservados byte por byte respecto del baseline protegido.
 - Scheduler de rescate/retención v1.5.2 y guardrails PT409/recovery: preservados.
 
+
+## Presentación preexamen v1.6.4
+
+- En práctica ordinaria, `●` es **respuesta tentativa**: solo el control se vuelve amarillo; la alternativa conserva su aspecto normal antes de responder y puede verse verde/roja después.
+- `×` mantiene el tachado del texto sin aplicar opacidad global; una respuesta tachada puede seguir viéndose plenamente verde o roja durante la revisión.
+- QRV2 transforma de forma segura el patrón legacy `**Etiqueta:**` en una etiqueta visual en negrita y separa esas etiquetas en unidades legibles. También admite `**énfasis**` inline sin mostrar asteriscos. Todo texto se escapa antes de insertar `<strong>`; no existe parser Markdown general.
+- La mejora es de renderer/CSS: no modifica las 134 filas MEDIA ni ningún campo clínico en Supabase.
 
 ## Flujo de revisión heredado de v1.5.5
 
@@ -51,7 +58,7 @@ La explicación muestra contexto universal y una referencia en dos capas: **Núc
 
 - En simulacros, la numeración usa tres cifras (`001`, `015`, `100`). En históricos A+B se conserva la procedencia (`A-001`, `B-001`).
 - La hoja de respuestas reserva espacios independientes para `⚑`, número y `?`; activar o quitar duda no cambia el ancho de la fila.
-- En práctica ordinaria, cada alternativa tiene tres superficies separadas: el texto/alternativa para **respuesta definitiva**, `◉` para **candidata tentativa** y `×` para **tachado reversible**.
+- En práctica ordinaria, cada alternativa tiene tres superficies separadas: el texto/alternativa para **respuesta definitiva**, `●` para **respuesta tentativa** y `×` para **tachado reversible**.
 - `◉` y `×` no seleccionan la respuesta ni activan `?`. Persisten en `practice_sessions.state.scratch` mediante las claves compatibles `__paper_candidate__*` y `__paper_crossed__*`.
 - Estas marcas son telemetría pedagógica y no modifican `uncertain_options`, `was_uncertain`, `memory_rating`, `speed_bucket` ni FSRS.
 - En feedback inmediato las marcas quedan congeladas al responder, antes de ver la corrección; con corrección al final siguen editables mientras la pregunta sea editable.
@@ -93,7 +100,7 @@ El hub separa tres usos:
 
 **Interfaz común v1.5.9:** cualquier simulacro nuevo —realista 2026, histórico o personalizado— abre en formato cuadernillo con hoja de respuestas. En escritorio la hoja permanece lateral; en pantallas estrechas pasa debajo para evitar overflow. La respuesta que cuenta es exclusivamente la marcada en la hoja.
 
-En el cuadernillo cada alternativa tiene dos acciones independientes: pulsar la alternativa alterna una **preferencia tentativa (◉)** y el botón **×** alterna el **tachado**. Se pueden mantener una o dos preferidas a la vez. Pulsar de nuevo × quita el tachado; si una alternativa está tachada, pulsar la propia alternativa también la recupera. Estas marcas son scratch de examen: no crean intentos ni convierten la pregunta en `? Duda`.
+En el cuadernillo cada alternativa tiene dos acciones independientes: pulsar la alternativa alterna una **respuesta tentativa (●)** y el botón **×** alterna el **tachado**. Se pueden mantener una o dos preferidas a la vez. Pulsar de nuevo × quita el tachado; si una alternativa está tachada, pulsar la propia alternativa también la recupera. Estas marcas son scratch de examen: no crean intentos ni convierten la pregunta en `? Duda`.
 El `?` de pregunta se conserva como una señal independiente y persistente al guardar/reanudar el simulacro.
 
 - **Simulacro realista 2026:** 200 preguntas, Parte A 100 preguntas / 120 min, intermedio oficial de 60 min, Parte B 100 preguntas / 120 min. Los relojes son independientes y B no puede abrirse durante A. Al iniciar B, A deja de ser editable.

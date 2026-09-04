@@ -1,5 +1,17 @@
 # Changelog - Residentado
 
+## v1.6.4 - 2026-09-03
+
+Parche frontend de presentación sobre v1.6.3. No requiere migración Supabase y no modifica dataset, taxonomía A16, scheduler, memoria, attempts, PT409/recovery ni archivos críticos de sesión.
+
+- la respuesta tentativa se representa solo con un punto `●` amarillo; deja de pintar la alternativa completa de amarillo;
+- el tachado conserva `line-through` pero elimina la opacidad global y el color gris de la letra que atenuaban la revisión;
+- verde/rojo de `correct`/`wrong` tienen precedencia explícita aun si la alternativa estaba tentativa o tachada;
+- QRV2 reconoce de forma segura pseudo-Markdown legacy `**Etiqueta:**` e inline `**texto**`, siempre escapando contenido y sin incorporar un parser Markdown/HTML general;
+- las etiquetas legacy crean unidades de lectura separadas y aumenta el espaciado/interlineado de listas y bloques de Referencia rápida;
+- no se reescribe ninguna de las 134 preguntas MEDIA en Supabase: la normalización `FORMAT_ONLY` del dato queda diferida;
+- conserva íntegramente la lógica de planificación v1.6.3 y la telemetría scratch v1.6.2.
+
 ## v1.6.3 - 2026-09-03
 
 Parche frontend mínimo sobre v1.6.2 para alinear el Dashboard con la Hoja de Ruta Sprint Final V002. No requiere migración Supabase y no modifica dataset, taxonomía A16, simulacros, telemetría de decisión, scheduler, memoria, PT409/recovery ni archivos críticos de sesión.

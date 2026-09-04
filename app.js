@@ -1563,11 +1563,35 @@
     return PHARMACOLOGY_HINT.test(text);
   }
 
-  function splitReferenceSentences(value = '') {
+  function legacyReferenceStructuredText(value = '') {
     const text = cleanEditorialText(value);
+    if (!text) return '';
+    // QRV2 preexamen: reconoce únicamente pseudo-Markdown legacy seguro del tipo **Etiqueta:**.
+    // No interpreta HTML ni Markdown general; solo crea límites de lectura antes de estas etiquetas.
+    return text.replace(/([^\n])\s*(?=\*\*[^*\n]{1,80}:\*\*)/g, '$1\n');
+  }
+
+  function safeInlineStrongHtml(value = '') {
+    const text = String(value ?? '');
+    if (!text) return '';
+    const pattern = /\*\*([^*\n]+?)\*\*/g;
+    let html = '';
+    let cursor = 0;
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      html += esc(text.slice(cursor, match.index));
+      html += `<strong>${esc(match[1])}</strong>`;
+      cursor = match.index + match[0].length;
+    }
+    html += esc(text.slice(cursor));
+    return html;
+  }
+
+  function splitReferenceSentences(value = '') {
+    const text = legacyReferenceStructuredText(value);
     if (!text) return [];
     return text
-      .split(/\n+|(?:[.;])\s+(?=[A-ZÁÉÍÓÚÜÑ])/)
+      .split(/\n+|(?:[.;])\s+(?=(?:\*\*)?[A-ZÁÉÍÓÚÜÑ])/)
       .map(item => item.trim().replace(/[.;]+$/, ''))
       .filter(Boolean)
       .filter((item, index, arr) => arr.findIndex(other => other.toLocaleLowerCase('es') === item.toLocaleLowerCase('es')) === index);
@@ -1596,7 +1620,7 @@
     }
     const cards = [...groups.entries()]
       .filter(([, items]) => items.length)
-      .map(([label, items]) => `<section class="pharm-aspect"><h5>${esc(label)}</h5>${items.map(item => `<p>${esc(item)}</p>`).join('')}</section>`)
+      .map(([label, items]) => `<section class="pharm-aspect"><h5>${esc(label)}</h5>${items.map(item => `<p>${safeInlineStrongHtml(item)}</p>`).join('')}</section>`)
       .join('');
     return cards ? `<div class="pharm-grid">${cards}</div>` : '';
   }
@@ -1629,8 +1653,8 @@
   function referenceListHtml(value = '') {
     const items = splitReferenceSentences(value);
     if (!items.length) return '';
-    if (items.length === 1) return `<p>${esc(items[0])}</p>`;
-    return `<ul class="qrv2-list">${items.map(item => `<li>${esc(item)}</li>`).join('')}</ul>`;
+    if (items.length === 1) return `<p>${safeInlineStrongHtml(items[0])}</p>`;
+    return `<ul class="qrv2-list">${items.map(item => `<li>${safeInlineStrongHtml(item)}</li>`).join('')}</ul>`;
   }
 
   function auditSourceLinks(value = '') {
@@ -5329,7 +5353,7 @@
   }
 
   function scratchStateLabel(state) {
-    if (state === 'candidate') return 'Candidata tentativa';
+    if (state === 'candidate') return 'Respuesta tentativa';
     if (state === 'crossed') return 'Tachada';
     return 'Sin marca';
   }
@@ -5400,10 +5424,10 @@
   function paperOptionHtml(q, index, o) {
     const sourceLetter = o.sourceLetter || o.letter;
     const state = scratchOptionState(q.id, sourceLetter);
-    const icon = state === 'candidate' ? '◉' : '';
+    const icon = state === 'candidate' ? '●' : '';
     const candidateTitle = state === 'candidate'
-      ? 'Quitar preferencia tentativa'
-      : (state === 'crossed' ? 'Recuperar alternativa tachada' : 'Marcar como preferida tentativa');
+      ? 'Quitar respuesta tentativa'
+      : (state === 'crossed' ? 'Recuperar alternativa tachada' : 'Marcar como respuesta tentativa');
     const discardTitle = state === 'crossed' ? 'Quitar tachado' : 'Tachar alternativa';
     return `<div class="paper-option-wrap scratch-${state}" data-paper-option-index="${index}" data-paper-option-source="${sourceLetter}">
       <button class="paper-option" type="button"
@@ -5433,13 +5457,13 @@
     const discard = wrap.querySelector('[data-discard-index]');
     const mark = wrap.querySelector('.paper-option-mark');
     const displayLetter = choice?.dataset.displayLetter || sourceLetter;
-    if (mark) mark.textContent = state === 'candidate' ? '◉' : '';
+    if (mark) mark.textContent = state === 'candidate' ? '●' : '';
     if (choice) {
       choice.setAttribute('aria-pressed', state === 'candidate' ? 'true' : 'false');
       choice.setAttribute('aria-label', `${historicalDisplayNumber(q,index)} ${displayLetter}: ${scratchStateLabel(state)}`);
       choice.title = state === 'candidate'
-        ? 'Quitar preferencia tentativa'
-        : (state === 'crossed' ? 'Recuperar alternativa tachada' : 'Marcar como preferida tentativa');
+        ? 'Quitar respuesta tentativa'
+        : (state === 'crossed' ? 'Recuperar alternativa tachada' : 'Marcar como respuesta tentativa');
     }
     if (discard) {
       discard.classList.toggle('active', state === 'crossed');
@@ -6346,7 +6370,7 @@
           ${questionMediaHtml(q)}
           ${locked ? `<div class="banner compact"><strong>⏱ Pregunta cerrada.</strong> ${responseState.timedOut ? 'El tiempo terminó sin respuesta; contará como un único intento fallido por tiempo.' : 'El tiempo terminó después de que respondiste; se conserva esa respuesta y ya no puede modificarse.'}</div>` : ''}
           <div class="options study-options">${opts.map(o => studyOptionHtml(q, o, selected, locked)).join('')}</div>
-          <div class="study-decision-legend muted"><span><b>◉</b> candidata que estás considerando</span><span><b>×</b> descartar/tachar</span><span>Estas marcas se guardan como telemetría de razonamiento y no cambian tu memoria ni el marcador <b>?</b>.</span></div>
+          <div class="study-decision-legend muted"><span><b>●</b> respuesta tentativa</span><span><b>×</b> descartar/tachar</span><span>Estas marcas se guardan como telemetría de razonamiento y no cambian tu memoria ni el marcador <b>?</b>.</span></div>
           <div class="dont-know-row"><button id="dont-know-study" class="btn ghost dont-know-btn" type="button">${currentStudy.config.feedback === 'immediate' ? '🤷 No sé · mostrar respuesta' : '🤷 No sé · continuar'}</button><span class="muted">Cuenta como respuesta incorrecta explícita; no como pregunta en blanco ni como tiempo agotado.</span></div>
         </div>
         <div id="feedback"></div>
@@ -7753,14 +7777,14 @@
   function studyOptionHtml(q, o, selected, locked = false) {
     const sourceLetter = o.sourceLetter || o.letter;
     const state = studyScratchOptionState(q.id, sourceLetter);
-    const candidateTitle = state === 'candidate' ? 'Quitar candidata tentativa' : 'Marcar como candidata tentativa';
+    const candidateTitle = state === 'candidate' ? 'Quitar respuesta tentativa' : 'Marcar como respuesta tentativa';
     const discardTitle = state === 'crossed' ? 'Quitar tachado' : 'Tachar alternativa';
     return `<div class="study-option-wrap scratch-${state}" data-study-option-source="${sourceLetter}">
       <button class="option ${selected===sourceLetter?'selected':''}" data-letter="${sourceLetter}" type="button" ${locked?'disabled':''}>
         <span class="letter">${o.letter}</span><span class="study-option-text">${esc(o.text)}</span>
       </button>
       <button class="study-option-candidate ${state==='candidate'?'active':''}" type="button" data-study-candidate="${sourceLetter}"
-        aria-pressed="${state==='candidate'?'true':'false'}" title="${candidateTitle}" aria-label="${candidateTitle}: ${o.letter}" ${locked?'disabled':''}>◉</button>
+        aria-pressed="${state==='candidate'?'true':'false'}" title="${candidateTitle}" aria-label="${candidateTitle}: ${o.letter}" ${locked?'disabled':''}>●</button>
       <button class="study-option-discard ${state==='crossed'?'active':''}" type="button" data-study-discard="${sourceLetter}"
         aria-pressed="${state==='crossed'?'true':'false'}" title="${discardTitle}" aria-label="${discardTitle}: ${o.letter}" ${locked?'disabled':''}>×</button>
     </div>`;
@@ -7778,7 +7802,7 @@
     if (candidate) {
       candidate.classList.toggle('active', state === 'candidate');
       candidate.setAttribute('aria-pressed', state === 'candidate' ? 'true' : 'false');
-      candidate.title = state === 'candidate' ? 'Quitar candidata tentativa' : 'Marcar como candidata tentativa';
+      candidate.title = state === 'candidate' ? 'Quitar respuesta tentativa' : 'Marcar como respuesta tentativa';
       candidate.setAttribute('aria-label', `${candidate.title}: ${displayLetter}`);
     }
     if (discard) {

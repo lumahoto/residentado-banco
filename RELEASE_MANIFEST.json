@@ -1,14 +1,14 @@
 {
-  "release_id": "REL-20260903-V1.6.3-R1-V002-MEDIA134-UNLOCK",
-  "version": "1.6.3",
+  "release_id": "REL-20260903-V1.6.4-R1-PREEXAM-PRESENTATION-FIX",
+  "version": "1.6.4",
   "date": "2026-09-03",
   "base": {
-    "version": "1.6.2",
-    "archive": "260903_0315_residentado-banco-main_v162.zip",
-    "note": "Focused dashboard-planning correction over the deployed/audited v1.6.2 baseline."
+    "version": "1.6.3",
+    "archive": "260903_residentado-banco-main_v163.zip",
+    "note": "Focused presentation-only patch over v1.6.3; no session-core/storage or data semantics changed."
   },
   "status": "READY_FOR_DEPLOY_AUDITED_R1",
-  "release_type": "PREEXAM_V002_DASHBOARD_MEDIA134_UNLOCK",
+  "release_type": "PREEXAM_PRESENTATION_FEEDBACK_QRV2_FIX",
   "scope": {
     "supabase_migration_required": false,
     "dataset_change": false,
@@ -16,8 +16,8 @@
     "memory_algorithm_change": false,
     "review_eligibility_change": false,
     "simulator_logic_change": false,
-    "simulator_ui_change": false,
-    "practice_ui_change": false,
+    "simulator_ui_change": true,
+    "practice_ui_change": true,
     "practice_decision_telemetry": true,
     "attempt_schema_change": false,
     "runtime_sync_change": false,
@@ -26,28 +26,29 @@
     "media134_preserved": true,
     "canonical_rentability_preserved": true,
     "learner_letter_hygiene_layer": true,
-    "dashboard_planning_change": true,
+    "dashboard_planning_change": false,
     "high_observed_no_longer_blocks_media134": true,
     "high_observed_interleave_queue": true,
     "media_observed_queue": true,
-    "daily_task_priority_order_change": true,
+    "daily_task_priority_order_change": false,
     "adaptive_topic_metrics_fix": true,
     "dashboard_order_change": false,
     "history_day_review_change": false,
-    "dashboard_date_rollover_change": true,
-    "simulators_changed": false
+    "dashboard_date_rollover_change": false,
+    "simulators_changed": true
   },
   "changes": {
-    "V002_HIGH_BLOCKING_RULE_163": "Only non-observed MUY_ALTA/ALTA unseen questions block MEDIA134. OBSERVADA_* high remains historical exposure but is non-blocking.",
-    "MEDIA134_UNLOCK_163": "When highValidUnseen is zero and daysExam >= 3, the daily plan opens MEDIA134 even if highObservedUnseen remains positive.",
-    "HIGH_OBSERVED_INTERLEAVE_163": "Adds an explicit high_observed daily task capped at 20 questions after MEDIA134, preserving historical exposure without displacing MEDIA acquisition.",
-    "P0_FIRST_163": "Errors/doubts remain first in the MEDIA phase, followed by MEDIA134, historical high exposure, due review and speed automation.",
-    "V162_PRESERVED": "Three-digit simulator numbering, fixed doubt slot, candidate/discard controls and decision telemetry are unchanged.",
+    "TENTATIVE_DOT_164": "Candidate/tentative state is shown only by a yellow ● control/mark; it no longer paints the whole answer yellow.",
+    "CROSSOUT_FEEDBACK_164": "Crossed answers keep line-through semantics without global opacity or muted answer-letter styling, so green/red review feedback remains visible.",
+    "FEEDBACK_PRECEDENCE_164": "Explicit CSS guard ensures .option.correct/.option.wrong colors override scratch candidate/crossed presentation.",
+    "QRV2_LEGACY_STRONG_164": "QRV2 safely recognizes legacy **Label:** and **inline** spans after escaping; no general Markdown/HTML parser is introduced.",
+    "QRV2_READABILITY_164": "Legacy labels become separate readable units and QRV2 list/paragraph spacing and line-height are increased.",
+    "V163_PLANNER_PRESERVED": "MEDIA134 unlock/high-observed interleave logic from v1.6.3 is unchanged.",
     "PROTECTED_SESSION_FILES": "session-core.js and session-storage.js remain byte-identical to the protected baseline."
   },
   "supabase_migration": {
     "required": false,
-    "note": "No migration. This patch changes only frontend plan orchestration."
+    "note": "No migration. Presentation-only frontend patch; stored question content is not rewritten."
   },
   "taxonomy": {
     "source_release_id": "REL-20260818-V1.4.0-TAXV3-A16",
@@ -56,15 +57,17 @@
     "questions": 2180,
     "freeze_until": "2026-09-06"
   },
-  "dataset_revision": "QUESTIONS-PATCH-PREEXAM-AUD195-V001-20260903",
-  "dataset_revision_note": "Supabase postcheck confirmed 195 questions updated, 2 flags resolved, 195 history rows, 44 open flags remaining.",
+  "dataset_revision": "QUESTIONS-PATCH-MEDIA134-A13A16-74-V002-20260903",
+  "dataset_revision_note": "Latest confirmed production postcheck: 74/74 MEDIA134 #61–134 updated/history/backed up; 44 review flags remained open.",
   "media134": {
     "anchor_count": 134,
     "selection_status": "FROZEN_FOR_PREEXAM_EXPOSURE",
-    "quick_reference_audit_status": "60_OF_134_APPLIED_VIA_PREEXAM_AUD195"
+    "quick_reference_audit_status": "134_OF_134_APPLIED_IN_PRODUCTION",
+    "format_fix": "RENDERER_COMPATIBILITY_ONLY_NO_DATA_REWRITE"
   },
   "modified_runtime_files": [
     "app.js",
+    "styles.css",
     "version.js",
     "service-worker.js"
   ],
@@ -88,7 +91,7 @@
     "static_command": "python3 QA/qa_static.py",
     "browser_command": "python3 QA/qa_browser.py",
     "session_core_unit_command": "node QA/test_session_core.js",
-    "manual_smoke": "Verify visible v1.6.3; with 0 high valid and high observed remaining, Dashboard shows MEDIA 134 before the high-observed historical block; v1.6.2 simulator and decision telemetry remain unchanged."
+    "manual_smoke": "Verify visible v1.6.4; tentative ● stays yellow while submitted answer is green/red; crossed answer preserves green/red with line-through; legacy QRV2 **Label:** renders without visible asterisks and with separate readable units."
   },
   "audit_revision": "R1_PREDEPLOY"
 }
