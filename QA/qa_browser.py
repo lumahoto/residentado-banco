@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Smoke UI sin red para v1.6.3: V002 MEDIA134 unlock + regresiones v1.6.2/v1.5.9. Requiere Python Playwright y Chromium."""
+"""Smoke UI sin red para v1.6.4: presentación preexamen + regresiones v1.6.3/v1.6.2/v1.5.9. Requiere Python Playwright y Chromium."""
 from pathlib import Path
 import json
 from playwright.sync_api import sync_playwright
@@ -14,7 +14,7 @@ html = '<!doctype html><html><head><meta charset="utf-8"><style>' + (ROOT/'style
 for filename in SCRIPTS:
     html += '<script>' + (ROOT/filename).read_text(encoding='utf-8').replace('</script>', '<\\/script>') + '</script>'
 html += '<script>window.__TTS_CATALOG__=' + json.dumps(CATALOG, ensure_ascii=False) + ';window.fetch=async input=>{if(String(input).includes("tts_catalog.json"))return {ok:true,status:200,json:async()=>window.__TTS_CATALOG__};throw new Error("offline smoke");};'
-html += 'if(window.PILOT_QUESTIONS){window.PILOT_QUESTIONS.forEach((q,i)=>Object.assign(q,{rentability_topic_id:' + json.dumps(FIRST['topicId']) + ',rentability_topic_label:' + json.dumps(FIRST['topicLabel'],ensure_ascii=False) + ',rentability_tier:"MUY_ALTA",exam_rentability_score:10+i,canonical_area:"Medicina Interna",canonical_specialty:"Endocrinología y Metabolismo"}));const g=window.PILOT_QUESTIONS[window.PILOT_QUESTIONS.length-1];Object.assign(g,{comparison_title:"Fluoroquinolonas — lesión tendinosa",comparison_framework:"Evento: tendinitis o rotura del Aquiles. Riesgo mayor: edad y corticoides. Conducta: suspender y evaluar rotura.",canonical_entity:"Tendinopatía por fluoroquinolonas",tested_aspect_primary:"Toxicidad, reacción adversa o interacción",pivot_text:"Tendinopatía y rotura de Aquiles",exam_logic:"Quinolona + dolor del talón = pensar en lesión del Aquiles.",abbreviations:"FQ: fluoroquinolonas.",memory_hook:"Gancho QA: quinolona + Aquiles.",reference_notes:"Contenido legacy preservado.",audit_status:"OBSERVADA_AMBIGUA",correct_explanation:`La alternativa ${g.official_answer} representa el concepto correcto.`,audit_current_assessment:`La clave ${g.official_answer} sigue siendo defendible; no debe mostrarse por letra.`,audit_current_answer:`${g.official_answer}. ${g[`option_${g.official_answer.toLowerCase()}`]}`,common_trap:"Elegir entre A y B solo por la letra es un error de presentación.",audit_source_urls:"https://example.org/source | [ACOG. Gestational Hypertension and Preeclampsia. Practice Bulletin No. 222. 2020.](https://example.org/source) | https://legacy.example.net/guideline | [<img src=x onerror=window.__XSS_EXECUTED__=true>NICE. NG133.](https://safe.example.org/ng133) | [No permitido](javascript:alert(1))"});window.__EXPECTED_RENT_QUESTION__=g.question;const seeds=[...window.PILOT_QUESTIONS];for(const test of ["A","B"]){for(let n=1;n<=90;n++){const base=seeds[(n-1)%seeds.length];window.PILOT_QUESTIONS.push({...base,id:`QA-2020-${test}-${String(n).padStart(3,"0")}`,year:2020,test,question_number:n,question:`QA histórico ${test}-${n}: ${base.question}`,exam_rentability_score:0.01});}}const special=seeds[0];window.PILOT_QUESTIONS.push({...special,id:"QA-EXPLICIT-MEDIA",year:null,test:"",question_number:null,question:"QA MEDIA explícita que no debe entrar a high",rentability_tier:"MEDIA",exam_rentability_score:100,audit_status:"VALIDADA"});window.PILOT_QUESTIONS.push({...special,id:"QA-OBSERVED-HIGH",year:null,test:"",question_number:null,question:"QA high observada elegible para exposición",rentability_tier:"ALTA",exam_rentability_score:99,audit_status:"OBSERVADA_AMBIGUA"});window.PILOT_QUESTIONS.push({...special,id:"QA-OBSERVED-MEDIA",year:null,test:"",question_number:null,question:"QA MEDIA observada elegible para exposición histórica",rentability_tier:"MEDIA",exam_rentability_score:55,audit_status:"OBSERVADA_DESACTUALIZADA"});window.PILOT_QUESTIONS.push({...special,id:"RM-2025-A-050",year:null,test:"",question_number:null,question:"QA ancla MEDIA134",rentability_tier:"MEDIA",exam_rentability_score:59,audit_status:"VALIDADA"});}</script>'
+html += 'if(window.PILOT_QUESTIONS){window.PILOT_QUESTIONS.forEach((q,i)=>Object.assign(q,{rentability_topic_id:' + json.dumps(FIRST['topicId']) + ',rentability_topic_label:' + json.dumps(FIRST['topicLabel'],ensure_ascii=False) + ',rentability_tier:"MUY_ALTA",exam_rentability_score:10+i,canonical_area:"Medicina Interna",canonical_specialty:"Endocrinología y Metabolismo"}));const g=window.PILOT_QUESTIONS[window.PILOT_QUESTIONS.length-1];Object.assign(g,{comparison_title:"Fluoroquinolonas — lesión tendinosa",comparison_framework:"**Evento:** tendinitis o rotura del Aquiles. **Riesgo mayor:** edad y corticoides. **Conducta:** suspender y evaluar rotura. Un marcador **apoya**, no sustituye el contexto clínico. **Seguridad:** <img src=x onerror=window.__XSS_QRV2__=true>.",canonical_entity:"Tendinopatía por fluoroquinolonas",tested_aspect_primary:"Toxicidad, reacción adversa o interacción",pivot_text:"Tendinopatía y rotura de Aquiles",exam_logic:"Quinolona + dolor del talón = pensar en lesión del Aquiles.",abbreviations:"FQ: fluoroquinolonas.",memory_hook:"Gancho QA: quinolona + Aquiles.",reference_notes:"Contenido legacy preservado.",audit_status:"OBSERVADA_AMBIGUA",correct_explanation:`La alternativa ${g.official_answer} representa el concepto correcto.`,audit_current_assessment:`La clave ${g.official_answer} sigue siendo defendible; no debe mostrarse por letra.`,audit_current_answer:`${g.official_answer}. ${g[`option_${g.official_answer.toLowerCase()}`]}`,common_trap:"Elegir entre A y B solo por la letra es un error de presentación.",audit_source_urls:"https://example.org/source | [ACOG. Gestational Hypertension and Preeclampsia. Practice Bulletin No. 222. 2020.](https://example.org/source) | https://legacy.example.net/guideline | [<img src=x onerror=window.__XSS_EXECUTED__=true>NICE. NG133.](https://safe.example.org/ng133) | [No permitido](javascript:alert(1))"});window.__EXPECTED_RENT_QUESTION__=g.question;window.__EXPECTED_OFFICIAL__=g.official_answer;window.__EXPECTED_WRONG__=["A","B","C","D","E"].find(x=>x!==g.official_answer&&g[`option_${x.toLowerCase()}`]);const seeds=[...window.PILOT_QUESTIONS];for(const test of ["A","B"]){for(let n=1;n<=90;n++){const base=seeds[(n-1)%seeds.length];window.PILOT_QUESTIONS.push({...base,id:`QA-2020-${test}-${String(n).padStart(3,"0")}`,year:2020,test,question_number:n,question:`QA histórico ${test}-${n}: ${base.question}`,exam_rentability_score:0.01});}}const special=seeds[0];window.PILOT_QUESTIONS.push({...special,id:"QA-EXPLICIT-MEDIA",year:null,test:"",question_number:null,question:"QA MEDIA explícita que no debe entrar a high",rentability_tier:"MEDIA",exam_rentability_score:100,audit_status:"VALIDADA"});window.PILOT_QUESTIONS.push({...special,id:"QA-OBSERVED-HIGH",year:null,test:"",question_number:null,question:"QA high observada elegible para exposición",rentability_tier:"ALTA",exam_rentability_score:99,audit_status:"OBSERVADA_AMBIGUA"});window.PILOT_QUESTIONS.push({...special,id:"QA-OBSERVED-MEDIA",year:null,test:"",question_number:null,question:"QA MEDIA observada elegible para exposición histórica",rentability_tier:"MEDIA",exam_rentability_score:55,audit_status:"OBSERVADA_DESACTUALIZADA"});window.PILOT_QUESTIONS.push({...special,id:"RM-2025-A-050",year:null,test:"",question_number:null,question:"QA ancla MEDIA134",rentability_tier:"MEDIA",exam_rentability_score:59,audit_status:"VALIDADA"});}</script>'
 html += r'''<script>(()=>{
   const qs=window.PILOT_QUESTIONS||[];
   const byId=id=>qs.find(q=>q.id===id);
@@ -48,7 +48,7 @@ with sync_playwright() as p:
     page.set_content(html)
     page.wait_for_timeout(700)
 
-    assert 'v1.6.3' in page.locator('body').inner_text()
+    assert 'v1.6.4' in page.locator('body').inner_text()
 
 
     # v1.6.0: el Dashboard no conserva el hito estático caducable de primera vuelta.
@@ -163,12 +163,22 @@ with sync_playwright() as p:
     assert page.locator('[data-question-doubt-top]').count() == 1
     # v1.6.2: candidata/tachado son controles hermanos y no seleccionan la respuesta ni activan ?.
     assert page.locator('[data-study-candidate]').count() >= 4
+    assert page.locator('[data-study-candidate]').first.inner_text().strip() == '●'
     assert page.locator('[data-study-discard]').count() >= 4
-    page.locator('[data-study-candidate]').nth(0).click()
-    page.locator('[data-study-discard]').nth(1).click()
+    official = page.evaluate('window.__EXPECTED_OFFICIAL__')
+    wrong_letter = page.evaluate('window.__EXPECTED_WRONG__')
+    page.locator(f'[data-study-candidate="{official}"]').click()
+    page.locator(f'[data-study-discard="{wrong_letter}"]').click()
     assert page.locator('.study-option-wrap.scratch-candidate').count() == 1
     assert page.locator('.study-option-wrap.scratch-crossed').count() == 1
     assert page.locator('.option.selected').count() == 0
+    # La candidata ya no pinta toda la alternativa de amarillo y el tachado no aplica opacidad global.
+    assert page.evaluate("""([official, wrong]) => {
+      const candidate=document.querySelector(`[data-study-option-source="${official}"] .option`);
+      const neutral=[...document.querySelectorAll('.study-option-wrap.scratch-neutral .option')][0];
+      const crossed=document.querySelector(`[data-study-option-source="${wrong}"] .option`);
+      return Boolean(candidate && neutral && crossed && getComputedStyle(candidate).backgroundColor === getComputedStyle(neutral).backgroundColor && Number(getComputedStyle(crossed).opacity) === 1);
+    }""", [official, wrong_letter])
     assert 'active' not in (page.locator('[data-question-doubt-top]').get_attribute('class') or '')
     page.locator('[data-question-doubt-top]').click()
     assert 'active' in (page.locator('[data-question-doubt-top]').get_attribute('class') or '')
@@ -176,8 +186,24 @@ with sync_playwright() as p:
     page.wait_for_timeout(250)
     assert 'No sabía' in page.locator('#feedback').inner_text()
     assert 'Tiempo agotado' not in page.locator('#feedback').inner_text()
-    assert page.locator('[data-study-candidate]').nth(0).is_disabled()
-    assert page.locator('[data-study-discard]').nth(1).is_disabled()
+    assert page.locator(f'[data-study-candidate="{official}"]').is_disabled()
+    assert page.locator(f'[data-study-discard="{wrong_letter}"]').is_disabled()
+    # Feedback correcto conserva verde aun si la respuesta estaba marcada como tentativa.
+    assert page.evaluate("""official => {
+      const answer=document.querySelector(`.option[data-letter="${official}"]`);
+      const probe=document.createElement('div'); probe.style.background='var(--ok-bg)'; document.body.appendChild(probe);
+      const expected=getComputedStyle(probe).backgroundColor; probe.remove();
+      return Boolean(answer && answer.classList.contains('correct') && getComputedStyle(answer).backgroundColor === expected);
+    }""", official)
+    # Regresión CSS: si una tachada recibe feedback wrong, el rojo conserva fondo y opacidad completa.
+    assert page.evaluate("""wrong => {
+      const answer=document.querySelector(`.option[data-letter="${wrong}"]`);
+      if (!answer) return false;
+      answer.classList.remove('dimmed'); answer.classList.add('wrong');
+      const probe=document.createElement('div'); probe.style.background='var(--bad-bg)'; document.body.appendChild(probe);
+      const expected=getComputedStyle(probe).backgroundColor; probe.remove();
+      return getComputedStyle(answer).backgroundColor === expected && Number(getComputedStyle(answer).opacity) === 1 && getComputedStyle(answer.querySelector('.study-option-text')).textDecorationLine.includes('line-through');
+    }""", wrong_letter)
     feedback_text = page.locator('#feedback').inner_text()
     assert 'Fluoroquinolonas — lesión tendinosa' in feedback_text
     # Higiene learner-facing: el corpus puede conservar letras históricas, pero la UI las sustituye por el texto de la alternativa.
@@ -193,6 +219,14 @@ with sync_playwright() as p:
     feedback_text = page.locator('#feedback').inner_text()
     assert 'Núcleo rápido' in feedback_text and 'Detalle útil' in feedback_text
     assert 'Siglas, epónimos y términos' in feedback_text
+    assert '**' not in feedback_text
+    assert quick.locator('strong', has_text='Evento:').count() >= 1
+    assert quick.locator('strong', has_text='Riesgo mayor:').count() >= 1
+    assert quick.locator('strong', has_text='Conducta:').count() >= 1
+    assert quick.locator('strong', has_text='apoya').count() >= 1
+    assert quick.locator('strong', has_text='Seguridad:').count() >= 1
+    assert page.evaluate('window.__XSS_QRV2__ === true') is False
+    assert '<img src=x onerror=window.__XSS_QRV2__=true>' in quick.inner_text()
     assert page.locator('#feedback details', has_text='Notas generales').count() == 0
     assert 'Contenido legacy preservado.' not in feedback_text
     sources = page.locator('#feedback details.qrv2-collapsible', has_text='Fuentes y trazabilidad')
@@ -437,4 +471,4 @@ with sync_playwright() as p:
 
     browser.close()
 
-print('QA navegador v1.6.3 V002 MEDIA134 UNLOCK + v1.6.2 REGRESSIONS: OK')
+print('QA navegador v1.6.4 PRESENTACIÓN PREEXAM + REGRESIONES v1.6.3/v1.6.2: OK')

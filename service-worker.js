@@ -1,7 +1,7 @@
 importScripts('./version.js');
-// v1.6.3 R1: aplica la hoja de ruta V002 al plan diario: high válida bloquea; high observada se intercala y no bloquea MEDIA134.
+// v1.6.4 R1: presentación preexamen — tentativa/tachado sin ocultar feedback + QRV2 legacy legible.
 
-const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-6-3-r1';
+const CACHE = self.RESIDENTADO_BUILD?.cacheName || 'residentado-v1-6-4-r1';
 const ASSETS = [
   './',
   './index.html',
